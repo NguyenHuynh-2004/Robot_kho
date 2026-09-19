@@ -1,0 +1,2 @@
+# Giu thu muc nay trong git. CMakeLists.txt co install(DIRECTORY ... meshes ...)
+# nen neu thu muc bien mat o ban clone moi thi colcon build se that bai.
