@@ -1,0 +1,13 @@
+# Thu muc sinh ra boi colcon - khong commit.
+# install/ chua symlink tro toi duong dan tuyet doi /home/<user>/... nen
+# commit vao se hong tren moi may khac; build/ va log/ deu tai tao duoc.
+build/
+install/
+log/
+
+# Python
+__pycache__/
+*.py[cod]
+
+# Cau hinh ca nhan cua Claude Code
+.claude/settings.local.json
