@@ -1,7 +1,14 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="my_bot">
 
-    <xacro:include filename="gazebo_control.xacro" />
+    <!-- sim=true  : nap plugin + sensor cua Gazebo (chay mo phong)
+         sim=false : chi con phan co khi thuan tuy, dung cho xe that vi luc do
+                     /scan va /odom do ESP32 phat, khong phai Gazebo. -->
+    <xacro:arg name="sim" default="true" />
+
+    <xacro:if value="$(arg sim)">
+        <xacro:include filename="gazebo_control.xacro" />
+    </xacro:if>
 
     <material name="white"><color rgba="1 1 1 1" /></material>
     <material name="blue"><color rgba="0.2 0.2 1 1"/></material>
@@ -120,6 +127,7 @@
             <material name="black"/>
         </visual>
     </link>
+    <xacro:if value="$(arg sim)">
     <gazebo reference="lidar_link">
         <sensor name="lidar" type="gpu_lidar">
             <pose>0 0 0 0 0 0</pose>
@@ -144,5 +152,16 @@
             <gz_frame_id>lidar_link</gz_frame_id>
         </sensor>
     </gazebo>
+    </xacro:if>
+
+    <!-- IMU BNO055. Firmware phat /imu/data voi frame_id = imu_link,
+         neu thieu link nay TF se bao loi "frame does not exist".
+         SUA origin cho dung cho ban gan IMU tren xe that. -->
+    <joint name="imu_joint" type="fixed">
+        <parent link="chassis"/>
+        <child link="imu_link"/>
+        <origin xyz="0 0 0.16" rpy="0 0 0"/>
+    </joint>
+    <link name="imu_link"/>
 
 </robot>

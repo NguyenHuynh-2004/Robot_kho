@@ -11,3 +11,6 @@ __pycache__/
 
 # Cau hinh ca nhan cua Claude Code
 .claude/settings.local.json
+
+# Rac NTFS cua Windows khi tai file ve
+*:Zone.Identifier

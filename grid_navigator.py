@@ -15,11 +15,15 @@ import time
 import math
 
 class GridNavigator(Node):
-    def __init__(self):
+    def __init__(self, use_sim_time=True):
+        # use_sim_time truoc day bi dong cung = True. Tren xe that khong co
+        # /clock nen node se treo vinh vien ma khong bao loi gi.
+        #   Mo phong: python3 grid_navigator.py
+        #   Xe that : python3 grid_navigator.py --real
         super().__init__('grid_navigator', parameter_overrides=[
-            rclpy.parameter.Parameter('use_sim_time', rclpy.Parameter.Type.BOOL, True)
+            rclpy.parameter.Parameter('use_sim_time', rclpy.Parameter.Type.BOOL, use_sim_time)
         ])
-        
+
         self._action_client = ActionClient(self, NavigateToPose, 'navigate_to_pose')
         self.marker_pub = self.create_publisher(MarkerArray, '/grid_visualization', 10)
         
@@ -73,6 +77,7 @@ class GridNavigator(Node):
         self.goal_handle = None
         self.is_canceling = False
         self._replan_timer = None
+        self._state_lock = threading.Lock()
         self.replan_attempts = 0
         self.max_replan_attempts = 3
 
@@ -521,9 +526,18 @@ class GridNavigator(Node):
         self.current_path_points = pts
 
     def cancel_current_goal_and_replan(self):
-        self.is_canceling = True
-        if self.goal_handle is not None:
-            cancel_future = self.goal_handle.cancel_goal_async()
+        # MultiThreadedExecutor cho phep costmap_callback va timer replan chay
+        # dong thoi. Khong co khoa nay thi mot vat can se kich hoat nhieu lan
+        # huy/replan chong cheo: log hien dau thoi gian dao nguoc va xe bi tinh
+        # lai duong 4-5 lan lien tiep truoc khi on dinh.
+        with self._state_lock:
+            if self.is_canceling:
+                return          # da co mot luot huy dang chay roi
+            self.is_canceling = True
+            handle = self.goal_handle
+
+        if handle is not None:
+            cancel_future = handle.cancel_goal_async()
             cancel_future.add_done_callback(self.cancel_done_callback)
         else:
             self.schedule_replan()
@@ -564,7 +578,9 @@ class GridNavigator(Node):
         current_row, current_col = self.get_closest_grid(rx, ry)
         target_row, target_col = self.get_closest_grid(self.target_node[0], self.target_node[1])
         self.get_logger().info(f"Bắt đầu Replan từ ({current_row}, {current_col}) đến ({target_row}, {target_col})")
-        self.is_canceling = False
+        # GIU is_canceling = True cho toi khi Nav2 chap nhan goal moi.
+        # Ha co o day se mo cua cho costmap_callback ke tiep kich hoat mot luot
+        # huy nua tren goal_handle da chet.
         self.send_grid_goal(current_row, current_col, target_row, target_col, ryaw)
 
 
@@ -573,6 +589,7 @@ class GridNavigator(Node):
             self.get_logger().info('Đã đến nơi thành công toàn bộ lộ trình!')
             self.current_path_points = []
             self.target_node = None
+            self.is_canceling = False
             self.publish_markers()
             print("\n=== ĐIỀU KHIỂN AGV SA BÀN 5x5 ===")
             print("Xe đang chờ lệnh tiếp theo. Hãy nhập trên terminal...")
@@ -604,6 +621,8 @@ class GridNavigator(Node):
             return
 
         self.goal_handle = goal_handle
+        # Goal moi da song -> ket thuc luot huy, cho phep giam sat vat can tro lai.
+        self.is_canceling = False
         self.get_logger().info('Điểm đến được chấp nhận, xe đang di chuyển...')
         self._get_result_future = goal_handle.get_result_async()
         self._get_result_future.add_done_callback(self.get_result_callback)
@@ -705,8 +724,12 @@ def input_thread(navigator):
 def main(args=None):
     rclpy.init(args=args)
 
-    navigator = GridNavigator()
-    
+    # --real: chay tren xe that (dung dong ho he thong thay vi /clock cua Gazebo)
+    use_sim_time = '--real' not in sys.argv
+    print(f"Che do: {'MO PHONG (use_sim_time=true)' if use_sim_time else 'XE THAT (use_sim_time=false)'}")
+
+    navigator = GridNavigator(use_sim_time=use_sim_time)
+
     # Chạy vòng lặp spin của ROS trong background thread
     executor = MultiThreadedExecutor()
     executor.add_node(navigator)
