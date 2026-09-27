@@ -25,6 +25,20 @@
 //      Core 0  ros_task     : uu tien 1 - executor + publish + doc BNO055
 //
 //  Laptop: ros2 run micro_ros_agent micro_ros_agent udp4 --port 8888
+//
+//  THIET LAP BOARD (Arduino IDE -> Tools)
+//      Board            : ESP32 Dev Module   (esp32:esp32:esp32)
+//      Partition Scheme : Huge APP (3MB No OTA/1MB SPIFFS)   <-- QUAN TRONG
+//
+//  Da bien dich thu bang arduino-cli 1.5.2 voi core esp32 3.3.8:
+//      Partition mac dinh : 1072922 byte = 81% cua 1310720  (sat tran)
+//      Huge APP           : 1072954 byte = 34% cua 3145728  (nen dung)
+//  RAM ca hai truong hop: 122744 byte = 37%.
+//  De partition mac dinh thi chi can them vai tinh nang nua la tran flash.
+//
+//  Thu vien can co (deu da co san tren may nay):
+//      micro_ros_arduino 2.0.7-iron, LDS 0.6.3, ESP32Encoder 5.0.0,
+//      Adafruit BNO055 1.6.4, Adafruit BusIO 1.17.4, Adafruit Unified Sensor 1.1.15
 // ============================================================================
 
 #ifndef ESP32
@@ -56,6 +70,9 @@
 #include <sensor_msgs/msg/imu.h>
 #include <sensor_msgs/msg/laser_scan.h>
 #include <tf2_msgs/msg/tf_message.h>
+// tf_message.h chi keo struct cua TransformStamped, khong keo cac ham __init.
+// Thieu dong duoi la loi bien dich: '...TransformStamped__init' was not declared.
+#include <geometry_msgs/msg/transform_stamped.h>
 
 // ============================================================================
 //  1. CAU HINH - SUA TRUOC KHI NAP
