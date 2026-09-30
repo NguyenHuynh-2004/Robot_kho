@@ -1,0 +1,51 @@
+# Lai xe bang tay cam - dung khi ve ban do (SLAM).
+#
+# CHI SO TRUC/NUT KHAC NHAU GIUA CAC TAY CAM. Truoc khi tin bo so duoi day,
+# chay kiem tra thuc te:
+#     ros2 topic echo /joy
+# roi day tung can va bam tung nut, xem vi tri nao trong mang axes/buttons
+# thay doi. Sua lai cac chi so ben duoi cho khop.
+#
+# Bo so nay theo kieu Xbox qua SDL2:
+#     axes[0] = can trai ngang    axes[1] = can trai doc
+#     buttons[4] = LB             buttons[5] = RB
+
+joy_node:
+  ros__parameters:
+    device_id: 0
+    deadzone: 0.10          # bo qua do rung cua can quanh vi tri giua
+    autorepeat_rate: 20.0   # phat lai /joy 20 Hz du khong dong gi ->
+                            # firmware co CMD_VEL_TIMEOUT_MS 500ms, khong
+                            # co dong nay xe se tu dung khi ban giu can im
+    coalesce_interval_ms: 20
+
+teleop_twist_joy_node:
+  ros__parameters:
+    # Can trai: day len = tien, day ngang = re
+    axis_linear:
+      x: 1
+    axis_angular:
+      yaw: 0
+
+    # Toc do binh thuong: chay cham de ban do min, it nhoe.
+    # Gioi han cua xe la vx_max 0.5 m/s va wz_max 1.5 rad/s (navigation.yaml),
+    # nen turbo dat dung tran do.
+    scale_linear:
+      x: 0.25
+    scale_angular:
+      yaw: 0.8
+    scale_linear_turbo:
+      x: 0.5
+    scale_angular_turbo:
+      yaw: 1.5
+
+    # Nut chet: phai GIU moi di duoc. Tha ra la xe dung.
+    # Day la lop an toan quan trong khi lai xe that - can bi keo lech hay
+    # tay cam roi xuong san se khong lam xe chay tiep.
+    require_enable_button: true
+    enable_button: 4          # LB
+    enable_turbo_button: 5    # RB - giu THEM de chay nhanh
+
+    # Firmware nhan geometry_msgs/Twist (khong phai TwistStamped).
+    # Dat tuong minh de khong phu thuoc gia tri mac dinh cua tung ban ROS.
+    publish_stamped_twist: false
