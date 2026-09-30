@@ -729,7 +729,9 @@ void ros_task(void *pv) {
   for (;;) {
     uint32_t loop_t0 = micros();
     ros_loops++;
-    rclc_executor_spin_some(&executor, RCL_MS_TO_NS(1));
+    // timeout 0 = poll khong chan (quy uoc rcl: am = cho mai mai, 0 = khong cho).
+    // RCL_MS_TO_NS(1) da duoc thu va van chan ~1 giay.
+    rclc_executor_spin_some(&executor, 0);
     uint32_t spin_dt = micros() - loop_t0;
     if (spin_dt > t_spin_max) t_spin_max = spin_dt;
     publish_scan_if_ready();
@@ -814,17 +816,25 @@ static void init_microros() {
       ROSIDL_GET_MSG_TYPE_SUPPORT(geometry_msgs, msg, Twist), "cmd_vel"));
 
   RCCHECK(rclc_executor_init(&executor, &support.context, 1, &allocator));
+
+  // ---------------------------------------------------------------------------
+  // VAN DE DA DO DUOC TREN PHAN CUNG:
+  // rclc_executor_spin_some CHAN cho tới khi CO DU LIEU DEN, chu khong ton
+  // trong timeout. Do duoc: spin = 965..990 ms trong khi ca vong = ~1000 ms,
+  // tuc spin chiem 98%. Vi moi thu publish nam SAU spin trong cung vong lap,
+  // toan bo topic tut xuong nhip cua /cmd_vel den:
+  //      khong co /cmd_vel  -> /odom 0.2 Hz, /scan 0.2 Hz
+  //      /cmd_vel 20 Hz     -> /odom 17.9 Hz, /scan 7.9 Hz  (dung nhip lidar)
+  //
+  // Dat timeout NGAY SAU init va TRUOC khi them handle: mot so ban rclc chi
+  // doc executor->timeout_ns luc tao wait_set. In ma tra ve de biet co an khong.
+  // ---------------------------------------------------------------------------
+  rcl_ret_t rc_to = rclc_executor_set_timeout(&executor, RCL_MS_TO_NS(1));
+  Serial.printf("rclc_executor_set_timeout -> %d (%s)\n", (int)rc_to,
+                rc_to == RCL_RET_OK ? "OK" : "THAT BAI");
+
   RCCHECK(rclc_executor_add_subscription(&executor, &cmd_vel_sub, &cmd_vel_msg,
                                          &cmd_vel_callback, ON_NEW_DATA));
-
-  // BAN SUA QUAN TRONG: rclc_executor_init dat executor->timeout_ns =
-  // DEFAULT_WAIT_TIMEOUT_NS = 1000 ms, va rclc_executor_spin_some BO QUA tham
-  // so timeout truyen vao, dung gia tri noi bo nay. Khi khong co /cmd_vel gui
-  // den (Nav2 chua chay), rcl_wait cho het 1000 ms moi vong -> ros_task chi
-  // chay 1 vong/giay -> moi topic tut xuong 1 Hz du rcl_publish luon tra ve OK.
-  // Do duoc tren phan cung: ca_vong = 999633 us, trong khi tong cac khau
-  // publish chi ~9 ms.
-  RCCHECK(rclc_executor_set_timeout(&executor, RCL_MS_TO_NS(1)));
   RCCHECK(rmw_uros_sync_session(1000));
 
   // --- Cap bo nho tinh cho cac message (micro-ROS khong tu cap phat) ---
