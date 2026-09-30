@@ -59,6 +59,8 @@
 #include <ESP32Encoder.h>
 #include <LDS_YDLIDAR_X2_X2L.h>
 
+#include <esp_timer.h>   // esp_timer_get_time() - dong ho us 64 bit, lam timestamp
+
 #include <micro_ros_arduino.h>
 #include <rcl/rcl.h>
 #include <rcl/error_handling.h>
@@ -283,6 +285,7 @@ static volatile uint32_t t_pub_max  = 0;   // us - lau nhat 1 lan gui odom+tf
 static volatile uint32_t t_scan_max = 0;   // us - lau nhat 1 lan gui scan
 static volatile uint32_t t_loop_max = 0;   // us - lau nhat 1 vong ros_task
 static volatile uint32_t t_spin_max = 0;   // us - lau nhat 1 lan spin_some
+static volatile uint32_t t_sync_max = 0;   // us - lau nhat 1 lan sync_session+ping
 
 // --- IMU ---
 Adafruit_BNO055 bno = Adafruit_BNO055(55, BNO055_ADDR, &Wire);
@@ -612,16 +615,63 @@ void cmd_vel_callback(const void *msgin) {
 // ============================================================================
 //  11. micro-ROS: PHAT
 // ============================================================================
-static void fill_stamp(builtin_interfaces__msg__Time *stamp) {
-  if (rmw_uros_epoch_synchronized()) {
-    int64_t t_ns = rmw_uros_epoch_nanos();
-    stamp->sec     = (int32_t)(t_ns / 1000000000LL);
-    stamp->nanosec = (uint32_t)(t_ns % 1000000000LL);
-  } else {
-    uint64_t t_ms = millis();
-    stamp->sec     = (int32_t)(t_ms / 1000ULL);
-    stamp->nanosec = (uint32_t)((t_ms % 1000ULL) * 1000000ULL);
+// KHONG dung rmw_uros_epoch_nanos() truc tiep lam timestamp.
+// Da do bang cach in stamp tho cua /odom ve phia ROS: truong nanosec DUNG YEN
+// (vd 249635742 suot hon 10 giay lien), chi sec tang; no chi doi dung vao luc
+// rmw_uros_sync_session() chay. Tuc dong ho ben trong ham do co do phan giai
+// ~1 giay, trong khi 50 message/giay deu can stamp rieng. Neu de nguyen thi
+// AMCL, TF va costmap deu thay 50 message "cung mot thoi diem" -> hong.
+//
+// Cach lam: lay MOT moc epoch tu agent (sync_session do round-trip nen moc nay
+// chinh xac duoi giay), roi tu do tu chay bang esp_timer_get_time() - dong ho
+// us cua ESP32, 64 bit, khong tran.
+static int64_t epoch_anchor_ns = 0;   // epoch tai thoi diem lay moc
+static int64_t local_anchor_us = 0;   // esp_timer_get_time() tai thoi diem do
+
+// Goi trong setup(), sau sync_session dau tien, luc chua publish gi nen block
+// vai tram ms la vo hai. Cho den dung khoanh khac dong ho tho nhay sang gia
+// tri moi: ngay do sai so lam tron bang 0, thay vi co the lech toi ca 1 giay.
+// Dong thoi in ra buoc nhay do duoc -> lan boot sau tu kiem chung lai duoc.
+static void clock_anchor_bootstrap() {
+  int64_t e0 = rmw_uros_epoch_nanos();
+  uint32_t t0 = millis();
+  while (millis() - t0 < 1500) {
+    int64_t e = rmw_uros_epoch_nanos();
+    if (e != e0) {
+      epoch_anchor_ns  = e;
+      local_anchor_us  = esp_timer_get_time();
+      Serial.printf("Dong ho epoch: buoc nhay %lu ms -> neo theo esp_timer\n",
+                    (unsigned long)(millis() - t0));
+      return;
+    }
+    delay(1);
   }
+  // Khong thay nhay trong 1.5 s: dong ho tho con cham hon du doan. Neo tam
+  // bang gia tri hien co, phan slew ben duoi se keo dan cho dung.
+  epoch_anchor_ns = e0;
+  local_anchor_us = esp_timer_get_time();
+  Serial.println("Dong ho epoch: khong thay nhay trong 1.5 s (do phan giai > 1.5 s)");
+}
+
+// Goi sau moi sync_session dinh ky. Khong nhay thang den gia tri moi vi stamp
+// giat LUI la loi nang voi TF/AMCL; chi keo 1/5 khoang lech moi lan.
+static void clock_reanchor() {
+  int64_t e = rmw_uros_epoch_nanos();
+  if (e < 1000000000LL) return;               // chua co epoch that
+  int64_t now_us    = esp_timer_get_time();
+  int64_t predicted = epoch_anchor_ns + (now_us - local_anchor_us) * 1000LL;
+  epoch_anchor_ns   = predicted + (e - predicted) / 5;
+  local_anchor_us   = now_us;
+}
+
+static void fill_stamp(builtin_interfaces__msg__Time *stamp) {
+  // Chua neo duoc (chua ket noi agent) -> dung dong ho noi bo, Nav2 se bo qua
+  // vi lech epoch, nhung it nhat khong sai nhip.
+  int64_t t_ns = (epoch_anchor_ns > 0)
+                 ? epoch_anchor_ns + (esp_timer_get_time() - local_anchor_us) * 1000LL
+                 : (int64_t)esp_timer_get_time() * 1000LL;
+  stamp->sec     = (int32_t)(t_ns / 1000000000LL);
+  stamp->nanosec = (uint32_t)(t_ns % 1000000000LL);
 }
 
 static void publish_scan_if_ready() {
@@ -741,12 +791,22 @@ void ros_task(void *pv) {
     if (now - last_odom >= 20) { last_odom = now; publish_odom_and_tf(); }  // 50 Hz
     if (now - last_imu  >= 20) { last_imu  = now; read_and_publish_imu(); } // 50 Hz
 
-    // Dong bo dong ho voi agent -> timestamp dung, Nav2 khong keu "message too old"
-    if (now - last_sync > 10000) { last_sync = now; RCSOFTCHECK(rmw_uros_sync_session(200)); }
+    // sync_session va ping_agent deu CHAN (200 ms / 150 ms timeout) va chay
+    // ngay trong ros_task, nen moi lan goi la mot lan nghen: do duoc ca_vong
+    // toi 751 ms, dung luc do /odom mat nhip. Vi timestamp gio da tu chay bang
+    // esp_timer (xem clock_reanchor), khong can sync day 10 s mot lan nua -
+    // 60 s du de bu troi, va bot nghen 6 lan. Ping cung giam tu 2 s xuong 5 s;
+    // 5 lan that bai lien tiep = 25 s moi restart, van kip.
+    uint32_t t_sync0 = micros();
+    if (now - last_sync > 60000) {
+      last_sync = now;
+      RCSOFTCHECK(rmw_uros_sync_session(200));
+      clock_reanchor();
+    }
 
     // Mat agent qua lau -> khoi dong lai cho sach.
     // Dung dong co TRUOC khi restart, neu khong xe lao tu do luc ESP32 boot lai.
-    if (now - last_ping > 2000) {
+    if (now - last_ping > 5000) {
       last_ping = now;
       if (rmw_uros_ping_agent(150, 1) != RMW_RET_OK) {
         if (++ping_fail >= 5) {
@@ -758,6 +818,8 @@ void ros_task(void *pv) {
         }
       } else ping_fail = 0;
     }
+    uint32_t sync_dt = micros() - t_sync0;   // gop sync + ping: ca hai deu chan
+    if (sync_dt > t_sync_max) t_sync_max = sync_dt;
 
     uint32_t loop_dt = micros() - loop_t0;
     if (loop_dt > t_loop_max) t_loop_max = loop_dt;
@@ -836,6 +898,7 @@ static void init_microros() {
   RCCHECK(rclc_executor_add_subscription(&executor, &cmd_vel_sub, &cmd_vel_msg,
                                          &cmd_vel_callback, ON_NEW_DATA));
   RCCHECK(rmw_uros_sync_session(1000));
+  clock_anchor_bootstrap();
 
   // --- Cap bo nho tinh cho cac message (micro-ROS khong tu cap phat) ---
   sensor_msgs__msg__LaserScan__init(&scan_msg);
@@ -1038,15 +1101,17 @@ void loop() {
     //   ros_task/s thap  -> vong lap bi block, xem cot "max us" nao lon nhat
     //   pub/s thap ma moi cot max deu nho -> nghen o tang truyen micro-ROS
     Serial.printf("      ros_task %lu vong/s | pub/s: scan %lu odom %lu imu %lu"
-                  " | max us: spin %lu, imu %lu, odom %lu, scan %lu, ca_vong %lu\n",
+                  " | max us: spin %lu, imu %lu, odom %lu, scan %lu, sync %lu,"
+                  " ca_vong %lu\n",
                   (unsigned long)ros_loops,
                   (unsigned long)pub_scan, (unsigned long)pub_odom,
                   (unsigned long)pub_imu,
                   (unsigned long)t_spin_max,
                   (unsigned long)t_imu_max, (unsigned long)t_pub_max,
-                  (unsigned long)t_scan_max, (unsigned long)t_loop_max);
+                  (unsigned long)t_scan_max, (unsigned long)t_sync_max,
+                  (unsigned long)t_loop_max);
     ros_loops = pub_scan = pub_odom = pub_imu = 0;
-    t_imu_max = t_pub_max = t_scan_max = t_loop_max = t_spin_max = 0;
+    t_imu_max = t_pub_max = t_scan_max = t_loop_max = t_spin_max = t_sync_max = 0;
   }
 }
 
