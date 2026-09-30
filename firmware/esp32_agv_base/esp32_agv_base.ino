@@ -98,18 +98,10 @@
 #define WHEEL_SEPARATION_M  0.190f     // khoang cach TAM - TAM hai banh
 // -----------------------------------------------------------------------------
 
-// ENCODER 1 KENH (chi dung kenh A) -------------------------------------------
-// Kenh A mot minh KHONG cho biet chieu quay: dem luon tang du banh quay huong
-// nao. Chieu duoc suy ra tu chieu dang cap PWM (xem wheel_control_step).
-// Hau qua phai chap nhan:
-//   - Mat bao ve "banh quay nguoc chieu PWM" (xem muc 3).
-//   - Xe bi day/keo tay khi dang dung -> odometry van tuong la dung yen.
-//   - Banh truot lui khi leo doc -> odometry tuong la dang tien.
-// Vi vay USE_GYRO_FOR_YAW = 1 gan nhu bat buoc, va IMU phai hoat dong.
-//
-// attachHalfQuad dem 2 canh cua A (1200), attachSingleEdge chi dem 1 canh
-// -> khoang mot NUA. 600 chi la uoc luong, PHAI do lai theo Phu luc A1.
-#define ENC_PULSES_PER_REV  600.0f
+// Encoder: 1200 xung/vong truc ra khi dung attachHalfQuad (lay tu motor_1_wheel.ino).
+// Doi neu dung dong co khac. Kiem tra: quay tay banh dung 10 vong,
+// count phai tang ~12000.
+#define ENC_PULSES_PER_REV  1200.0f
 
 // Gioi han an toan
 #define MAX_WHEEL_RPM       120.0f     // tran RPM moi banh (L298N sut ap -> thap hon BTS7960)
@@ -135,21 +127,14 @@ const int R_IN1_PIN = 33;   // banh PHAI
 const int R_IN2_PIN = 32;
 const int R_ENB_PIN = 14;   // PWM banh phai
 
-// --- Encoder (chi kenh A) ---
-// Cap encoder tu 3V3, KHONG phai 5V: chan ra cua encoder o muc bang dien ap
-// nguon cua no, 5V se lam chet cong GPIO.
+// --- Encoder ---
+// GPIO 34/35 chi vao (input-only) va KHONG co dien tro keo len noi bo.
+// Encoder Hall kieu push-pull chay tot; neu encoder cua ban la ho cuc thu
+// (open-collector) thi phai han them dien tro keo len 10k ra 3V3.
 const int ENC_L_A_PIN = 23;
+const int ENC_L_B_PIN = 34;
 const int ENC_R_A_PIN = 4;
-
-// PCNT cua ESP32 bat buoc phai co mot chan "level" de quyet dinh chieu dem.
-// Khong co kenh B nen ta ghim chan nay xuong GND: muc LOW => luon dem TANG.
-// Ca hai encoder dung chung duoc vi day chi la doc muc logic.
-// NOI GPIO NAY XUONG GND bang mot doan day. De tha noi thi chi co dien tro
-// keo xuong noi bo ~45k, nhieu tu day dong co co the lam dao chieu dem.
-// KHONG dung chung GPIO voi LIDAR_EN_PIN: driver X2/X2L khong cham vao chan EN,
-// nhung neu sau nay doi sang YDLIDAR X4 thi driver se XUAT ra chan do - dam voi
-// day noi GND o day thanh ngan mach.
-const int ENC_DIR_PIN = 13;
+const int ENC_R_B_PIN = 35;
 
 // --- BNO055 (I2C) ---
 const int I2C_SDA_PIN = 21;
@@ -163,10 +148,12 @@ const uint8_t LIDAR_TX_PIN  = 17;  // ESP32 TX -> LiDAR RX
 const uint8_t LIDAR_RX_PIN  = 16;  // ESP32 RX <- LiDAR TX
 
 // --- Dao chieu: sua neu lap nguoc ---
-// INVERT_MOTOR_x : cap PWM duong ma banh chay lui
-// (Khong con INVERT_ENC_x: encoder 1 kenh luon dem tang, khong co chieu de dao.)
+// INVERT_MOTOR_x  : cap PWM duong ma banh chay lui
+// INVERT_ENC_x    : banh chay toi ma so xung giam
 const bool INVERT_MOTOR_L = false;
 const bool INVERT_MOTOR_R = true;    // banh phai lap doi xung -> thuong phai dao
+const bool INVERT_ENC_L   = false;
+const bool INVERT_ENC_R   = true;
 
 // ============================================================================
 //  3. THONG SO DIEU KHIEN
@@ -188,12 +175,10 @@ int   deadbandPWM = 30;
 float lpfAlpha    = 0.2f;            // loc thong thap cho RPM do duoc
 float maxAccelRPMPerSec = 320.0f;    // ramp, chong giat va sut ap
 
-// Bao ve. LUU Y: bao ve "banh quay nguoc chieu PWM" cua motor_1_wheel.ino da
-// bi BO, vi no so sanh dau cua PWM voi dau cua RPM do duoc - ma voi encoder 1
-// kenh thi dau cua RPM lai duoc suy ra TU chinh dau cua PWM, nen hai ben khong
-// bao gio mau thuan va phep kiem tra luon im. Nguy hiem hon la no tao cam giac
-// an toan gia. Neu dao nham day dong co, bay gio phai tu phat hien bang buoc
-// kiem tra A2 trong Phu luc A.
+// Bao ve (giu nguyen tu motor_1_wheel.ino)
+#define WRONG_DIR_PWM     120
+#define WRONG_DIR_RPM     5.0f
+#define WRONG_DIR_TIME_MS 300
 #define STALL_PWM         200
 #define STALL_RPM         1.0f
 #define STALL_TIME_MS     1000
@@ -293,7 +278,7 @@ ESP32Encoder encL, encR;
 struct Wheel {
   ESP32Encoder *enc;
   int  pin_in1, pin_in2, pin_pwm;
-  bool invert_motor;
+  bool invert_motor, invert_enc;
 
   int   last_direction  = 0;      // 1 thuan, -1 nghich, 0 dung
   long  prev_count      = 0;
@@ -305,6 +290,7 @@ struct Wheel {
   int   output_pwm      = 0;
   float dist_delta_m    = 0.0f;   // quang duong chu ky vua roi, cho odom
 
+  unsigned long wrong_dir_since = 0;
   unsigned long stall_since     = 0;
 };
 Wheel wl, wr;
@@ -357,8 +343,18 @@ static void trigger_estop(const char *reason) {
 
 // Bao ve sai chieu (dao nham day) va ket banh / mat encoder
 static void wheel_check_protection(Wheel &w, const char *name, unsigned long now) {
-  // Chi con bao ve ket banh / mat encoder. Xem ghi chu o muc 3 ve viec tai sao
-  // khong the kiem tra sai chieu voi encoder 1 kenh.
+  bool wrong_dir = abs(w.output_pwm) >= WRONG_DIR_PWM &&
+                   ((w.output_pwm > 0 && w.current_rpm < -WRONG_DIR_RPM) ||
+                    (w.output_pwm < 0 && w.current_rpm >  WRONG_DIR_RPM));
+  if (wrong_dir) {
+    if (w.wrong_dir_since == 0) w.wrong_dir_since = now;
+    else if (now - w.wrong_dir_since > WRONG_DIR_TIME_MS) {
+      Serial.printf("Banh %s quay nguoc chieu PWM. Kiem tra INVERT_MOTOR_x / INVERT_ENC_x.\n", name);
+      trigger_estop("Banh quay nguoc chieu");
+      return;
+    }
+  } else w.wrong_dir_since = 0;
+
   bool stalled = abs(w.output_pwm) >= STALL_PWM && fabsf(w.current_rpm) < STALL_RPM;
   if (stalled) {
     if (w.stall_since == 0) w.stall_since = now;
@@ -372,17 +368,12 @@ static void wheel_check_protection(Wheel &w, const char *name, unsigned long now
 // Mot chu ky PID cua mot banh. Tra ve quang duong di duoc trong chu ky (m).
 static void wheel_control_step(Wheel &w, const char *name, float dt) {
   // --- 1. Doc encoder ---
-  // Encoder 1 kenh: delta luon >= 0, bat ke banh quay huong nao. Dau duoc lay
-  // tu w.last_direction - chieu ma cau H DANG duoc cap trong chu ky vua roi
-  // (wheel_write_pwm cap nhat no o CUOI chu ky truoc, nen day dung la chieu
-  // tuong ung voi so xung vua dem duoc).
   long count = (long)w.enc->getCount();
   long delta = count - w.prev_count;
   w.prev_count = count;
-  if (delta < 0) delta = 0;            // PCNT tran hoac vua clearCount
-  int dir = (w.last_direction > 0) ? 1 : ((w.last_direction < 0) ? -1 : 0);
+  if (w.invert_enc) delta = -delta;
 
-  float revs   = dir * (float)delta / ENC_PULSES_PER_REV;
+  float revs   = (float)delta / ENC_PULSES_PER_REV;
   float rawRPM = revs * (60.0f / dt);
   w.dist_delta_m = revs * 2.0f * (float)M_PI * WHEEL_RADIUS_M;
 
@@ -887,9 +878,9 @@ void setup() {
   ledcAttach(R_ENB_PIN, PWM_FREQ, PWM_RES);
 
   wl.enc = &encL; wl.pin_in1 = L_IN1_PIN; wl.pin_in2 = L_IN2_PIN; wl.pin_pwm = L_ENA_PIN;
-  wl.invert_motor = INVERT_MOTOR_L;
+  wl.invert_motor = INVERT_MOTOR_L; wl.invert_enc = INVERT_ENC_L;
   wr.enc = &encR; wr.pin_in1 = R_IN1_PIN; wr.pin_in2 = R_IN2_PIN; wr.pin_pwm = R_ENB_PIN;
-  wr.invert_motor = INVERT_MOTOR_R;
+  wr.invert_motor = INVERT_MOTOR_R; wr.invert_enc = INVERT_ENC_R;
 
   // Ep trang thai ban dau: last_direction=0 nhung chan chua duoc dat -> ghi ro rang
   wl.last_direction = wr.last_direction = 99;   // khac 0 de lan goi dau tien thuc su ghi chan
@@ -902,11 +893,8 @@ void setup() {
   print_reset_reason();
 
   // --- Encoder ---
-  // Chan "level" ghim LOW -> PCNT luon dem tang. Bat ca dien tro keo xuong
-  // noi bo lam lop du phong neu day noi GND bi tuot.
-  ESP32Encoder::useInternalWeakPullResistors = puType::down;
-  encL.attachSingleEdge(ENC_L_A_PIN, ENC_DIR_PIN);
-  encR.attachSingleEdge(ENC_R_A_PIN, ENC_DIR_PIN);
+  encL.attachHalfQuad(ENC_L_A_PIN, ENC_L_B_PIN);
+  encR.attachHalfQuad(ENC_R_A_PIN, ENC_R_B_PIN);
   encL.setFilter(1023);
   encR.setFilter(1023);
   encL.clearCount();
@@ -996,9 +984,8 @@ void loop() {
 //
 // A1. Kiem tra encoder
 //     Nhac xe len, quay tay mot banh dung 10 vong. So "count" in ra phai doi
-//     ~6000 (= 10 * ENC_PULSES_PER_REV). Neu khac, sua ENC_PULSES_PER_REV.
-//     Encoder 1 kenh nen count TANG ca khi quay toi lan quay lui - dung cho
-//     do la loi. 600 chi la uoc luong tu 1200 cua attachHalfQuad, phai do that.
+//     ~12000 (= 10 * ENC_PULSES_PER_REV). Neu khac, sua ENC_PULSES_PER_REV.
+//     Neu count GIAM khi quay toi, dao INVERT_ENC_x.
 //
 // A2. Kiem tra chieu dong co
 //     Gui:  ros2 topic pub -r 10 /cmd_vel geometry_msgs/msg/Twist \
