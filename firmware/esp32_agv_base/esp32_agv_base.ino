@@ -141,11 +141,15 @@ const int I2C_SDA_PIN = 21;
 const int I2C_SCL_PIN = 22;
 #define BNO055_ADDR 0x29           // 0x28 neu chan ADR noi GND
 
-// --- YDLIDAR X2/X2L ---
-const uint8_t LIDAR_EN_PIN  = 19;
-const uint8_t LIDAR_PWM_PIN = 18;
-const uint8_t LIDAR_TX_PIN  = 17;  // ESP32 TX -> LiDAR RX
-const uint8_t LIDAR_RX_PIN  = 16;  // ESP32 RX <- LiDAR TX
+// --- YDLIDAR X2/X2L (loai 4 chan: VCC, GND, Tx, PWM) ---
+// LiDAR nay chi PHAT du lieu, khong nhan lenh: LDS_YDLIDAR_X2_X2L::start()
+// chi goi enableMotor(true) va khong ghi byte nao ra UART. Vi vay khong can
+// chan TX cua ESP32, cung khong can chan EN.
+//   -1 = khong cap phat chan nao (HardwareSerial::begin va callback deu hieu).
+const int8_t LIDAR_RX_PIN  = 16;   // ESP32 RX <- Tx cua LiDAR   (BAT BUOC)
+const int8_t LIDAR_PWM_PIN = 18;   // -> chan PWM cua LiDAR      (BAT BUOC)
+const int8_t LIDAR_TX_PIN  = -1;   // LiDAR khong co chan Rx     -> bo trong
+const int8_t LIDAR_EN_PIN  = -1;   // driver X2/X2L khong dung   -> bo trong
 
 // --- Dao chieu: sua neu lap nguoc ---
 // INVERT_MOTOR_x  : cap PWM duong ma banh chay lui
@@ -530,6 +534,10 @@ void lidar_error_callback(LDS::result_t c, String s){ Serial.printf("LiDAR error
 
 void lidar_motor_pin_callback(float value, LDS::lds_pin_t lidar_pin) {
   int pin = (lidar_pin == LDS::LDS_MOTOR_EN_PIN) ? LIDAR_EN_PIN : LIDAR_PWM_PIN;
+  // Chan dat -1 la chan khong noi day -> bo qua, dung goi pinMode(-1, ...).
+  // Chan EN roi vao day voi LiDAR 4 chan; neu doi sang YDLIDAR X4 (co dung EN)
+  // thi phai gan LIDAR_EN_PIN mot GPIO that.
+  if (pin < 0) return;
   if (value <= (float)LDS::DIR_INPUT) {
     if (value == (float)LDS::DIR_OUTPUT_PWM) {
       #if ESP_IDF_VERSION_MAJOR < 5
