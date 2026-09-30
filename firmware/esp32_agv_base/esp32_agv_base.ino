@@ -282,6 +282,7 @@ static volatile uint32_t t_imu_max  = 0;   // us - lau nhat 1 lan doc+gui IMU
 static volatile uint32_t t_pub_max  = 0;   // us - lau nhat 1 lan gui odom+tf
 static volatile uint32_t t_scan_max = 0;   // us - lau nhat 1 lan gui scan
 static volatile uint32_t t_loop_max = 0;   // us - lau nhat 1 vong ros_task
+static volatile uint32_t t_spin_max = 0;   // us - lau nhat 1 lan spin_some
 
 // --- IMU ---
 Adafruit_BNO055 bno = Adafruit_BNO055(55, BNO055_ADDR, &Wire);
@@ -729,6 +730,8 @@ void ros_task(void *pv) {
     uint32_t loop_t0 = micros();
     ros_loops++;
     rclc_executor_spin_some(&executor, RCL_MS_TO_NS(1));
+    uint32_t spin_dt = micros() - loop_t0;
+    if (spin_dt > t_spin_max) t_spin_max = spin_dt;
     publish_scan_if_ready();
 
     uint32_t now = millis();
@@ -813,6 +816,15 @@ static void init_microros() {
   RCCHECK(rclc_executor_init(&executor, &support.context, 1, &allocator));
   RCCHECK(rclc_executor_add_subscription(&executor, &cmd_vel_sub, &cmd_vel_msg,
                                          &cmd_vel_callback, ON_NEW_DATA));
+
+  // BAN SUA QUAN TRONG: rclc_executor_init dat executor->timeout_ns =
+  // DEFAULT_WAIT_TIMEOUT_NS = 1000 ms, va rclc_executor_spin_some BO QUA tham
+  // so timeout truyen vao, dung gia tri noi bo nay. Khi khong co /cmd_vel gui
+  // den (Nav2 chua chay), rcl_wait cho het 1000 ms moi vong -> ros_task chi
+  // chay 1 vong/giay -> moi topic tut xuong 1 Hz du rcl_publish luon tra ve OK.
+  // Do duoc tren phan cung: ca_vong = 999633 us, trong khi tong cac khau
+  // publish chi ~9 ms.
+  RCCHECK(rclc_executor_set_timeout(&executor, RCL_MS_TO_NS(1)));
   RCCHECK(rmw_uros_sync_session(1000));
 
   // --- Cap bo nho tinh cho cac message (micro-ROS khong tu cap phat) ---
@@ -1016,14 +1028,15 @@ void loop() {
     //   ros_task/s thap  -> vong lap bi block, xem cot "max us" nao lon nhat
     //   pub/s thap ma moi cot max deu nho -> nghen o tang truyen micro-ROS
     Serial.printf("      ros_task %lu vong/s | pub/s: scan %lu odom %lu imu %lu"
-                  " | max us: imu %lu, odom %lu, scan %lu, ca_vong %lu\n",
+                  " | max us: spin %lu, imu %lu, odom %lu, scan %lu, ca_vong %lu\n",
                   (unsigned long)ros_loops,
                   (unsigned long)pub_scan, (unsigned long)pub_odom,
                   (unsigned long)pub_imu,
+                  (unsigned long)t_spin_max,
                   (unsigned long)t_imu_max, (unsigned long)t_pub_max,
                   (unsigned long)t_scan_max, (unsigned long)t_loop_max);
     ros_loops = pub_scan = pub_odom = pub_imu = 0;
-    t_imu_max = t_pub_max = t_scan_max = t_loop_max = 0;
+    t_imu_max = t_pub_max = t_scan_max = t_loop_max = t_spin_max = 0;
   }
 }
 
