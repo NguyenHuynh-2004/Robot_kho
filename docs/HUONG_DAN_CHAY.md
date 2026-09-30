@@ -387,8 +387,15 @@ ros2 launch my_bot_bringup bringup_real.launch.py
 
 Kiểm tra dữ liệu lên đủ:
 ```bash
-cd ~/robot_ws_3 && python3 tools/check_esp32_rates.py
+cd ~/robot_ws_3
+python3 tools/check_qos.py          # QoS có khớp không
+python3 tools/check_tf.py           # cây TF có frame "odom" không
+python3 tools/check_esp32_rates.py  # nhịp và độ trễ
 ```
+
+`check_tf.py` **phải** in `odom -> lidar_link  OK`. Không có frame `odom` thì
+mọi thứ phía sau vô nghĩa: slam_toolbox sẽ loại sạch scan và không bao giờ
+sinh ra bản đồ, còn RViz báo `Frame [map] does not exist`.
 
 Mong đợi: `/scan` ~8.7 Hz, `/odom` `/imu/data` `/tf` ~50 Hz, và `lech stamp`
 trung vị trong khoảng **−150 → +150 ms**.
@@ -446,6 +453,7 @@ Row tăng = đi lên (+Y), Col tăng = sang phải (+X).
 | Nav2 báo `message too old` / `extrapolation`, stamp cách nhau đúng 1000 ms | đồng hồ trong `rmw_uros_epoch_nanos()` chỉ có độ phân giải **1 giây** | đã sửa: firmware neo epoch rồi tự chạy bằng `esp_timer`. Kiểm dòng boot `Dong ho: tick1 … sync -> 0, tick2 …` |
 | Stamp đúng nhịp nhưng cả cụm trễ ~1 giây | `sync_session` tính offset từ chính đồng hồ 1 giây đó nên **offset sai tới 1 giây** | đã sửa: chờ đúng cạnh tick rồi mới `sync_session` |
 | `E (318) gpio: gpio_pulldown_en(123)` lúc boot | ESP32Encoder bật điện trở kéo trên GPIO 34/35 — hai chân chỉ-vào, không có điện trở nội | bỏ qua. Nhưng encoder hở cực thu thì **phải** có 10kΩ kéo lên ngoài |
+| RViz: `Frame [map] does not exist` + `No map received`, log đầy `Message Filter dropping message: frame 'lidar_link' … queue is full` | **lệch QoS trên `/tf`**: firmware phát best-effort còn `tf2_ros::TransformListener` luôn subscribe reliable → tf2 không nhận gì → frame `odom` không tồn tại → slam_toolbox loại sạch scan | đã sửa: `/tf` và `/odom` đổi sang `rclc_publisher_init_default` (reliable). Kiểm bằng `python3 tools/check_qos.py` |
 | Cột `sync` có đỉnh ~600000 | `ping_agent` chặn | bình thường **khi xe đứng yên**; firmware tắt ping khi có `/cmd_vel` |
 
 > Lỗi hay gặp nhất ở Chế độ B là **quên `use_sim_time:=false`**. Node đó sẽ

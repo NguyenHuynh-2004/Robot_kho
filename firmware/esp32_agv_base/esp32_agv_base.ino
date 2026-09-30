@@ -894,15 +894,26 @@ static void init_microros() {
   RCCHECK(rclc_support_init_with_options(&support, 0, NULL, &init_options, &allocator));
   RCCHECK(rclc_node_init_default(&node, node_name, "", &support));
 
-  // /scan: best-effort - message <= MTU nen di gon 1 datagram, khong cho ACK,
-  // giu duoc dung nhip quay cua LiDAR.
+  // QoS PHAI khop ben nhan, khong thi ROS 2 KHONG chuyen mot message nao va
+  // cung khong bao loi o cho de thay. Da dinh dung bay nay tren xe that: ca 4
+  // topic deu de best-effort -> tf2 khong nhan duoc gi -> frame "odom" khong
+  // ton tai -> slam_toolbox loai sach scan ("Message Filter dropping message:
+  // frame 'lidar_link' ... queue is full") -> khong bao gio co ban do.
+  //
+  //   /scan, /imu/data : ben nhan dung SensorDataQoS = BEST_EFFORT  -> giu
+  //   /tf              : tf2_ros::TransformListener luon RELIABLE   -> phai doi
+  //   /odom            : nav2_util::OdomSmoother dung SystemDefaultsQoS
+  //                      = RELIABLE                                 -> phai doi
+  //
+  // /scan giu best-effort con vi ly do khac: message <= MTU nen di gon 1
+  // datagram, khong cho ACK, giu duoc dung nhip quay cua LiDAR.
   RCCHECK(rclc_publisher_init_best_effort(&scan_pub, &node,
       ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, LaserScan), "scan"));
-  RCCHECK(rclc_publisher_init_best_effort(&odom_pub, &node,
-      ROSIDL_GET_MSG_TYPE_SUPPORT(nav_msgs, msg, Odometry), "odom"));
   RCCHECK(rclc_publisher_init_best_effort(&imu_pub, &node,
       ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, Imu), "imu/data"));
-  RCCHECK(rclc_publisher_init_best_effort(&tf_pub, &node,
+  RCCHECK(rclc_publisher_init_default(&odom_pub, &node,
+      ROSIDL_GET_MSG_TYPE_SUPPORT(nav_msgs, msg, Odometry), "odom"));
+  RCCHECK(rclc_publisher_init_default(&tf_pub, &node,
       ROSIDL_GET_MSG_TYPE_SUPPORT(tf2_msgs, msg, TFMessage), "tf"));
 
   RCCHECK(rclc_subscription_init_best_effort(&cmd_vel_sub, &node,
