@@ -146,6 +146,41 @@ Sửa các giá trị đầu file:
 > Hai giá trị `WHEEL_*` hiện là số đặt tạm. Sai hai số này thì odometry sai và
 > Nav2 vô dụng. Quy trình hiệu chỉnh nằm ở **Phụ lục A** trong file firmware.
 
+### Bấm nút BOOT khi nạp
+
+Bo CH340 này **không tự vào chế độ nạp**. Khi Arduino IDE hiện
+`Connecting....`, **giữ nút BOOT** cho tới khi thanh tiến trình chạy. Không giữ
+thì báo:
+
+```
+A fatal error occurred: Failed to connect to ESP32:
+Wrong boot mode detected (0x13)! The chip needs to be in download mode.
+```
+
+### Nạp xong phải thấy 5 dòng này
+
+Mở **Serial Monitor 115200**, nhấn nút EN để khởi động lại, rồi soi:
+
+```
+>>> Reset: CAP NGUON                                  ← nếu là SUT AP thì lỗi nguồn
+Wi-Fi OK, IP xe: 192.168.1.150
+Da thay agent!                                        ← chưa có nghĩa là agent chưa chạy
+Dong ho: tick1 549 ms, sync -> 0, tick2 990 ms        ← sync phải = 0
+LiDAR start(): OK
+```
+
+Riêng 4 dòng lỗi này là **bình thường, bỏ qua**:
+
+```
+E (318) gpio: gpio_pulldown_en(123): GPIO number error (input-only pad has no internal PD)
+E (324) gpio: gpio_pullup_en(85):   GPIO number error (input-only pad has no internal PU)
+```
+
+Thư viện ESP32Encoder cố bật điện trở kéo trên GPIO 34/35, mà hai chân đó chỉ
+vào được nên không có điện trở nội. Vô hại — nhưng đúng như cảnh báo ở mục
+Encoder bên dưới: **nếu encoder của bạn là loại hở cực thu thì kênh B bắt buộc
+phải có điện trở 10kΩ kéo lên ngoài**, không thì odometry loạn.
+
 ## B2. Nối dây — 14 chân
 
 ### L298N (động cơ)
@@ -241,6 +276,7 @@ Mở **Serial Monitor 115200** và làm lần lượt. Đừng nhảy bước.
 | 2 | Bơm lệnh tiến (xem lệnh dưới) | **cả hai bánh quay tiến**. Bánh nào lùi → đảo `INVERT_MOTOR_x` |
 | 3 | Xoay xe 90° trong ~1 giây | `gyroZ` ≈ **1.57** |
 | 4 | Đọc log | `scan 8.5 Hz` và vài trăm điểm/vòng |
+| 5 | Đọc dòng thứ hai (dòng chẩn đoán) | `pub/s: scan 8 odom 50 imu 50` |
 
 Lệnh cho bước 2 (xe **sẽ chạy** — kê bánh lên khỏi mặt đất trước):
 
@@ -248,7 +284,33 @@ Lệnh cho bước 2 (xe **sẽ chạy** — kê bánh lên khỏi mặt đất 
 ros2 topic pub -r 10 /cmd_vel geometry_msgs/msg/Twist "{linear: {x: 0.1}}"
 ```
 
-Cả 4 bước đúng rồi mới hiệu chỉnh `WHEEL_RADIUS_M` / `WHEEL_SEPARATION_M`.
+Cả 5 bước đúng rồi mới hiệu chỉnh `WHEEL_RADIUS_M` / `WHEEL_SEPARATION_M`.
+
+### Đọc dòng chẩn đoán
+
+Mỗi giây firmware in **hai** dòng. Dòng thứ hai là để soi hiệu năng:
+
+```
+ros_task 605 vong/s | pub/s: scan 9 odom 50 imu 50 | max us: spin 1145, imu 6983,
+                              odom 3592, scan 1752, sync 6, ca_vong 10061
+```
+
+| Cột | Bình thường | Nghĩa khi lệch |
+|---|---|---|
+| `ros_task …/s` | 500–700 | thấp → vòng lặp bị chặn, soi cột `max us` nào lớn nhất |
+| `pub/s scan` | 8–9 | đây là nhịp quay LiDAR, không phải 50 |
+| `pub/s odom` / `imu` | 49–50 | thấp hơn → xem `ca_vong` |
+| `spin` | < 2000 | ~980000 → lỗi `spin_some` chặn, xem Bảng tra sự cố |
+| `imu` | 5000–9000 | lớn hơn → dây I2C dài/nhiễu |
+| `sync` | < 300 | ~600000 là `ping_agent` chặn — **chỉ xảy ra khi xe đứng yên**, xem bên dưới |
+| `ca_vong` | 8000–12000 | 750000 → có lệnh chặn trong vòng lặp |
+| `loi pub` (dòng 1) | 0 | > 0 → message vượt MTU hoặc hết bộ đệm |
+
+> **Về cột `sync`:** `rmw_uros_ping_agent` không tôn trọng timeout, đo được nó
+> chặn tới 1050 ms. Nhưng khi có `/cmd_vel` về thì điều đó tự chứng minh agent
+> còn sống, nên firmware **tắt ping** trong lúc đang được điều khiển. Vì vậy
+> đỉnh `sync ~600000` lúc xe đứng yên là **bình thường**; nếu nó vẫn xuất hiện
+> trong lúc Nav2 hoặc tay cầm đang lái thì mới là bất thường.
 
 ## B4. Vẽ bản đồ phòng thật
 
@@ -325,9 +387,17 @@ ros2 launch my_bot_bringup bringup_real.launch.py
 
 Kiểm tra dữ liệu lên đủ:
 ```bash
-ros2 topic hz /scan     # ~8.5 Hz
-ros2 topic hz /odom     # ~50 Hz
+cd ~/robot_ws_3 && python3 tools/check_esp32_rates.py
 ```
+
+Mong đợi: `/scan` ~8.7 Hz, `/odom` `/imu/data` `/tf` ~50 Hz, và `lech stamp`
+trung vị trong khoảng **−150 → +150 ms**.
+
+> **Đừng đo bằng node tự viết subscribe cả 4 topic một lúc.** Subscriber Python
+> đọc không kịp 200 msg/s, message dồn hàng đợi, và nó báo sai *cả* nhịp *lẫn*
+> độ trễ — tôi đã bị chính lỗi này: đo ra 14 Hz / trễ 798 ms, trong khi thực tế
+> là 50 Hz / trễ −40 ms. Dấu hiệu nhận ra: khoảng giữa hai lần *nhận* ngắn hơn
+> chu kỳ phát (10.7 ms so với 20 ms) — tức đang đọc từ đống tồn.
 
 **Terminal 2** — Nav2:
 ```bash
@@ -370,7 +440,13 @@ Row tăng = đi lên (+Y), Col tăng = sang phải (+X).
 | ESP32 reset liên tục | sụt áp | Serial báo `SUT AP (brownout)` → chưa tách nguồn động cơ |
 | Xe chỉ full tốc hoặc dừng | jumper ENA/ENB còn nguyên | tháo ra |
 | Tay cầm không tác dụng | `joy_node` đang chạy | phải thêm `start_joy_node:=false` |
-| `ros2 topic echo` báo không có publisher dù topic tồn tại | lỗi discovery của **CLI** `ros2` trong WSL | dùng `ros2 topic hz`, hoặc viết node rclpy để đo |
+| `ros2 topic echo` báo không có publisher dù topic tồn tại | lỗi discovery của **CLI** `ros2` trong WSL | dùng `tools/check_esp32_rates.py` |
+| `Connecting....` rồi `Wrong boot mode detected (0x13)` | bo CH340 không tự vào chế độ nạp | **giữ nút BOOT** lúc đang `Connecting....` |
+| Mọi topic chỉ ~1 Hz, cột `spin` ~980000 | `rclc_executor_spin_some` **chặn tới khi có dữ liệu đến**, không tôn trọng timeout → mọi thứ publish sau nó tụt xuống nhịp của `/cmd_vel` | firmware đã truyền timeout `0`; nếu tái diễn thì kiểm dòng `rclc_executor_set_timeout -> 0 (OK)` |
+| Nav2 báo `message too old` / `extrapolation`, stamp cách nhau đúng 1000 ms | đồng hồ trong `rmw_uros_epoch_nanos()` chỉ có độ phân giải **1 giây** | đã sửa: firmware neo epoch rồi tự chạy bằng `esp_timer`. Kiểm dòng boot `Dong ho: tick1 … sync -> 0, tick2 …` |
+| Stamp đúng nhịp nhưng cả cụm trễ ~1 giây | `sync_session` tính offset từ chính đồng hồ 1 giây đó nên **offset sai tới 1 giây** | đã sửa: chờ đúng cạnh tick rồi mới `sync_session` |
+| `E (318) gpio: gpio_pulldown_en(123)` lúc boot | ESP32Encoder bật điện trở kéo trên GPIO 34/35 — hai chân chỉ-vào, không có điện trở nội | bỏ qua. Nhưng encoder hở cực thu thì **phải** có 10kΩ kéo lên ngoài |
+| Cột `sync` có đỉnh ~600000 | `ping_agent` chặn | bình thường **khi xe đứng yên**; firmware tắt ping khi có `/cmd_vel` |
 
 > Lỗi hay gặp nhất ở Chế độ B là **quên `use_sim_time:=false`**. Node đó sẽ
 > chờ `/clock` mãi mãi mà không in bất cứ thông báo nào.
@@ -387,15 +463,43 @@ tại (-3.98, 0.24).
 
 | Topic | Frame | Dữ liệu |
 |---|---|---|
-| `/scan` | `lidar_link` | 320 tia, ~200 tia hợp lệ, 0.55–5.92m, lidar quay 8.5 Hz |
+| `/scan` | `lidar_link` | 320 tia, ~230 tia hợp lệ, 0.18–7.89m, lidar quay 8.7 Hz |
 | `/odom` | `odom`→`base_footprint` | x/y/yaw/v/w đúng định dạng |
-| `/imu/data` | `imu_link` | gyro ≈ 0 khi đứng yên, \|accel\| = 10.08 m/s² (trọng lực) |
+| `/imu/data` | `imu_link` | gyro ≈ 0 khi đứng yên, \|accel\| = 10.12 m/s² (trọng lực) |
 | `/tf` | `odom`→`base_footprint` | đúng |
 
-**Vấn đề đang tồn tại:** cả 4 topic chỉ phát ~**1 Hz** thay vì 50 Hz
-(`/odom`, `/imu/data`, `/tf`) và 8.5 Hz (`/scan`). Dấu thời gian trong message
-cách nhau ~967 ms nên đây là phía ESP32 chậm, không phải công cụ đo. Nav2 cần
-odometry ≥ 20 Hz nên **phải sửa trước khi chạy B5**. Xem mục kế tiếp.
+### Ba lỗi đã tìm ra và sửa trên phần cứng thật
 
-**Chưa kiểm chứng:** giao diện Gazebo/RViz (tôi chạy không màn hình), toàn bộ
-quy trình SLAM trên xe thật, và việc xe di chuyển theo `/cmd_vel`.
+| | trước | sau |
+|---|---|---|
+| nhịp phát `/odom` `/imu` `/tf` | 1 Hz | **50 Hz** |
+| nhịp phát `/scan` | 1 Hz | **8.7 Hz** |
+| độ phân giải stamp | 1000 ms | **20 ms** |
+| stamp lệch đồng hồ máy | +1158 ms | **−40 ms** (trung vị) |
+| `ca_vong` lâu nhất | 751 000 µs | 8 000–12 000 µs |
+
+1. **`rclc_executor_spin_some` chặn tới khi có dữ liệu đến**, không tôn trọng
+   timeout. Đo được `spin` = 965–990 ms trong một vòng ~1000 ms. Mọi thứ publish
+   nằm sau nó nên toàn bộ topic tụt xuống nhịp của `/cmd_vel`. Truyền timeout
+   `0` thì `spin` xuống 500–2000 µs.
+2. **`rmw_uros_epoch_nanos()` chỉ có độ phân giải 1 giây.** Chứng minh bằng cách
+   in stamp thô: trường `nanosec` đứng yên hàng chục giây, chỉ `sec` tăng, và
+   chỉ đổi đúng lúc `sync_session()` chạy. 50 message trong một giây mang y hệt
+   một mốc thời gian. Sửa: neo epoch một lần rồi tự chạy bằng `esp_timer`.
+3. **Chính cái offset của `sync_session` cũng sai tới 1 giây**, vì nó tính
+   `((t2-t1)+(t3-t4))/2` với `t1`/`t4` đọc từ đúng đồng hồ 1 giây đó. Sửa: chờ
+   đúng khoảnh khắc đồng hồ thô vừa nhảy (lúc đó nó đúng) rồi mới `sync_session`.
+
+### Chưa kiểm chứng
+
+- **Xe di chuyển theo `/cmd_vel`** — chưa bao giờ thử, xe vẫn đang đứng yên.
+- **Việc tắt ping khi đang được điều khiển.** Firmware chỉ chạy
+  `ping_agent`/`sync_session` khi mất `/cmd_vel` quá hạn. Lúc xe đứng yên thì
+  điều kiện đó luôn đúng nên vẫn thấy `sync ~600000` mỗi 5 giây — đúng như
+  thiết kế. Nhưng **chưa có ai xác nhận nó im lúc đang lái**: cần chạy B4 hoặc
+  B5 rồi soi cột `sync`.
+- Vẫn còn **14 khoảng trống > 200 ms trong 20 giây** (lớn nhất 866 ms) lúc xe
+  đứng yên. Khoảng 4 cái là các lần ping nói trên; số còn lại chưa quy được cho
+  ai — có thể vẫn là công cụ đo hoặc WSL.
+- Giao diện Gazebo/RViz (chạy không màn hình) và toàn bộ quy trình SLAM trên xe
+  thật.
