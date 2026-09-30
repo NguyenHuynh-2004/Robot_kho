@@ -23,6 +23,7 @@ import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
+from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
@@ -42,6 +43,11 @@ def generate_launch_description():
                               description='Topic nhan lenh toc do'),
         DeclareLaunchArgument('use_sim_time', default_value='false',
                               description='true khi lai xe trong Gazebo'),
+        # Tren WSL phai dat false: kernel khong co driver joystick nen joy_node
+        # khong bao gio thay tay cam. Thay vao do chay tools/joy_udp_bridge.py
+        # de nhan du lieu tu tools/windows_gamepad_bridge.py ben Windows.
+        DeclareLaunchArgument('start_joy_node', default_value='true',
+                              description='false neu /joy do joy_udp_bridge.py phat (WSL)'),
 
         # Doc tay cam -> /joy. Qua SDL2 nen dung /dev/input/event*,
         # khong can /dev/input/js0 (kernel WSL khong co joydev).
@@ -52,6 +58,7 @@ def generate_launch_description():
             parameters=[params_file,
                         {'device_id': device_id, 'use_sim_time': use_sim_time}],
             output='screen',
+            condition=IfCondition(LaunchConfiguration('start_joy_node')),
         ),
 
         # /joy -> /cmd_vel
