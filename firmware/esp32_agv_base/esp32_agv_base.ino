@@ -271,6 +271,18 @@ static SemaphoreHandle_t buf_mutex;
 static volatile uint32_t scans_done = 0, points_in_scan = 0, points_last_scan = 0;
 static volatile uint32_t publish_failed = 0;
 
+// --- Do luong de tim nut co chai (in ra Serial moi giay) ---
+// ros_task chi day duoc ~4 message/giay ra khoi chip du rcl_publish luon tra
+// ve OK. Dem rieng tung khau de biet cham o dau chu khong doan.
+static volatile uint32_t ros_loops  = 0;   // so vong ros_task / giay
+static volatile uint32_t pub_scan   = 0;   // so lan publish OK / giay
+static volatile uint32_t pub_odom   = 0;
+static volatile uint32_t pub_imu    = 0;
+static volatile uint32_t t_imu_max  = 0;   // us - lau nhat 1 lan doc+gui IMU
+static volatile uint32_t t_pub_max  = 0;   // us - lau nhat 1 lan gui odom+tf
+static volatile uint32_t t_scan_max = 0;   // us - lau nhat 1 lan gui scan
+static volatile uint32_t t_loop_max = 0;   // us - lau nhat 1 vong ros_task
+
 // --- IMU ---
 Adafruit_BNO055 bno = Adafruit_BNO055(55, BNO055_ADDR, &Wire);
 static volatile bool  imu_ok = false;
@@ -631,7 +643,11 @@ static void publish_scan_if_ready() {
   scan_msg.range_max       = RANGE_MAX_M;
   // range == 0 nam ngoai [range_min, range_max] -> Nav2/RViz tu bo qua tia rong
 
+  uint32_t t0 = micros();
   if (rcl_publish(&scan_pub, &scan_msg, NULL) != RCL_RET_OK) publish_failed++;
+  else pub_scan++;
+  uint32_t dt = micros() - t0;
+  if (dt > t_scan_max) t_scan_max = dt;
 }
 
 static void publish_odom_and_tf() {
@@ -644,6 +660,7 @@ static void publish_odom_and_tf() {
   float qz = sinf(th * 0.5f);
   float qw = cosf(th * 0.5f);
 
+  uint32_t t0 = micros();
   fill_stamp(&odom_msg.header.stamp);
   odom_msg.pose.pose.position.x    = x;
   odom_msg.pose.pose.position.y    = y;
@@ -655,6 +672,7 @@ static void publish_odom_and_tf() {
   odom_msg.twist.twist.linear.x    = v;
   odom_msg.twist.twist.angular.z   = w;
   if (rcl_publish(&odom_pub, &odom_msg, NULL) != RCL_RET_OK) publish_failed++;
+  else pub_odom++;
 
   // TF odom -> base_footprint (thay cho tf_topic cua plugin DiffDrive)
   tf_transforms[0].header.stamp            = odom_msg.header.stamp;
@@ -666,10 +684,13 @@ static void publish_odom_and_tf() {
   tf_transforms[0].transform.rotation.z    = qz;
   tf_transforms[0].transform.rotation.w    = qw;
   if (rcl_publish(&tf_pub, &tf_msg, NULL) != RCL_RET_OK) publish_failed++;
+  uint32_t dt = micros() - t0;
+  if (dt > t_pub_max) t_pub_max = dt;
 }
 
 static void read_and_publish_imu() {
   if (!imu_ok) return;
+  uint32_t t0 = micros();
 
   // getVector tra ve deg/s cho gyro va m/s^2 cho gia toc.
   imu::Vector<3> g = bno.getVector(Adafruit_BNO055::VECTOR_GYROSCOPE);
@@ -691,6 +712,9 @@ static void read_and_publish_imu() {
   imu_msg.linear_acceleration.y = a.y();
   imu_msg.linear_acceleration.z = a.z();
   if (rcl_publish(&imu_pub, &imu_msg, NULL) != RCL_RET_OK) publish_failed++;
+  else pub_imu++;
+  uint32_t dt = micros() - t0;
+  if (dt > t_imu_max) t_imu_max = dt;   // gom ca 3 lan doc I2C
 }
 
 // ============================================================================
@@ -702,6 +726,8 @@ void ros_task(void *pv) {
   int ping_fail = 0;
 
   for (;;) {
+    uint32_t loop_t0 = micros();
+    ros_loops++;
     rclc_executor_spin_some(&executor, RCL_MS_TO_NS(1));
     publish_scan_if_ready();
 
@@ -727,6 +753,9 @@ void ros_task(void *pv) {
         }
       } else ping_fail = 0;
     }
+
+    uint32_t loop_dt = micros() - loop_t0;
+    if (loop_dt > t_loop_max) t_loop_max = loop_dt;
 
     vTaskDelay(1 / portTICK_PERIOD_MS);
   }
@@ -982,6 +1011,19 @@ void loop() {
                   wl.output_pwm, wr.output_pwm,
                   x, y, th * 180.0f / (float)M_PI,
                   gyro_z_rps, (unsigned long)publish_failed);
+
+    // Dong DO LUONG - cho biet ros_task cham o khau nao:
+    //   ros_task/s thap  -> vong lap bi block, xem cot "max us" nao lon nhat
+    //   pub/s thap ma moi cot max deu nho -> nghen o tang truyen micro-ROS
+    Serial.printf("      ros_task %lu vong/s | pub/s: scan %lu odom %lu imu %lu"
+                  " | max us: imu %lu, odom %lu, scan %lu, ca_vong %lu\n",
+                  (unsigned long)ros_loops,
+                  (unsigned long)pub_scan, (unsigned long)pub_odom,
+                  (unsigned long)pub_imu,
+                  (unsigned long)t_imu_max, (unsigned long)t_pub_max,
+                  (unsigned long)t_scan_max, (unsigned long)t_loop_max);
+    ros_loops = pub_scan = pub_odom = pub_imu = 0;
+    t_imu_max = t_pub_max = t_scan_max = t_loop_max = 0;
   }
 }
 
