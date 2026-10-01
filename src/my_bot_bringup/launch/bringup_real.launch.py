@@ -78,21 +78,23 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'agent_port', default_value='8888',
             description='Phai khop AGENT_PORT trong esp32_agv_base.ino'),
-        # Dang la ban kinh HINH HOC (duong kinh banh 64.5 mm), CHUA hieu chinh.
+        # DA HIEU CHINH, va lan nay bang phep do LAP LAI DUOC.
         #
-        # Da thu hieu chinh va phai bo: hai lan do chay thang 2.00 m voi cung
-        # mot cau hinh cho hai ket qua khac han nhau,
-        #       lan 1: odom 1.955 m   (he so 1.023)
-        #       lan 2: odom 3.494 m   (he so 0.572)
-        # tuc gap 1.79 lan. Phep do khong lap lai duoc nen khong con nao dung
-        # de ghi vao day. Giu so hinh hoc cho den khi co mot gia tri lap lai
-        # duoc qua nhieu lan do.
+        # Ba lan chay thang 2.00 m, sau khi da sua ENC_PULSES_PER_REV 1200->2150:
+        #       1.967 m   1.953 m   1.978 m     -> trung binh 1.966 m
+        # Tan mat 1.3%, nen ti so dang tin. He so 2.000/1.966 = 1.0173.
+        #       0.03225 * 1.0173 = 0.03281
         #
-        # Truoc khi do lai, lam check_encoder_ppr.py: quay tay banh thi khong
-        # co truot va khong phu thuoc viec danh dau vach, nen no tach duoc
-        # "encoder dem sai" ra khoi "banh truot / do sai quang duong".
+        # (Truoc khi sua hang so encoder, ba phep tuong tu cho 1.955 roi 3.494 m
+        #  - gap 1.79 lan - nen khong dung duoc. Chenh lech do chinh la
+        #  2150/1200 = 1.79.)
+        #
+        # LUU Y: day KHONG con la ban kinh vat ly. 0.03281 lon hon ban kinh hinh
+        # hoc 0.03225, trong khi lop bi nen thi phai cho so NHO hon. No la he so
+        # hieu chinh gop ca phan du cua ENC_PULSES_PER_REV (do duoc 2137-2166
+        # tuy banh, dang lam tron 2150). Doi dong co hay lop thi do lai.
         DeclareLaunchArgument(
-            'wheel_radius', default_value='0.03225',
+            'wheel_radius', default_value='0.03281',
             description='Ban kinh LAN cua banh sau (m). Hieu chinh bang '
                         'tools/check_odom_scale.py - KHONG phai nap lai chip'),
         DeclareLaunchArgument(

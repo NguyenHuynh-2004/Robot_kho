@@ -175,9 +175,12 @@ def main():
               f"--radius {new_r:.5f}")
         print(f"\n  He so {ratio:.4f} nay gop CA HAI nguon sai lech, khong tach")
         print(f"  duoc bang mot phep do: ban kinh LAN cua banh, va")
-        print(f"  ENC_PULSES_PER_REV (dang la 1200, lay tu sketch goc, chua ai")
-        print(f"  kiem). Tach bang buoc A1 trong Phu luc A cua firmware: nhac xe")
-        print(f"  len, quay tay mot banh dung 10 vong, count phai doi ~12000.")
+        print(f"  ENC_PULSES_PER_REV trong firmware. Tach bang:")
+        print(f"      python3 tools/check_encoder_ppr.py --turns 10")
+        print(f"  Quay tay thi khong co truot va khong phu thuoc viec danh vach,")
+        print(f"  nen no do rieng duoc phan encoder.")
+        print(f"\n  Neu he so lon hon ~1.2 thi dung chinh wheel_radius - do la")
+        print(f"  ENC_PULSES_PER_REV sai, phai sua trong firmware va nap lai.")
 
     if abs(lateral) > 0.1 or abs(dyaw) > 10:
         print(f"\n  LUU Y: doan chay khong thang (lech ngang {lateral:+.2f} m,")
