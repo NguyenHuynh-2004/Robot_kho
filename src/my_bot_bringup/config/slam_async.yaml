@@ -49,8 +49,14 @@ slam_toolbox:
     # General Parameters
     use_scan_matching: true
     use_scan_barycenter: true
-    minimum_travel_distance: 0.5
-    minimum_travel_heading: 0.5
+    # Xe phai di duoc bay nhieu met (hoac quay bay nhieu rad) thi slam_toolbox
+    # moi them MOT vong quet nua vao do thi. Mac dinh 0.5 la cho robot co lon
+    # chay trong nha xuong; voi xe 18 cm trong mot can phong thi qua thua, va
+    # no la nua con lai cua chuyen ban do day mang xam: it vi tri quan sat thi
+    # it luot tia di qua moi o, nen o khong bao gio vuot min_pass_through.
+    # 0.2 cho gap 2.5 lan so vong quet duoc dua vao.
+    minimum_travel_distance: 0.2
+    minimum_travel_heading: 0.2
     check_min_dist_and_heading_precisely: false
     scan_buffer_size: 10
     scan_buffer_maximum_scan_distance: 10.0
@@ -83,8 +89,21 @@ slam_toolbox:
     minimum_angle_penalty: 0.9
     minimum_distance_penalty: 0.5
     use_response_expansion: true
-    # O cua luoi chi duoc xet khi tia da di qua no it nhat bay nhieu lan.
-    min_pass_through: 3
+    # Karto.h UpdateCell(): o CHI duoc to - trang hay den deu vay - khi
+    #     cellPassCnt > min_pass_through
+    # khong thoa thi o giu nguyen Unknown (xam). Tuc day la nguong "bao nhieu
+    # lan tia phai di xuyen qua o thi moi dam ket luan gi ve no".
+    #
+    # Tung nang len 3 (= can >=4 luot) va do la sai: ban do day mang xam du
+    # LiDAR nhin toi. Ly do la mat do tia giam theo khoang cach. 320 tia tren
+    # 360 do = 0.0196 rad/tia, nen o khoang cach d hai tia lien nhau cach nhau
+    # d*0.0196 m. Voi o luoi 0.05 m:
+    #     d * 0.0196 > 0.05  ->  d > 2.55 m
+    # Xa hon 2.55 m la hai tia lien nhau NHAY COC qua o o giua: mot vong quet
+    # khong the cho mot o qua 1 luot, nhieu o khong duoc luot nao. Muon du 4
+    # luot thi o do phai duoc nhin tu >=4 vi tri khac nhau.
+    # Tra ve 2 (mac dinh cua Karto).
+    min_pass_through: 2
     # DAY LA NUT THAT cua chuyen "ban do day cham den roi rac".
     # O duoc to den khi  so lan trung / so lan di qua  >  nguong nay. Voi 0.1,
     # chi can 1 tia rac tren 9 lan di qua sach la o do thanh vat can vinh vien.
