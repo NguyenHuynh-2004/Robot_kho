@@ -156,10 +156,23 @@ const int8_t LIDAR_EN_PIN  = -1;   // driver X2/X2L khong dung   -> bo trong
 // --- Dao chieu: sua neu lap nguoc ---
 // INVERT_MOTOR_x  : cap PWM duong ma banh chay lui
 // INVERT_ENC_x    : banh chay toi ma so xung giam
-const bool INVERT_MOTOR_L = false;
-const bool INVERT_MOTOR_R = true;    // banh phai lap doi xung -> thuong phai dao
-const bool INVERT_ENC_L   = false;
-const bool INVERT_ENC_R   = true;
+//
+// Bo gia tri duoi day DO DUOC tren xe that, khong phai doan:
+//   /joy axes[1] = +1.00  ->  /cmd_vel linear.x = +0.250  ->  odom = +0.260
+// tuc lenh dung la TIEN, nhung xe chay LUI. Ca hai dong co lap nguoc, va
+// odometry khi do noi doi: bao tien trong khi xe lui.
+//
+// PHAI DAO CA BON CO CUNG LUC. Chi dao dong co thoi thi banh se quay nguoc
+// chieu PWM, wheel_check_protection phat hien sau 300 ms va kich ESTOP.
+// Ly do: bo cu von nhat quan (PID khong keu gi), nghia la xung encoder thô
+// dang khop voi chieu quay cu; lat chieu quay thi xung thô doi dau theo, nen
+// co encoder cung phai lat.
+//
+// Neu sau nay ban dao lai day o dau ra L298N thi nho tra bo nay ve nhu cu.
+const bool INVERT_MOTOR_L = true;
+const bool INVERT_MOTOR_R = false;
+const bool INVERT_ENC_L   = true;
+const bool INVERT_ENC_R   = false;
 
 // ============================================================================
 //  3. THONG SO DIEU KHIEN
