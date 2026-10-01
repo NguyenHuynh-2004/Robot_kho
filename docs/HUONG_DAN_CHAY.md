@@ -429,7 +429,69 @@ launch mới thấy.
 > lúc chạy Nav2 hãy đặt xe lại **đúng chỗ và đúng hướng** lúc bắt đầu vẽ. Không
 > thì dùng nút **2D Pose Estimate** trong RViz để chỉ cho nó.
 
-## B5. Chạy điều hướng
+## B5. Định vị trên bản đồ đã lưu (AMCL)
+
+Kiểm tra định vị **trước** khi để Nav2 tự lái. Bước này chỉ bật `map_server` +
+AMCL, không có bộ điều khiển nào phát `/cmd_vel`, nên lái tay thoải mái.
+
+> **Tắt slam_toolbox trước** (Ctrl-C ở terminal SLAM). Cả hai đều phát TF
+> `map → odom`; chạy chung thì hai nguồn giành nhau và xe nhảy qua lại trong RViz.
+
+**Terminal 1** — cầu nối ESP32 (đang chạy thì giữ nguyên):
+```bash
+ros2 launch my_bot_bringup bringup_real.launch.py
+```
+
+**Terminal 2** — bản đồ + AMCL:
+```bash
+ros2 launch my_bot_bringup localization.launch.py use_sim_time:=false
+```
+Log phải có `Managed nodes are active`. Bản đồ nạp tự động là `real_room_map`.
+
+**Terminal 3** — tay cầm hoặc bàn phím, như B4.
+
+**Terminal 4** — RViz:
+```bash
+rviz2 -d /opt/ros/jazzy/share/nav2_bringup/rviz/nav2_default_view.rviz
+```
+Fixed Frame = `map`. Điểm quét (đỏ) phải nằm **trùng tường đen** của bản đồ.
+Đám mũi tên xanh quanh xe (*Amcl Particle Swarm*) là các giả thuyết vị trí của
+AMCL: càng gom chặt thì nó càng chắc.
+
+### Vị trí ban đầu
+
+AMCL tự đặt xe ở `(0, 0, 0°)` của bản đồ (`set_initial_pose` trong
+`navigation.yaml`) — tức chỗ xe đứng lúc bắt đầu vẽ bản đồ. Đặt xe lại đúng chỗ
+và đúng hướng đó là xong.
+
+Nếu điểm quét lệch khỏi tường: bấm **2D Pose Estimate** trên thanh công cụ
+RViz, **bấm vào chỗ xe đang đứng thật trên bản đồ rồi kéo** theo hướng đầu xe,
+thả chuột. Chỉ cần gần đúng (±30 cm, ±20°) — AMCL tự tinh chỉnh khi xe chạy.
+
+> **AMCL chỉ sửa vị trí khi xe đã chạy ≥ 0.1 m hoặc quay ≥ 6°**
+> (`update_min_d` / `update_min_a`). Đứng yên thì đám hạt không co lại — đó
+> không phải lỗi. Cho xe quay tại chỗ một vòng là cách nhanh nhất để nó chốt.
+
+### Đo xem định vị có tốt không
+
+**Terminal 5**, rồi lái xe chậm đi khắp phòng, thỉnh thoảng dừng vài giây:
+```bash
+cd ~/robot_ws_3 && python3 tools/check_scan_fit.py --duration 90
+```
+Mỗi dòng in độ lệch giữa điểm quét và tường bản đồ, kèm độ bất định AMCL tự báo
+(`amcl ±x cm ±y độ`).
+
+| Kết quả | Nghĩa là |
+|---|---|
+| lệch trung vị < 0.05 m, amcl ± vài cm / vài độ | Định vị tốt — sang B6 |
+| lệch nhỏ lúc đứng, lớn lúc chạy | Trễ giữa hai lần AMCL sửa; vẫn dùng được |
+| amcl ± nhỏ nhưng lệch > 0.15 m | AMCL **tự tin mà sai chỗ** — đặt lại bằng 2D Pose Estimate |
+| amcl ± lớn mãi không giảm | Không khớp được tường — vị trí ban đầu sai quá xa, hoặc phòng đã thay đổi nhiều so với lúc vẽ |
+
+Định vị đạt rồi thì **Ctrl-C Terminal 2** trước khi sang B6:
+`navigation.launch.py` tự bật AMCL và map_server của riêng nó.
+
+## B6. Chạy điều hướng
 
 **Terminal 1** — cầu nối ESP32:
 ```bash
@@ -558,14 +620,16 @@ tại (-3.98, 0.24).
 
 ### Chưa kiểm chứng
 
-- **Xe di chuyển theo `/cmd_vel`** — chưa bao giờ thử, xe vẫn đang đứng yên.
+- **Nav2 tự lái xe thật (B6)** — chưa chạy lần nào. Lái tay qua `/cmd_vel` và
+  vẽ bản đồ bằng slam_toolbox (B4) thì đã chạy được trên xe thật.
+- **`grid_navigator.py --real`** vẫn dùng lưới của phòng Gazebo 10×10 m (điểm
+  tới ±4 m); phòng thật chỉ khoảng 6.3×5.3 m nên phải sửa lưới trước khi chạy.
 - **Việc tắt ping khi đang được điều khiển.** Firmware chỉ chạy
   `ping_agent`/`sync_session` khi mất `/cmd_vel` quá hạn. Lúc xe đứng yên thì
   điều kiện đó luôn đúng nên vẫn thấy `sync ~600000` mỗi 5 giây — đúng như
   thiết kế. Nhưng **chưa có ai xác nhận nó im lúc đang lái**: cần chạy B4 hoặc
-  B5 rồi soi cột `sync`.
+  B6 rồi soi cột `sync`.
 - Vẫn còn **14 khoảng trống > 200 ms trong 20 giây** (lớn nhất 866 ms) lúc xe
   đứng yên. Khoảng 4 cái là các lần ping nói trên; số còn lại chưa quy được cho
   ai — có thể vẫn là công cụ đo hoặc WSL.
-- Giao diện Gazebo/RViz (chạy không màn hình) và toàn bộ quy trình SLAM trên xe
-  thật.
+- Giao diện Gazebo/RViz (chạy không màn hình).

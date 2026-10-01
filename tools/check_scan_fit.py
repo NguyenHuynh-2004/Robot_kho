@@ -16,6 +16,11 @@ DOC KET QUA
                                                 ban do van dung
                       lech ca luc dung yen   -> uoc luong vi tri that su sai
 
+Khi chay voi localization.launch.py (AMCL) co them cot "amcl +-x cm +-y do":
+do lech chuan AMCL tu bao. Dinh vi tot khi ca hai nho (vai cm, vai do) VA
+anh quet trung tuong. AMCL tu tin (+- nho) ma anh quet van lech > 0.15 m
+nghia la no bam nham cho - dat lai bang "2D Pose Estimate".
+
 Thuan doc, khong publish gi."""
 import argparse
 import math
@@ -30,6 +35,7 @@ from rclpy.node import Node
 from rclpy.qos import (QoSDurabilityPolicy, QoSHistoryPolicy, QoSProfile,
                        QoSReliabilityPolicy)
 from rclpy.time import Time
+from geometry_msgs.msg import PoseWithCovarianceStamped
 from nav_msgs.msg import OccupancyGrid, Odometry
 from sensor_msgs.msg import LaserScan
 import tf2_ros
@@ -46,7 +52,14 @@ class F(Node):
         self.grid = None
         self.scan = None
         self.speed = 0.0
-
+        # Do bat dinh cua AMCL (khi chay localization.launch.py). Khi dung voi
+        # slam_toolbox thi topic nay khong co - cot do de trong.
+        self.amcl_std = None
+        self.create_subscription(
+            PoseWithCovarianceStamped, '/amcl_pose', self.cb_amcl,
+            QoSProfile(reliability=QoSReliabilityPolicy.RELIABLE,
+                       durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
+                       history=QoSHistoryPolicy.KEEP_LAST, depth=1))
         self.create_subscription(
             OccupancyGrid, '/map', self.cb_map,
             QoSProfile(reliability=QoSReliabilityPolicy.RELIABLE,
@@ -60,6 +73,11 @@ class F(Node):
             Odometry, '/odom', self.cb_odom,
             QoSProfile(reliability=QoSReliabilityPolicy.RELIABLE,
                        history=QoSHistoryPolicy.KEEP_LAST, depth=5))
+
+    def cb_amcl(self, m):
+        c = m.pose.covariance
+        self.amcl_std = (math.sqrt(max(c[0], 0.0)), math.sqrt(max(c[7], 0.0)),
+                         math.degrees(math.sqrt(max(c[35], 0.0))))
 
     def cb_map(self, m):
         self.grid = m
@@ -99,7 +117,8 @@ def main():
     while time.time() < end and (n.grid is None or n.scan is None):
         time.sleep(0.2)
     if n.grid is None:
-        print('Khong nhan duoc /map. slam_toolbox co dang chay khong?')
+        print('Khong nhan duoc /map. slam_toolbox (khi ve ban do) hoac '
+              'localization.launch.py (khi dinh vi) co dang chay khong?')
         rclpy.shutdown(); return
     if n.scan is None:
         print('Khong nhan duoc /scan.')
@@ -156,8 +175,12 @@ def main():
         p90 = float(np.percentile(d, 90))
         run = n.speed > MOVING
         (moving if run else still).append(med)
+        amcl = ''
+        if n.amcl_std is not None:
+            sx, sy, sth = n.amcl_std
+            amcl = f"   amcl +-{max(sx, sy)*100:4.1f} cm +-{sth:4.1f} do"
         print(f"{time.time()-t0:5.0f} {len(r):5d} {med:11.3f} m {p90:7.3f} "
-              f"{'dang chay' if run else 'dung yen':>12}")
+              f"{'dang chay' if run else 'dung yen':>12}{amcl}")
 
     print(f"\n=== tong ket ===")
     for ten, arr in (('dung yen', still), ('dang chay', moving)):

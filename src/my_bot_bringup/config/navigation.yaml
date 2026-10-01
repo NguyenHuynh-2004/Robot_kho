@@ -6,9 +6,32 @@ amcl:
     robot_model_type: "nav2_amcl::DifferentialMotionModel"
     max_particles: 2000
     min_particles: 500
-    # Xe luôn được spawn ở gốc toạ độ (gazebo.launch.py: create -z 0.1, x=y=yaw=0)
-    # nên khai báo sẵn vị trí ban đầu, khỏi phải bấm "2D Pose Estimate" trong RViz
-    # mỗi lần khởi động. Nếu đổi vị trí spawn thì phải sửa lại khối này cho khớp.
+
+    # Mo hinh nhieu odometry. Mac dinh Nav2 la 0.2 cho ca bon, tuc gia dinh
+    # odometry sai toi 20%. Xe nay DA DO:
+    #   goc     ~1%  (tools/check_lidar_angle.py, doi chieu anh quet qua 683 do:
+    #                 quaternion -1.01, gyro -0.99)
+    #   quang duong ~2% sau hieu chinh (ba lan chay 2.00 m: 1.967/1.953/1.978)
+    # Gia dinh qua long lam dam hat tan rong va vi tri uoc luong rung. 0.1 van
+    # chua bien 5-10 lan sai so do duoc, phong banh truot tren gach bong.
+    #   alpha1: nhieu GOC do QUAY    alpha2: nhieu GOC do TINH TIEN
+    #   alpha3: nhieu TINH TIEN do TINH TIEN   alpha4: nhieu TINH TIEN do QUAY
+    alpha1: 0.1
+    alpha2: 0.1
+    alpha3: 0.1
+    alpha4: 0.1
+
+    # AMCL chi chay mot buoc loc sau khi xe di bay nhieu. Mac dinh 0.25 m / 0.2
+    # rad - o 0.25 m/s la mot giay moi sua mot lan, qua thua cho phong 6x5 m va
+    # xe 18 cm.
+    update_min_d: 0.1
+    update_min_a: 0.1
+
+    # Vi tri ban dau AMCL tu dat khi khoi dong, khoi phai bam "2D Pose Estimate".
+    #   Gazebo : xe luon spawn o goc (gazebo.launch.py: x=y=yaw=0).
+    #   Xe that: goc ban do = cho xe dung LUC BAT slam_toolbox khi ve ban do.
+    #            Dat xe lai DUNG CHO VA DUNG HUONG do truoc khi chay. Khong duoc
+    #            thi dung "2D Pose Estimate" trong RViz.
     set_initial_pose: true
     initial_pose:
       x: 0.0
