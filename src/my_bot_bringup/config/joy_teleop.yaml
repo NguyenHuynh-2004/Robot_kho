@@ -32,12 +32,22 @@ teleop_twist_joy_node:
     # nen turbo dat dung tran do.
     scale_linear:
       x: 0.25
+    # Toc do quay tang theo yeu cau: 0.8 -> 1.2, turbo 1.5 -> 2.0 rad/s.
+    # Tran vat ly la 2*v_max/wheel_separation = 2*0.405/0.200 = 4.05 rad/s,
+    # nen con xa moi cham tran.
+    #
+    # DANH DOI khi VE BAN DO: LiDAR quay 8.6 Hz nen moi vong quet mat 0.116 s,
+    # va firmware khong bu chuyen dong trong vong quet do. Quay cang nhanh thi
+    # anh quet cang bi nhoe:
+    #     0.8 rad/s -> 5.3 do      1.2 rad/s -> 8.0 do     2.0 rad/s -> 13.3 do
+    # Luc ve ban do nen quay cham (dung turbo); turbo de danh cho luc di chuyen
+    # xe sang cho khac.
     scale_angular:
-      yaw: 0.8
+      yaw: 1.2
     scale_linear_turbo:
       x: 0.5
     scale_angular_turbo:
-      yaw: 1.5
+      yaw: 2.0
 
     # Nut chet: phai GIU moi di duoc. Tha ra la xe dung.
     # Day la lop an toan quan trong khi lai xe that - can bi keo lech hay

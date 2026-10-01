@@ -320,6 +320,7 @@ static volatile uint32_t t_sync_max = 0;   // us - lau nhat 1 lan sync_session+p
 Adafruit_BNO055 bno = Adafruit_BNO055(55, BNO055_ADDR, &Wire);
 static volatile bool  imu_ok = false;
 static volatile float gyro_z_rps = 0.0f;   // rad/s, motor_task doc de tich phan yaw
+static float gyro_z_bias = 0.0f;           // rad/s, do luc khoi dong roi tru di
 
 // --- Dong co / encoder ---
 ESP32Encoder encL, encR;
@@ -787,6 +788,42 @@ static void publish_odom_and_tf() {
   if (dt > t_pub_max) t_pub_max = dt;
 }
 
+// Do do lech khong cua gyro Z luc khoi dong, luc xe chac chan dung yen.
+//
+// odom_update() tich phan gyro_z de ra goc quay (USE_GYRO_FOR_YAW = 1), va
+// phep tich phan khong tha thu cho bias: lech 0.005 rad/s la odom tu quay
+// them 17 do moi phut du xe khong nhuc nhich. Dung nhu trieu chung "chay dau
+// thi khop, cang lau cang lech, quay ve cho cu thi sai vi tri".
+//
+// Do moi lan khoi dong chu khong de hang so chet, vi bias cua MEMS troi theo
+// nhiet do - lanh luc moi bat va am dan khi chay.
+static void calibrate_gyro_bias() {
+  if (!imu_ok) return;
+  const int N = 200;                    // 200 mau x 10 ms = 2 giay
+  const float DEG2RAD = (float)M_PI / 180.0f;
+  double sum = 0.0, sum2 = 0.0;
+  for (int i = 0; i < N; i++) {
+    float w = (float)bno.getVector(Adafruit_BNO055::VECTOR_GYROSCOPE).z() * DEG2RAD;
+    sum  += w;
+    sum2 += (double)w * w;
+    delay(10);
+  }
+  float mean = (float)(sum / N);
+  float sd   = sqrtf(fmaxf(0.0f, (float)(sum2 / N - (double)mean * mean)));
+
+  // Neu luc do xe bi dong day thi so trung binh khong phai bias. Tru nham mot
+  // so sai con te hon khong tru. Nguong 0.05 rad/s = 2.9 do/s, cao hon han
+  // nhieu cua BNO055 luc dung yen.
+  if (sd > 0.05f) {
+    Serial.printf("Bias gyro: KHONG do duoc, xe dang bi dong day (sd %.4f rad/s)."
+                  " Giu bias = 0.\n", sd);
+    return;
+  }
+  gyro_z_bias = mean;
+  Serial.printf("Bias gyro Z: %+.5f rad/s (%+.3f do/s), nhieu %.5f -> da tru\n",
+                gyro_z_bias, gyro_z_bias / DEG2RAD, sd);
+}
+
 static void read_and_publish_imu() {
   if (!imu_ok) return;
   uint32_t t0 = micros();
@@ -797,7 +834,9 @@ static void read_and_publish_imu() {
   imu::Quaternion q = bno.getQuat();
 
   const float DEG2RAD = (float)M_PI / 180.0f;
-  gyro_z_rps = (float)g.z() * DEG2RAD;   // motor_task dung de tich phan yaw
+  // Tru bias: day la gia tri motor_task tich phan ra goc quay, nen no PHAI
+  // bang 0 khi xe dung yen. x/y khong tru vi odometry khong dung den.
+  gyro_z_rps = (float)g.z() * DEG2RAD - gyro_z_bias;
 
   fill_stamp(&imu_msg.header.stamp);
   imu_msg.orientation.w = q.w();
@@ -1108,6 +1147,10 @@ void setup() {
 #endif
   }
   delay(500);
+
+  // Phai goi TRUOC init_microros(): ham do cho Wi-Fi va agent, co the lau, va
+  // luc nay moi chac chan xe dang dung yen. Dung xe trong 2 giay toi.
+  calibrate_gyro_bias();
 
   // --- micro-ROS ---
   buf_mutex = xSemaphoreCreateMutex();
