@@ -93,11 +93,27 @@ def best_shift(r1, r2, lo, hi):
 
 
 def gyro_between(gyro, t0, t1):
-    """Tich phan wz tu t0 den t1 (hinh thang)."""
+    """Tich phan wz tu t0 den t1 (hinh thang), co NOI SUY o hai bien.
+
+    Ban dau ham nay chi cong cac mau nam han trong [t0, t1] va bo hai doan cut
+    o hai dau. Mau gyro cach nhau ~0.021 s con khoang giua hai vong quet
+    ~0.113 s, nen moi lan bo nhu vay thieu toi ~18%. Do la ly do lan do dau
+    tien ra ti so -1.13 thay vi -1.00: xe khong sai 13%, cong cu sai.
+    """
     s = 0.0
-    pts = [(t, w) for t, w in gyro if t0 <= t <= t1]
-    for (ta, wa), (tb, wb) in zip(pts, pts[1:]):
-        s += 0.5 * (wa + wb) * (tb - ta)
+    for (ta, wa), (tb, wb) in zip(gyro, gyro[1:]):
+        if tb <= t0 or ta >= t1:
+            continue
+        # Cat doan [ta,tb] ve trong [t0,t1], noi suy tuyen tinh wz o cho cat
+        lo, hi = max(ta, t0), min(tb, t1)
+        if hi <= lo:
+            continue
+        span = tb - ta
+        if span <= 0:
+            continue
+        wlo = wa + (wb - wa) * (lo - ta) / span
+        whi = wa + (wb - wa) * (hi - ta) / span
+        s += 0.5 * (wlo + whi) * (hi - lo)
     return s
 
 
