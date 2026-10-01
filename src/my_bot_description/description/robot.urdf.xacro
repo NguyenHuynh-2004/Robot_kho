@@ -6,9 +6,40 @@
                      /scan va /odom do ESP32 phat, khong phai Gazebo. -->
     <xacro:arg name="sim" default="true" />
 
-    <xacro:if value="$(arg sim)">
-        <xacro:include filename="gazebo_control.xacro" />
-    </xacro:if>
+    <!-- ====================================================================
+         KICH THUOC XE
+         ====================================================================
+         Nhom 1 - DO BANG THUOC tren xe that. Sua o day la sua moi noi.
+         Ba file khac phai khop voi cac so nay, xem cuoi khoi nay. -->
+    <xacro:property name="wheel_separation" value="0.200"/>  <!-- tam - tam hai banh sau -->
+    <xacro:property name="wheel_radius"     value="0.03225"/><!-- duong kinh 64.5 mm -->
+    <xacro:property name="wheel_x"          value="-0.014"/> <!-- truc banh sau lui 14 mm sau tam -->
+    <xacro:property name="caster_x"         value="0.035"/>  <!-- banh da huong tien 35 mm truoc tam -->
+    <xacro:property name="body_radius"      value="0.0907"/> <!-- duong kinh than 181.40 mm -->
+
+    <!-- Nhom 2 - CHUA DO, dang la so dat tam cho hinh hoc dung duoc.
+         Sai cac so nay khong lam odometry sai, chi lam hinh trong RViz va
+         vat ly trong Gazebo khong giong that. Do roi thi sua vao day. -->
+    <xacro:property name="body_height"      value="0.040"/>  <!-- be day than xe -->
+    <xacro:property name="wheel_width"      value="0.026"/>  <!-- be rong lop -->
+    <xacro:property name="caster_radius"    value="0.015"/>  <!-- ban kinh bi da huong -->
+    <xacro:property name="lidar_z"          value="0.075"/>  <!-- tam LiDAR cao hon mat san -->
+    <xacro:property name="imu_z"            value="0.055"/>  <!-- tam BNO055 cao hon mat san -->
+    <xacro:property name="body_mass"        value="1.2"/>
+    <xacro:property name="wheel_mass"       value="0.05"/>
+    <xacro:property name="caster_mass"      value="0.02"/>
+
+    <!-- BA CHO KHAC PHAI KHOP VOI NHOM 1:
+           gazebo_control.xacro       <wheel_separation> va <wheel_radius>
+           firmware/.../esp32_agv_base.ino   WHEEL_SEPARATION_M, WHEEL_RADIUS_M
+           config/navigation.yaml     robot_radius (= diem xa tam nhat, xem duoi)
+
+         Diem xa tam nhat KHONG phai mep than xe (0.0907) ma la goc ngoai cua
+         banh sau, vi banh nho ra ngoai than:
+           x = wheel_x - wheel_radius = -0.014 - 0.03225 = -0.046
+           y = wheel_separation/2 + wheel_width/2 = 0.100 + 0.013 = 0.113
+           khoang cach = sqrt(0.046^2 + 0.113^2) = 0.122 m
+         -> navigation.yaml dat robot_radius 0.13 (co bien 8 mm). -->
 
     <material name="white"><color rgba="1 1 1 1" /></material>
     <material name="blue"><color rgba="0.2 0.2 1 1"/></material>
@@ -16,7 +47,8 @@
     <material name="orange"><color rgba="1 0.5 0 1"/></material>
     <material name="red"><color rgba="1 0 0 1"/></material>
 
-    <!-- Base Footprint (Required for Nav2 & SLAM) -->
+    <!-- base_footprint nam tren MAT SAN. base_link trung voi no, nen moi toa
+         do z duoi day deu la chieu cao so voi san. -->
     <link name="base_footprint"/>
     <joint name="base_footprint_joint" type="fixed">
         <parent link="base_footprint"/>
@@ -29,87 +61,109 @@
     <joint name="chassis_joint" type="fixed">
         <parent link="base_link"/>
         <child link="chassis"/>
-        <origin xyz="0 0 0"/> 
+        <origin xyz="0 0 0"/>
     </joint>
     <link name="chassis">
+        <!-- Than dat o ngang tam truc banh -> gam cao 12 mm -->
         <visual>
-            <origin xyz="0 0 0.075"/>
-            <geometry><cylinder radius="0.5" length="0.15"/></geometry>
+            <origin xyz="0 0 ${wheel_radius}"/>
+            <geometry><cylinder radius="${body_radius}" length="${body_height}"/></geometry>
             <material name="orange"/>
         </visual>
         <collision>
-            <origin xyz="0 0 0.075"/>
-            <geometry><cylinder radius="0.5" length="0.15"/></geometry>
+            <origin xyz="0 0 ${wheel_radius}"/>
+            <geometry><cylinder radius="${body_radius}" length="${body_height}"/></geometry>
         </collision>
         <inertial>
-            <origin xyz="0 0 0.075" rpy="0 0 0"/>
-            <mass value="5.0"/> 
-            <inertia ixx="0.321" ixy="0.0" ixz="0.0" iyy="0.321" iyz="0.0" izz="0.625"/>
+            <origin xyz="0 0 ${wheel_radius}" rpy="0 0 0"/>
+            <mass value="${body_mass}"/>
+            <inertia
+                ixx="${body_mass*(3*body_radius*body_radius + body_height*body_height)/12}"
+                ixy="0.0" ixz="0.0"
+                iyy="${body_mass*(3*body_radius*body_radius + body_height*body_height)/12}"
+                iyz="0.0"
+                izz="${body_mass*body_radius*body_radius/2}"/>
         </inertial>
     </link>
 
+    <!-- Hai banh sau. Truc nam o z = wheel_radius thi lop vua cham san. -->
     <joint name="left_wheel_joint" type="continuous">
         <parent link="base_link"/>
         <child link="left_wheel"/>
-        <origin xyz="-0.1 0.55 0" rpy="-1.5707 0 0" /> 
+        <origin xyz="${wheel_x} ${wheel_separation/2} ${wheel_radius}" rpy="-1.5707 0 0"/>
         <axis xyz="0 0 1"/>
     </joint>
     <link name="left_wheel">
         <visual>
-            <geometry><cylinder radius="0.05" length="0.04"/></geometry>
+            <geometry><cylinder radius="${wheel_radius}" length="${wheel_width}"/></geometry>
             <material name="blue"/>
         </visual>
         <collision>
-            <geometry><cylinder radius="0.05" length="0.04"/></geometry>
+            <geometry><cylinder radius="${wheel_radius}" length="${wheel_width}"/></geometry>
         </collision>
         <inertial>
             <origin xyz="0 0 0" rpy="0 0 0"/>
-            <mass value="0.5"/>
-            <inertia ixx="0.000379" ixy="0.0" ixz="0.0" iyy="0.000379" iyz="0.0" izz="0.000625"/>
+            <mass value="${wheel_mass}"/>
+            <inertia
+                ixx="${wheel_mass*(3*wheel_radius*wheel_radius + wheel_width*wheel_width)/12}"
+                ixy="0.0" ixz="0.0"
+                iyy="${wheel_mass*(3*wheel_radius*wheel_radius + wheel_width*wheel_width)/12}"
+                iyz="0.0"
+                izz="${wheel_mass*wheel_radius*wheel_radius/2}"/>
         </inertial>
     </link>
 
     <joint name="right_wheel_joint" type="continuous">
         <parent link="base_link"/>
         <child link="right_wheel"/>
-        <origin xyz="-0.1 -0.55 0" rpy="1.5707 0 0" /> 
+        <origin xyz="${wheel_x} ${-wheel_separation/2} ${wheel_radius}" rpy="1.5707 0 0"/>
         <axis xyz="0 0 -1"/>
     </joint>
     <link name="right_wheel">
         <visual>
-            <geometry><cylinder radius="0.05" length="0.04"/></geometry>
+            <geometry><cylinder radius="${wheel_radius}" length="${wheel_width}"/></geometry>
             <material name="blue"/>
         </visual>
         <collision>
-            <geometry><cylinder radius="0.05" length="0.04"/></geometry>
+            <geometry><cylinder radius="${wheel_radius}" length="${wheel_width}"/></geometry>
         </collision>
         <inertial>
             <origin xyz="0 0 0" rpy="0 0 0"/>
-            <mass value="0.5"/>
-            <inertia ixx="0.000379" ixy="0.0" ixz="0.0" iyy="0.000379" iyz="0.0" izz="0.000625"/>
+            <mass value="${wheel_mass}"/>
+            <inertia
+                ixx="${wheel_mass*(3*wheel_radius*wheel_radius + wheel_width*wheel_width)/12}"
+                ixy="0.0" ixz="0.0"
+                iyy="${wheel_mass*(3*wheel_radius*wheel_radius + wheel_width*wheel_width)/12}"
+                iyz="0.0"
+                izz="${wheel_mass*wheel_radius*wheel_radius/2}"/>
         </inertial>
     </link>
 
+    <!-- Banh da huong phia truoc. Tam o z = caster_radius thi bi vua cham san. -->
     <joint name="front_caster_joint" type="fixed">
         <parent link="chassis"/>
         <child link="front_caster"/>
-        <origin xyz="0.4 0 0"/> 
+        <origin xyz="${caster_x} 0 ${caster_radius}"/>
     </joint>
     <link name="front_caster">
         <visual>
-            <geometry><sphere radius="0.05"/></geometry>
+            <geometry><sphere radius="${caster_radius}"/></geometry>
             <material name="black"/>
         </visual>
         <collision>
-            <geometry><sphere radius="0.05"/></geometry>
+            <geometry><sphere radius="${caster_radius}"/></geometry>
         </collision>
         <inertial>
             <origin xyz="0 0 0" rpy="0 0 0"/>
-            <mass value="0.1"/>
-            <inertia ixx="0.0001" ixy="0.0" ixz="0.0" iyy="0.0001" iyz="0.0" izz="0.0001"/>
+            <mass value="${caster_mass}"/>
+            <inertia
+                ixx="${2*caster_mass*caster_radius*caster_radius/5}" ixy="0.0" ixz="0.0"
+                iyy="${2*caster_mass*caster_radius*caster_radius/5}" iyz="0.0"
+                izz="${2*caster_mass*caster_radius*caster_radius/5}"/>
         </inertial>
     </link>
 
+    <!-- Bi da huong khong duoc co ma sat, neu khong xe se khong quay not -->
     <gazebo reference="front_caster">
         <mu1>0.0</mu1>
         <mu2>0.0</mu2>
@@ -119,11 +173,11 @@
     <joint name="lidar_joint" type="fixed">
         <parent link="chassis"/>
         <child link="lidar_link"/>
-        <origin xyz="0 0 0.17" rpy="0 0 0"/>
+        <origin xyz="0 0 ${lidar_z}" rpy="0 0 0"/>
     </joint>
     <link name="lidar_link">
         <visual>
-            <geometry><cylinder radius="0.05" length="0.04"/></geometry>
+            <geometry><cylinder radius="0.030" length="0.030"/></geometry>
             <material name="black"/>
         </visual>
     </link>
@@ -155,12 +209,11 @@
     </xacro:if>
 
     <!-- IMU BNO055. Firmware phat /imu/data voi frame_id = imu_link,
-         neu thieu link nay TF se bao loi "frame does not exist".
-         SUA origin cho dung cho ban gan IMU tren xe that. -->
+         neu thieu link nay TF se bao loi "frame does not exist". -->
     <joint name="imu_joint" type="fixed">
         <parent link="chassis"/>
         <child link="imu_link"/>
-        <origin xyz="0 0 0.16" rpy="0 0 0"/>
+        <origin xyz="0 0 ${imu_z}" rpy="0 0 0"/>
     </joint>
     <link name="imu_link"/>
 

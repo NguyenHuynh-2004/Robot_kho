@@ -7,9 +7,12 @@
             <left_joint>left_wheel_joint</left_joint> 
             <right_joint>right_wheel_joint</right_joint>
             
-            <wheel_separation>1.1</wheel_separation> 
-            
-            <wheel_radius>0.05</wheel_radius>
+            <!-- PHAI khop robot.urdf.xacro va WHEEL_*_M trong firmware.
+                 Truoc day la 1.1 / 0.05 - so cua mot chiec xe duong kinh 1 m,
+                 khong dinh gi den xe that. -->
+            <wheel_separation>0.200</wheel_separation>
+
+            <wheel_radius>0.03225</wheel_radius>
 
             <max_linear_acceleration>1.0</max_linear_acceleration>
             <max_angular_acceleration>2.0</max_angular_acceleration>

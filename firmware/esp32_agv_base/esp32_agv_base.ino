@@ -96,8 +96,11 @@
 // --- KICH THUOC XE: DO BANG THUOC, DUNG DOAN ---------------------------------
 // Sai o hai so nay la odometry sai, va Nav2 se khong bao gio chay dung.
 // Quy trinh hieu chinh nam o cuoi file.
-#define WHEEL_RADIUS_M      0.0325f    // ban kinh banh LUC CO TAI (lop bi nen)
-#define WHEEL_SEPARATION_M  0.190f     // khoang cach TAM - TAM hai banh
+// Do bang thuoc tren xe that. PHAI khop robot.urdf.xacro va gazebo_control.xacro.
+#define WHEEL_RADIUS_M      0.03225f   // duong kinh banh sau 64.5 mm
+#define WHEEL_SEPARATION_M  0.200f     // khoang cach TAM - TAM hai banh sau
+// WHEEL_RADIUS_M o tren la ban kinh HINH HOC. Ban kinh LAN thuc te nho hon vi
+// lop bi nen duoi tai -> xe se di ngan hon lenh. Hieu chinh theo Phu luc A3.
 // -----------------------------------------------------------------------------
 
 // Encoder: 1200 xung/vong truc ra khi dung attachHalfQuad (lay tu motor_1_wheel.ino).

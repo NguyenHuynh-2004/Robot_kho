@@ -45,8 +45,12 @@ controller_server:
       time_steps: 56
       model_dt: 0.05
       batch_size: 2000
-      vx_max: 0.5    
-      vx_min: -0.2   
+      # Tran vat ly cua xe: MAX_WHEEL_RPM 120 voi banh ban kinh 0.03225 m
+      #   120/60 * 2*pi * 0.03225 = 0.405 m/s
+      # De 0.5 thi Nav2 lap ke hoach theo toc do xe khong dat duoc, va firmware
+      # se cat bot -> xe luon chay cham hon du tinh. 0.35 chua trong tam voi.
+      vx_max: 0.35
+      vx_min: -0.2
       vy_max: 0.0    
       wz_max: 1.5    
       motion_model: "DiffDrive"
@@ -72,12 +76,17 @@ local_costmap:
       width: 6
       height: 6
       resolution: 0.05
-      robot_radius: 0.6
+      # Diem xa tam nhat la goc ngoai banh sau (banh nho ra ngoai than xe):
+      #   sqrt(0.046^2 + 0.113^2) = 0.122 m  -> lay 0.13 cho co bien.
+      # Truoc day la 0.6, khop voi URDF cu mo ta mot chiec xe duong kinh 1 m.
+      robot_radius: 0.13
       plugins: ["voxel_layer", "inflation_layer"]
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
-        inflation_radius: 0.75
+        # robot_radius 0.13 + khoang an toan. Giu 0.75 cho xe 0.13 thi ca
+        # phong 10x10 deu thanh vung cam va Nav2 khong tim duoc duong nao.
+        inflation_radius: 0.25
       voxel_layer:
         plugin: "nav2_costmap_2d::VoxelLayer"
         enabled: True
@@ -97,7 +106,10 @@ global_costmap:
       update_frequency: 1.0
       publish_frequency: 1.0
       resolution: 0.05
-      robot_radius: 0.6
+      # Diem xa tam nhat la goc ngoai banh sau (banh nho ra ngoai than xe):
+      #   sqrt(0.046^2 + 0.113^2) = 0.122 m  -> lay 0.13 cho co bien.
+      # Truoc day la 0.6, khop voi URDF cu mo ta mot chiec xe duong kinh 1 m.
+      robot_radius: 0.13
       plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
       static_layer:
         plugin: "nav2_costmap_2d::StaticLayer"
@@ -115,7 +127,9 @@ global_costmap:
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
-        inflation_radius: 0.75
+        # robot_radius 0.13 + khoang an toan. Giu 0.75 cho xe 0.13 thi ca
+        # phong 10x10 deu thanh vung cam va Nav2 khong tim duoc duong nao.
+        inflation_radius: 0.25
 
 planner_server:
   ros__parameters:
