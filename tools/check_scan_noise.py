@@ -110,6 +110,39 @@ def main():
               f"90% duoi {sp[int(len(sp)*0.9)]*1000:.0f} mm, "
               f"lon nhat {sp[-1]*1000:.0f} mm")
 
+    # --- 4. nhieu THEO KHOANG CACH ---
+    # Nguoi dung thay diem xa hon ~2.5 m nhay loan. Do bang so de chon nguong
+    # max_laser_range cho slam thay vi doan.
+    # Do do lech chuan BEN VUNG (MAD * 1.4826) chu khong dung max-min: max-min
+    # tang theo so vong quet va bi mot tia rac keo len.
+    # Cot "luong tu goc" la sai lech ngang do dat diem vao GIUA bin 1.125 do:
+    # d * 0.0098 m. Tu 2.55 m tro di no vuot mot o luoi 5 cm.
+    buckets = [(0.0, 1.0), (1.0, 2.0), (2.0, 2.5), (2.5, 3.0),
+               (3.0, 4.0), (4.0, 5.0), (5.0, 8.0)]
+    rows = {b: [] for b in buckets}
+    for i in range(nbin):
+        vals = sorted(s[i] for s in n.scans if valid(s[i], lo, hi))
+        if len(vals) < len(n.scans) * 0.5:
+            continue
+        med = vals[len(vals) // 2]
+        mad = sorted(abs(v - med) for v in vals)[len(vals) // 2]
+        sigma = 1.4826 * mad
+        for b in buckets:
+            if b[0] <= med < b[1]:
+                rows[b].append((sigma, med))
+                break
+    print("\n4. NHIEU THEO KHOANG CACH (xe phai dung yen)")
+    print(f"   {'khoang (m)':>10} {'so bin':>7} {'nhieu doc tia':>14} "
+          f"{'% khoang cach':>14} {'luong tu goc':>13}")
+    for b in buckets:
+        r = rows[b]
+        if not r:
+            continue
+        sg = sorted(x for x, _ in r)[len(r) // 2]
+        dm = sorted(d for _, d in r)[len(r) // 2]
+        print(f"   {b[0]:4.1f}-{b[1]:<4.1f}  {len(r):7d} {sg*1000:11.0f} mm "
+              f"{sg/dm*100:12.1f} % {dm*0.0098*1000:10.0f} mm")
+
     print("\nDoc ket qua:")
     print("  diem co don < 2%  va  dao dong trung vi < 30 mm  -> LiDAR sach,")
     print("     cham den tren ban do den tu nguyen nhan khac (odometry/goc lap).")

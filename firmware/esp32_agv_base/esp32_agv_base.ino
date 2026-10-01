@@ -58,6 +58,7 @@
 
 #include <ESP32Encoder.h>
 #include <LDS_YDLIDAR_X2_X2L.h>
+#include "scan_resample.h"   // noi suy vong quet tho ve luoi bin, xem file do
 
 #include <esp_timer.h>   // esp_timer_get_time() - dong ho us 64 bit, lam timestamp
 
@@ -351,6 +352,14 @@ static volatile bool    scan_ready = false;
 static volatile float   scan_freq_hz = 7.0f;
 static SemaphoreHandle_t buf_mutex;
 static volatile uint32_t scans_done = 0, points_in_scan = 0, points_last_scan = 0;
+
+// Diem THO cua vong quet dang thu, giu nguyen goc that cua tung diem. Chi Core 1
+// (lidar_scan_point_callback) dung, nen khong can khoa. X2 ~3000 mau/s o
+// 7-9 Hz la ~430 diem/vong; 720 du cho ca vong quay cham.
+// static chu khong de tren stack: task loop() cua Core 1 chi co 8 KB.
+#define MAX_RAW_PTS 720
+static RawPt raw_pts[MAX_RAW_PTS];
+static int   raw_n = 0;
 static volatile uint32_t publish_failed = 0;
 
 // --- Do luong de tim nut co chai (in ra Serial moi giay) ---
@@ -598,33 +607,45 @@ void lidar_scan_point_callback(float angle_deg, float distance_mm, float quality
     float f = lidar.getCurrentScanFreqHz();
     if (f > 1.0f && f < 20.0f) scan_freq_hz = f;
 
+    // NOI SUY vong vua xong vao bo dem dang lap, ROI moi doi bo dem.
+    // Truoc day moi diem duoc gan thang vao giua bin luc no den - doi goc ma giu
+    // khoang cach, keo diem ra khoi mat tuong xien. Sai so ty le voi khoang
+    // cach, vuot mot o luoi 5 cm tu 2.55 m: dung cai "diem xa nhay loan" nguoi
+    // dung thay. Kiem tren phong gia (firmware/tests/test_scan_resample.cpp),
+    // sai so 90% o 4-6 m: cu 25.9 mm -> moi 9.8 mm; bin co du lieu 260 -> 319
+    // moi vong; 0 diem ma; chan ban 2 cm van giu du.
+    // Ghi vao fill_idx, ma Core 0 chi doc ready_idx, nen khong dam nhau.
+    resample_scan(raw_pts, raw_n, (float *)bin_dist[fill_idx], SCAN_BINS);
+    raw_n = 0;
+
     if (xSemaphoreTake(buf_mutex, pdMS_TO_TICKS(5)) == pdTRUE) {
       ready_idx  = fill_idx;
       fill_idx  ^= 1;
       scan_ready = true;
       xSemaphoreGive(buf_mutex);
-      clear_buffer(fill_idx);
     }
     scans_done++;
     points_last_scan = points_in_scan;
     points_in_scan = 0;
   }
+  (void)quality;   // X2 khong co cuong do that (xem LDS_YDLIDAR_X4.cpp)
 
   float d_m = distance_mm * 0.001f;
   if (d_m < RANGE_MIN_M || d_m > RANGE_MAX_M) return;
 
+  // Chuyen sang phuong vi he ROS nhung GIU NGUYEN goc le cua diem - viec dua
+  // ve luoi bin de resample_scan() lam, bang noi suy.
   float a = angle_deg + LIDAR_ANGLE_OFFSET_DEG;
 #if LIDAR_ANGLE_FLIP
   a = 360.0f - a;
 #endif
-  int bin = (int)lroundf(a * (float)SCAN_BINS / 360.0f) % SCAN_BINS;
-  if (bin < 0) bin += SCAN_BINS;
+  a = fmodf(a, 360.0f);
+  if (a < 0.0f) a += 360.0f;
 
-  uint8_t i = fill_idx;
-  // Nhieu diem cung mot bin -> giu diem GAN nhat (an toan cho tranh vat can)
-  if (bin_dist[i][bin] == 0.0f || d_m < bin_dist[i][bin]) {
-    bin_dist[i][bin] = d_m;
-    bin_qual[i][bin] = quality;
+  if (raw_n < MAX_RAW_PTS) {
+    raw_pts[raw_n].b = a;
+    raw_pts[raw_n].r = d_m;
+    raw_n++;
   }
   points_in_scan++;
 }
