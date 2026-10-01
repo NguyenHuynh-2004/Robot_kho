@@ -26,9 +26,18 @@ THAM SO
       imu_quaternion  goc tuyet doi tu BNO055, KHONG TROI. Nen dung.
       imu_gyro        tich phan gyro z - giong y firmware cu, de so sanh
       wheels          suy tu chenh lech hai banh, du phong khi IMU hong
+
+KHI IMU HONG GIUA CHUNG
+  Da gap tren xe that: bam reset ESP32 (BNO055 khong bi reset theo) roi
+  BNO055 tra ve TOAN SO 0 - quaternion 0, gyro 0. Firmware van phat binh
+  thuong. Truoc day node nhan nhung goi do: imu_gyro tich phan so 0, con
+  imu_quaternion giu mai goc cuoi -> odom tin rang xe KHONG BAO GIO QUAY, va
+  AMCL lac ngay. Gio goi IMU khong hop le bi bo, va qua IMU_STALE_S khong co
+  goi hop le nao thi tam lay goc tu BANH XE va bao loi do tren terminal.
 """
 import math
 import threading
+import time
 from collections import deque
 
 import rclpy
@@ -47,6 +56,10 @@ from tf2_ros import TransformBroadcaster
 # dong that - la ESP32 vua khoi dong lai va total_counts ve 0. 5 rad o banh
 # 32 mm la 16 cm trong mot chu ky 20 ms, tuc 8 m/s.
 JUMP_RAD = 5.0
+
+# Khong nhan goi IMU hop le trong chung nay (giay) -> coi IMU la hong, tinh goc
+# bang banh xe. Cung la khoang mat goi dai nhat ma imu_gyro con noi suy qua.
+IMU_STALE_S = 0.5
 
 
 def yaw_of(q: Quaternion) -> float:
@@ -97,6 +110,15 @@ class WheelOdometry(Node):
         self._gyro_yaw = 0.0       # rad, cong don tu luc bat dau
         self._gyro_yaw_used = 0.0  # phan da dua vao odom
         self._gyro_t = None
+        self._gyro_prev = 0.0      # gz cua goi truoc, de tich phan hinh thang
+        self._imu_ok_t = None      # time.monotonic() cua goi IMU hop le gan nhat
+        self._imu_seq = 0          # dem goi IMU hop le
+        self._imu_seq_used = 0     # cb_js da thay toi goi nao
+        self._wheel_yaw = 0.0      # goc suy tu banh, cong don (luon tinh)
+        self._wheel_mark = 0.0     # _wheel_yaw luc co goi IMU tuoi gan nhat
+        self._imu_lost = True      # dang tinh goc bang banh (chua co IMU)
+        self._imu_lost_logged = False
+        self._t_start = time.monotonic()
         # Bias con du sau khi firmware da tru bias luc khoi dong. Do duoc
         # 0.00099 rad/s = 3.4 do/phut bang tools/check_gyro_bias.py. Hoc lai
         # moi khi xe dung yen (banh khong quay) - luc do gyro DUNG RA phai 0,
@@ -149,7 +171,16 @@ class WheelOdometry(Node):
 
     # ------------------------------------------------------------------
     def cb_imu(self, m: Imu):
+        q = m.orientation
+        # Quaternion hop le co do dai 1. Toan 0 = BNO055 chua san sang hoac
+        # khong tra loi I2C; luc do gyro cung la 0 gia, khong phai "dung yen".
+        if abs(q.w * q.w + q.x * q.x + q.y * q.y + q.z * q.z - 1.0) > 0.1:
+            with self._lock:
+                self._gyro_t = None
+            return
         with self._lock:
+            self._imu_ok_t = time.monotonic()
+            self._imu_seq += 1
             gz = m.angular_velocity.z
             self._gyro_z = gz
             t = Time.from_msg(m.header.stamp).nanoseconds * 1e-9
@@ -166,17 +197,16 @@ class WheelOdometry(Node):
 
             if self._gyro_t is not None:
                 dt = t - self._gyro_t
-                if 0.0 < dt < 0.2:          # bo qua lo hong / stamp giat lui
-                    self._gyro_yaw += (gz - self._gyro_bias) * dt
+                # Hinh thang: Wi-Fi rot vai goi lien tiep (do duoc khoang trong
+                # toi 1.4 s) thi van tinh du goc, thay vi bo ca khoang. Dai hon
+                # IMU_STALE_S thi cb_js da tinh khoang do bang banh roi.
+                if 0.0 < dt < IMU_STALE_S:
+                    self._gyro_yaw += (0.5 * (gz + self._gyro_prev)
+                                       - self._gyro_bias) * dt
             self._gyro_t = t
+            self._gyro_prev = gz
 
-            y = yaw_of(m.orientation)
-            # Quaternion toan 0 nghia la IMU chua san sang
-            q = m.orientation
-            if abs(q.w) + abs(q.x) + abs(q.y) + abs(q.z) > 1e-6:
-                self._imu_yaw = y
-                if self._imu_yaw0 is None:
-                    self._imu_yaw0 = y
+            self._imu_yaw = yaw_of(q)
 
     # ------------------------------------------------------------------
     def cb_js(self, m: JointState):
@@ -230,17 +260,55 @@ class WheelOdometry(Node):
             d_r = dphi_r * self.R
             d_center = 0.5 * (d_l + d_r)
 
-            if self.yaw_source == 'imu_quaternion' and self._imu_yaw is not None:
-                new_th = wrap(self._imu_yaw - self._imu_yaw0)
-                d_theta = wrap(new_th - self.th)
-            elif self.yaw_source == 'imu_gyro':
-                # Lay phan gyro da tich phan (du moi mau, da tru bias) tu lan
-                # truoc den gio. Khong phu thuoc tu ke, nen khong bi nam cham
-                # dong co lam lech theo huong xe dang quay mat.
-                d_theta = self._gyro_yaw - self._gyro_yaw_used
-                self._gyro_yaw_used = self._gyro_yaw
-            else:
+            self._wheel_yaw += (d_r - d_l) / self.sep
+            fresh = self._imu_seq != self._imu_seq_used
+            self._imu_seq_used = self._imu_seq
+            imu_alive = (self._imu_ok_t is not None and
+                         time.monotonic() - self._imu_ok_t < IMU_STALE_S)
+
+            if self.yaw_source == 'wheels':
                 d_theta = (d_r - d_l) / self.sep
+            elif not imu_alive:
+                # Lay goc banh tu goi IMU tuoi CUOI CUNG den gio - ke ca
+                # IMU_STALE_S giay vua cho de ket luan IMU hong, luc do goc dung
+                # im vi khong co goi moi. Bo qua khoang do la mat 15 do neu xe
+                # dang quay 30 do/s.
+                d_theta = self._wheel_yaw - self._wheel_mark
+                self._wheel_mark = self._wheel_yaw
+                self._gyro_yaw_used = self._gyro_yaw
+                self._imu_lost = True
+                if (not self._imu_lost_logged and
+                        time.monotonic() - self._t_start > 3.0):
+                    self._imu_lost_logged = True
+                    self.get_logger().error(
+                        f'IMU khong gui goi hop le qua {IMU_STALE_S} s '
+                        '(quaternion = 0: BNO055 khong tra loi, hoac mat '
+                        'song Wi-Fi). Tam tinh goc bang BANH XE - kem chinh '
+                        'xac. Neu keo dai: TAT HAN NGUON xe roi bat lai de '
+                        'BNO055 khoi dong lai (nut reset ESP32 khong reset '
+                        'duoc no).')
+            else:
+                if self._imu_lost:
+                    # IMU vua co lai (luc dau, hoac sau khi hong). Neo goc
+                    # quaternion vao goc odom hien tai de khong nhay: BNO055
+                    # khoi dong lai thi moc tuyet doi cua no da khac.
+                    self._imu_lost = False
+                    self._imu_yaw0 = wrap(self._imu_yaw - self.th)
+                    self._gyro_yaw_used = self._gyro_yaw
+                    if self._imu_lost_logged:
+                        self._imu_lost_logged = False
+                        self.get_logger().info('IMU da hoat dong lai.')
+                if self.yaw_source == 'imu_quaternion':
+                    new_th = wrap(self._imu_yaw - self._imu_yaw0)
+                    d_theta = wrap(new_th - self.th)
+                else:
+                    # Lay phan gyro da tich phan (du moi mau, da tru bias) tu
+                    # lan truoc den gio. Khong phu thuoc tu ke, nen khong bi
+                    # nam cham dong co lam lech theo huong xe dang quay mat.
+                    d_theta = self._gyro_yaw - self._gyro_yaw_used
+                    self._gyro_yaw_used = self._gyro_yaw
+                if fresh:
+                    self._wheel_mark = self._wheel_yaw
 
             # Runge-Kutta bac 2: lay goc o GIUA chu ky, chinh xac hon Euler
             # thuan khi xe vua chay vua quay.
