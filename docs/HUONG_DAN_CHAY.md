@@ -555,6 +555,7 @@ Row tăng = đi lên (+Y), Col tăng = sang phải (+X).
 | `package 'micro_ros_agent' not found` | chưa source workspace agent | `source ~/microros_ws/install/setup.bash` |
 | Các node không thấy nhau, `ros2 topic list` thiếu topic | thiếu biến discovery | `export ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST` |
 | Nav2 đứng im lúc khởi động | `/clock` không chạy | bấm **Play** trong Gazebo |
+| Terminal bringup báo `IMU khong gui goi hop le`; xe quay mà RViz không quay, AMCL lạc ngay | BNO055 trả về toàn số 0 (đã gặp sau khi chỉ bấm reset ESP32 — nút đó không reset BNO055) | **Tắt hẳn nguồn xe** vài giây rồi bật lại, để xe đứng yên lúc khởi động. Vẫn bị thì kiểm tra 4 dây I2C của BNO055. Trong lúc đó odometry tự lấy góc từ bánh xe |
 | Nhập toạ độ xong xe không chạy | Nav2 chưa xong | `tf2_echo map base_footprint` báo `Invalid frame ID "map"` → đợi thêm |
 | **Xe thật: mọi thứ treo, không lỗi gì** | sót `use_sim_time:=false` ở một terminal | node đó đợi `/clock` vĩnh viễn và **không in lỗi** |
 | ESP32 reset liên tục | sụt áp | Serial báo `SUT AP (brownout)` → chưa tách nguồn động cơ |
