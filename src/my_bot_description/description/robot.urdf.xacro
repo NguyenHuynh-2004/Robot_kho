@@ -16,12 +16,12 @@
     <xacro:property name="wheel_x"          value="-0.014"/> <!-- truc banh sau lui 14 mm sau tam -->
     <xacro:property name="caster_x"         value="0.035"/>  <!-- banh da huong tien 35 mm truoc tam -->
     <xacro:property name="body_radius"      value="0.0907"/> <!-- duong kinh than 181.40 mm -->
+    <xacro:property name="wheel_width"      value="0.026"/>  <!-- be rong lop 26 mm -->
 
     <!-- Nhom 2 - CHUA DO, dang la so dat tam cho hinh hoc dung duoc.
          Sai cac so nay khong lam odometry sai, chi lam hinh trong RViz va
          vat ly trong Gazebo khong giong that. Do roi thi sua vao day. -->
     <xacro:property name="body_height"      value="0.040"/>  <!-- be day than xe -->
-    <xacro:property name="wheel_width"      value="0.026"/>  <!-- be rong lop -->
     <xacro:property name="caster_radius"    value="0.015"/>  <!-- ban kinh bi da huong -->
     <xacro:property name="lidar_z"          value="0.075"/>  <!-- tam LiDAR cao hon mat san -->
     <xacro:property name="imu_z"            value="0.055"/>  <!-- tam BNO055 cao hon mat san -->
@@ -35,11 +35,12 @@
            config/navigation.yaml     robot_radius (= diem xa tam nhat, xem duoi)
 
          Diem xa tam nhat KHONG phai mep than xe (0.0907) ma la goc ngoai cua
-         banh sau, vi banh nho ra ngoai than:
+         banh sau, vi hai banh cach nhau 200 mm trong khi than chi rong 181.40:
            x = wheel_x - wheel_radius = -0.014 - 0.03225 = -0.046
            y = wheel_separation/2 + wheel_width/2 = 0.100 + 0.013 = 0.113
            khoang cach = sqrt(0.046^2 + 0.113^2) = 0.122 m
-         -> navigation.yaml dat robot_radius 0.13 (co bien 8 mm). -->
+         Ca ba so trong phep tinh nay deu do that -> navigation.yaml dat
+         robot_radius 0.13 (co bien 8 mm). -->
 
     <material name="white"><color rgba="1 1 1 1" /></material>
     <material name="blue"><color rgba="0.2 0.2 1 1"/></material>
