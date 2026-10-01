@@ -1,7 +1,14 @@
-// Kiem scan_resample.h tren laptop, khong can ESP32.
+// Kiem resample_scan() tren laptop, khong can ESP32.
 //
-//   g++ -O2 -I firmware/esp32_agv_base firmware/tests/test_scan_resample.cpp
-//       -o /tmp/test_resample  &&  /tmp/test_resample
+// Code nam NGAY TRONG esp32_agv_base.ino (giua hai dong BEGIN/END
+// scan_resample) de firmware la mot file duy nhat. Trich no ra roi bien dich:
+//
+//   sed -n '/BEGIN scan_resample/,/END scan_resample/p'
+//       firmware/esp32_agv_base/esp32_agv_base.ino > /tmp/scan_resample.h
+//   g++ -O2 -I /tmp firmware/tests/test_scan_resample.cpp -o /tmp/t && /tmp/t
+//
+// (Hai lenh tren, moi lenh mot dong.) Nhu vay phep kiem luon chay tren DUNG
+// doan code se nap len chip, khong co ban sao nao de lech nhau.
 //
 // Phong gia 8x6 m co them mot cai hop (de kiem mep vat). LiDAR gia ~260 diem
 // mot vong, lech pha ngau nhien giua cac vong, nhieu doc tia 8 mm - dung bang
@@ -10,6 +17,7 @@
 // THAT gan nhat.
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>     // qsort - trong .ino thi Arduino.h keo vao san
 #include <algorithm>
 #include <vector>
 #include "scan_resample.h"
