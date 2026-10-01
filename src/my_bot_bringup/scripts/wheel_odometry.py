@@ -39,6 +39,7 @@ from rclpy.time import Time
 from geometry_msgs.msg import Quaternion, TransformStamped
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import Imu, JointState
+from std_srvs.srv import Empty
 from tf2_ros import TransformBroadcaster
 
 # Mot buoc nhay goc banh lon hon the nay giua hai message khong phai chuyen
@@ -108,9 +109,30 @@ class WheelOdometry(Node):
         self.pub = self.create_publisher(Odometry, 'odom', 20)
         self.tfb = TransformBroadcaster(self) if self.publish_tf else None
 
+        # Dua odom ve goc ma khong phai khoi dong lai ca launch:
+        #     ros2 service call /reset_odometry std_srvs/srv/Empty {}
+        self.create_service(Empty, 'reset_odometry', self.cb_reset)
+
         self.get_logger().info(
             f"wheel_radius={self.R:.5f} m, wheel_separation={self.sep:.3f} m, "
             f"yaw_source={self.yaw_source}")
+
+    # ------------------------------------------------------------------
+    def cb_reset(self, req, resp):
+        """Dua odom ve goc toa do, huong hien tai thanh huong 0.
+
+        KHONG dong vao /joint_states: goc banh tich luy van chay tiep, node chi
+        bo moc cu di (_prev = None) nen message sau se lam moc moi. Nho vay
+        reset khong tao ra mot buoc nhay gia trong quang duong.
+        """
+        with self._lock:
+            self.x = self.y = self.th = 0.0
+            self.v = self.w = 0.0
+            self._prev = None
+            # Neo lai goc tuyet doi: huong dang quay mat thanh 0 do.
+            self._imu_yaw0 = self._imu_yaw
+        self.get_logger().info('odom da ve (0, 0, 0 do).')
+        return resp
 
     # ------------------------------------------------------------------
     def cb_imu(self, m: Imu):
