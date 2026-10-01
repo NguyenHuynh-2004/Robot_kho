@@ -33,7 +33,11 @@ from rclpy.node import Node
 from rclpy.qos import QoSHistoryPolicy, QoSProfile, QoSReliabilityPolicy
 from sensor_msgs.msg import JointState
 
-PPR_NOW = 1200.0          # ENC_PULSES_PER_REV dang nam trong firmware
+# ENC_PULSES_PER_REV dang nam trong firmware. Do duoc bang
+# firmware/encoder_test/encoder_test.ino (doc xung THO): 10 vong cho
+# TRAI 21614 -> 2161.4 va PHAI 21375 -> 2137.5, lay trung binh 2150.
+# So cu 1200 chep tu sketch goc va sai 78%.
+PPR_NOW = 2150.0
 
 
 class E(Node):
