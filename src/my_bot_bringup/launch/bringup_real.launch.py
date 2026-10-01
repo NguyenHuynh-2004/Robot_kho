@@ -35,6 +35,7 @@ from launch.actions import DeclareLaunchArgument, LogInfo
 from launch.conditions import IfCondition
 from launch.substitutions import Command, LaunchConfiguration
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 
 
 def generate_launch_description():
@@ -56,8 +57,17 @@ def generate_launch_description():
 
     # sim:=false -> bo plugin DiffDrive va sensor gpu_lidar cua Gazebo,
     # vi tren xe that ESP32 lo phan do.
+    # ParameterValue(..., value_type=str) la BAT BUOC, khong phai cho dep.
+    # Command() tra ve mot substitution, va launch_ros se thu yaml.safe_load
+    # chuoi ket qua de doan kieu. Chuoi do la ca file URDF, nen chi can trong
+    # no co mot dong ket thuc bang dau hai cham la YAML coi do la khoa cua mot
+    # mapping va bao:
+    #     Unable to parse the value of parameter robot_description as yaml
+    # URDF cu khong co dong nao nhu vay nen tinh co chay duoc - do la an may,
+    # khong phai dung. Ep kieu str thi launch_ros khong parse nua.
     robot_description = {
-        'robot_description': Command(['xacro ', xacro_file, ' sim:=false']),
+        'robot_description': ParameterValue(
+            Command(['xacro ', xacro_file, ' sim:=false']), value_type=str),
         'use_sim_time': False,
     }
 
