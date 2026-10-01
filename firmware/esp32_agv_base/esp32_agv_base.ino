@@ -768,12 +768,15 @@ static void clock_resync() {
   local_anchor_us   = now_us;
 }
 
-static void fill_stamp(builtin_interfaces__msg__Time *stamp) {
+// offset_ns: dich stamp so voi "bay gio". Dung cho /scan, xem
+// publish_scan_if_ready().
+static void fill_stamp(builtin_interfaces__msg__Time *stamp, int64_t offset_ns = 0) {
   // Chua neo duoc (chua ket noi agent) -> dung dong ho noi bo, Nav2 se bo qua
   // vi lech epoch, nhung it nhat khong sai nhip.
   int64_t t_ns = (epoch_anchor_ns > 0)
                  ? epoch_anchor_ns + (esp_timer_get_time() - local_anchor_us) * 1000LL
                  : (int64_t)esp_timer_get_time() * 1000LL;
+  t_ns += offset_ns;
   stamp->sec     = (int32_t)(t_ns / 1000000000LL);
   stamp->nanosec = (uint32_t)(t_ns % 1000000000LL);
 }
@@ -788,12 +791,28 @@ static void publish_scan_if_ready() {
   xSemaphoreGive(buf_mutex);
 
   float freq = (scan_freq_hz > 1.0f) ? scan_freq_hz : 7.0f;
-  fill_stamp(&scan_msg.header.stamp);
+
+  // STAMP = GIUA VONG QUET, khong phai luc gui.
+  // Ham nay chay ngay sau khi vong quet KET THUC, nhung cac diem duoc thu rai
+  // deu trong ca vong truoc do (0.116 s o 8.6 Hz). slam_toolbox va AMCL ap MOT
+  // tu the cho ca vong, tra theo stamp. Stamp o cuoi vong thi luc xe quay, tu
+  // the do tre trung binh nua vong: o 1.2 rad/s la 0.058 s * 1.2 = 4 do, va dau
+  // cua sai so DOI THEO CHIEU QUAY. Do chinh la kieu dao dong +-7 do cua
+  // map->odom yaw do duoc bang tools/check_slam_drift.py khi lai vong quanh
+  // phong. Lui stamp ve giua vong thi sai so trung binh ve 0.
+  fill_stamp(&scan_msg.header.stamp, -(int64_t)(500000000.0f / freq));
+
   scan_msg.angle_min       = 0.0f;
   scan_msg.angle_increment = 2.0f * (float)M_PI / (float)SCAN_BINS;
   scan_msg.angle_max       = 2.0f * (float)M_PI - scan_msg.angle_increment;
   scan_msg.scan_time       = 1.0f / freq;
-  scan_msg.time_increment  = scan_msg.scan_time / (float)SCAN_BINS;
+  // time_increment = 0, KHONG phai scan_time/SCAN_BINS.
+  // Truong nay khai rang tia thu i duoc thu o stamp + i*time_increment, va lop
+  // vat can cua Nav2 (laser_geometry ban high-fidelity) dung no de tra TF rieng
+  // cho tung tia. Nhung bin o day xep theo PHUONG VI sau khi da xoay 180 do va
+  // lat guong, khong theo THU TU THU - nen moi tia se bi gan sai thoi diem.
+  // 0 la gia tri trung thuc: moi tia coi nhu thu tai stamp (giua vong).
+  scan_msg.time_increment  = 0.0f;
   scan_msg.range_min       = RANGE_MIN_M;
   scan_msg.range_max       = RANGE_MAX_M;
   // range == 0 nam ngoai [range_min, range_max] -> Nav2/RViz tu bo qua tia rong

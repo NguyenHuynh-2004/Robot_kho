@@ -33,6 +33,7 @@ from rclpy.node import Node
 from rclpy.qos import (QoSDurabilityPolicy, QoSHistoryPolicy, QoSProfile,
                        QoSReliabilityPolicy)
 from rcl_interfaces.msg import Log
+from nav_msgs.msg import Odometry
 import tf2_ros
 
 LEVEL = {10: 'DEBUG', 20: 'INFO', 30: 'WARN', 40: 'ERROR', 50: 'FATAL'}
@@ -50,9 +51,24 @@ class D(Node):
                        durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
                        history=QoSHistoryPolicy.KEEP_LAST, depth=500))
 
+        # Toc do quay DINH giua hai lan in. Can de tra loi cau hoi: cac lan slam
+        # phai sua nhieu co trung voi luc xe quay nhanh khong? LiDAR mat 0.116 s
+        # mot vong va firmware khong bu chuyen dong, nen quay 1.2 rad/s la anh
+        # quet nhoe 8 do - khop mot anh nhoe voi ban do sac net thi ra goc lech.
+        self.w_peak = 0.0
+        self.v_peak = 0.0
+        self.create_subscription(
+            Odometry, '/odom', self.cb_odom,
+            QoSProfile(reliability=QoSReliabilityPolicy.RELIABLE,
+                       history=QoSHistoryPolicy.KEEP_LAST, depth=20))
+
     def cb_log(self, m):
         if m.name.startswith('slam_toolbox') and m.level >= 30:
             self.logs.append((LEVEL.get(m.level, m.level), m.msg))
+
+    def cb_odom(self, m):
+        self.w_peak = max(self.w_peak, abs(m.twist.twist.angular.z))
+        self.v_peak = max(self.v_peak, abs(m.twist.twist.linear.x))
 
 
 def yaw_of(q):
@@ -76,7 +92,7 @@ def main():
     from rclpy.time import Time
     print(f"\nTheo doi {a.duration:.0f} s. HAY LAI XE trong luc nay.\n")
     print(f"{'t(s)':>5} {'map->odom x':>11} {'y':>8} {'yaw(do)':>9} "
-          f"{'slam sua':>12} {'xe di':>12}")
+          f"{'slam sua':>12} {'xe di':>12} {'v dinh':>8} {'w dinh':>8}")
 
     t0 = time.time()
     prev = prev_pose = None
@@ -101,9 +117,11 @@ def main():
                 chg = f"{math.hypot(x-prev[0], y-prev[1])*1000:6.0f} mm"
                 dm = math.hypot(px-prev_pose[0], py-prev_pose[1])
                 moved = f"{dm*1000:6.0f} mm"
+            wp, vp = n.w_peak, n.v_peak
+            n.w_peak = n.v_peak = 0.0
             print(f"{time.time()-t0:5.0f} {x:11.3f} {y:8.3f} {th:9.2f} "
-                  f"{chg:>12} {moved:>12}")
-            rows.append((x, y, th, px, py))
+                  f"{chg:>12} {moved:>12} {vp:8.2f} {wp:8.2f}")
+            rows.append((x, y, th, px, py, wp))
             prev = (x, y)
             prev_pose = (px, py)
         except Exception as e:
@@ -151,6 +169,28 @@ def main():
         else:
             print("\n  slam sua deu va luong sua nho -> odometry va khop scan")
             print("  deu lanh.")
+
+        # Cac lan sua lon co trung voi luc quay nhanh khong?
+        pairs = [(math.hypot(b[0]-a_[0], b[1]-a_[1]), b[5])
+                 for a_, b in zip(rows, rows[1:])]
+        big = [w for c, w in pairs if c > 0.15]
+        small = [w for c, w in pairs if c <= 0.15]
+        if big and small:
+            mb = sum(big) / len(big)
+            ms = sum(small) / len(small)
+            print(f"\n  toc do quay dinh, trung binh theo nhom:")
+            print(f"    luc slam sua NHIEU (>150 mm): {mb:.2f} rad/s "
+                  f"({len(big)} lan)")
+            print(f"    luc slam sua it   (<150 mm): {ms:.2f} rad/s "
+                  f"({len(small)} lan)")
+            if mb > ms * 1.4:
+                print("    -> sua nhieu TRUNG voi quay nhanh. LiDAR mat 0.116 s")
+                print("       mot vong va khong duoc bu chuyen dong, nen quay")
+                print("       nhanh la anh quet nhoe. Ha scale_angular xuong,")
+                print("       hoac quay cham tay khi ve ban do.")
+            else:
+                print("    -> khong trung. Nguyen nhan nam o cho khac, khong")
+                print("       phai anh quet nhoe khi quay.")
 
     n.destroy_node()
     rclpy.shutdown()

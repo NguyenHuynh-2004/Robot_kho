@@ -29,6 +29,7 @@ THAM SO
 """
 import math
 import threading
+from collections import deque
 
 import rclpy
 from rclpy.executors import ExternalShutdownException
@@ -91,6 +92,18 @@ class WheelOdometry(Node):
         self._imu_yaw = None       # yaw tuyet doi moi nhat tu quaternion
         self._imu_yaw0 = None      # yaw luc bat dau -> de odom xuat phat tu 0
         self._gyro_z = 0.0
+        # Tich phan gyro cho yaw_source=imu_gyro. Cong DU moi mau (50 Hz) chu
+        # khong lay mau gan nhat nhan dt nhu ban dau.
+        self._gyro_yaw = 0.0       # rad, cong don tu luc bat dau
+        self._gyro_yaw_used = 0.0  # phan da dua vao odom
+        self._gyro_t = None
+        # Bias con du sau khi firmware da tru bias luc khoi dong. Do duoc
+        # 0.00099 rad/s = 3.4 do/phut bang tools/check_gyro_bias.py. Hoc lai
+        # moi khi xe dung yen (banh khong quay) - luc do gyro DUNG RA phai 0,
+        # nen trung binh cua no chinh la bias.
+        self._gyro_bias = 0.0
+        self._still = False
+        self._still_win = deque(maxlen=100)    # 2 giay o 50 Hz
         self._lock = threading.Lock()
         self._warned_missing = False
 
@@ -137,7 +150,26 @@ class WheelOdometry(Node):
     # ------------------------------------------------------------------
     def cb_imu(self, m: Imu):
         with self._lock:
-            self._gyro_z = m.angular_velocity.z
+            gz = m.angular_velocity.z
+            self._gyro_z = gz
+            t = Time.from_msg(m.header.stamp).nanoseconds * 1e-9
+
+            # Hoc bias khi xe dung yen: luc do gyro DUNG RA phai doc 0.
+            # Trung binh truot, keo dan 20% moi lan de khong giat.
+            if self._still:
+                self._still_win.append(gz)
+                if len(self._still_win) >= 50:
+                    target = sum(self._still_win) / len(self._still_win)
+                    self._gyro_bias += 0.2 * (target - self._gyro_bias)
+            else:
+                self._still_win.clear()
+
+            if self._gyro_t is not None:
+                dt = t - self._gyro_t
+                if 0.0 < dt < 0.2:          # bo qua lo hong / stamp giat lui
+                    self._gyro_yaw += (gz - self._gyro_bias) * dt
+            self._gyro_t = t
+
             y = yaw_of(m.orientation)
             # Quaternion toan 0 nghia la IMU chua san sang
             q = m.orientation
@@ -164,9 +196,18 @@ class WheelOdometry(Node):
         t = Time.from_msg(m.header.stamp).nanoseconds * 1e-9
         pl, pr = m.position[il], m.position[ir]
 
+        # Xe dung yen = ca hai banh gan nhu khong quay. Dung de hoc bias gyro.
+        # 0.05 rad/s o banh 33 mm la 1.6 mm/s - duoi muc xe that su di chuyen.
+        if len(m.velocity) > max(il, ir):
+            still = max(abs(m.velocity[il]), abs(m.velocity[ir])) < 0.05
+        else:
+            still = False
+
         with self._lock:
+            self._still = still
             if self._prev is None:
                 self._prev = (t, pl, pr)
+                self._gyro_yaw_used = self._gyro_yaw
                 return
             t0, pl0, pr0 = self._prev
             dt = t - t0
@@ -193,7 +234,11 @@ class WheelOdometry(Node):
                 new_th = wrap(self._imu_yaw - self._imu_yaw0)
                 d_theta = wrap(new_th - self.th)
             elif self.yaw_source == 'imu_gyro':
-                d_theta = self._gyro_z * dt
+                # Lay phan gyro da tich phan (du moi mau, da tru bias) tu lan
+                # truoc den gio. Khong phu thuoc tu ke, nen khong bi nam cham
+                # dong co lam lech theo huong xe dang quay mat.
+                d_theta = self._gyro_yaw - self._gyro_yaw_used
+                self._gyro_yaw_used = self._gyro_yaw
             else:
                 d_theta = (d_r - d_l) / self.sep
 
