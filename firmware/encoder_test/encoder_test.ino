@@ -123,17 +123,23 @@ void loop() {
               continue;
             }
             float ppr = fabsf((float)cnt) / vong;
-            Serial.printf("  %-5s %8ld xung  ->  %.1f xung/vong", ten, cnt, ppr);
-            if (cnt < 0) Serial.print("   (so dem GIAM khi quay toi)");
-            Serial.println();
+            Serial.printf("  %-5s %8ld xung  ->  %.1f xung/vong\n", ten, cnt, ppr);
+            // Dau AM o mot ben la BINH THUONG: hai dong co lap doi xung nen khi
+            // xe tien chung quay nguoc chieu nhau, va quan he pha A/B cho dau
+            // nguoc nhau. Dung la hai co INVERT_ENC_x phai KHAC nhau.
+            // Chi dang lo khi CA HAI cung dau luc quay theo chieu xe tien.
+            Serial.printf("         dau %s -> INVERT_ENC_%c phai la %s\n",
+                          cnt < 0 ? "AM " : "DUONG", ten[0] == 'T' ? 'L' : 'R',
+                          cnt < 0 ? "true" : "false");
             Serial.printf("         lech %+.1f%% so voi %.0f dang dung trong firmware\n",
                           (ppr - PPR_TRONG_FIRMWARE) / PPR_TRONG_FIRMWARE * 100.0f,
                           PPR_TRONG_FIRMWARE);
           }
           Serial.println();
-          Serial.println("  Lam tron den so nguyen dep nhat roi dat vao");
-          Serial.println("  ENC_PULSES_PER_REV trong esp32_agv_base.ino.");
-          Serial.println("  Neu dem GIAM khi quay toi -> dao INVERT_ENC_x.");
+          Serial.println("  Lay trung binh hai banh, dat vao ENC_PULSES_PER_REV");
+          Serial.println("  trong esp32_agv_base.ino. Khong can la so tron.");
+          Serial.println("  Hai banh lech nhau qua vai % moi la van de: mot ben");
+          Serial.println("  mat xung, thuong do kenh B tha noi tren GPIO 34/35.");
           Serial.println("--------------------------------------------------");
           encL.clearCount();
           encR.clearCount();
