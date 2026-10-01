@@ -28,12 +28,14 @@ def main():
     while time.time() < end:
         rclpy.spin_once(n, timeout_sec=0.1)
 
-    print("=== cay TF ===")
-    print(buf.all_frames_as_string())
-
+    # PHAI doc gio va tra cuu NGAY khi vua ngung spin, in sau.
+    # TransformListener mac dinh chi nhan TF trong luc node duoc spin. Neu in
+    # truoc roi moi doc gio thi "tuoi" cua transform bao gom ca thoi gian in an
+    # - da dinh dung bay nay, cong cu bao transform cu 1.404 giay trong khi do
+    # lai thi /odom ve dung 50.0 Hz, khoang cach trung vi 20.0 ms.
     now = n.get_clock().now()
-    print(f"gio may (ROS): {now.nanoseconds * 1e-9:.3f}")
-
+    tree = buf.all_frames_as_string()
+    rows = []
     for a, b in (('odom', 'base_footprint'), ('base_footprint', 'base_link'),
                  ('base_link', 'lidar_link'), ('odom', 'lidar_link'),
                  ('map', 'odom')):
@@ -42,9 +44,18 @@ def main():
             t = buf.lookup_transform(a, b, Time())
             ts = t.header.stamp.sec + t.header.stamp.nanosec * 1e-9
             age = now.nanoseconds * 1e-9 - ts
-            print(f"  {a:16s} -> {b:16s} OK   stamp={ts:.3f} (tuoi {age:+.3f} s)")
+            rows.append(f"  {a:16s} -> {b:16s} OK   stamp={ts:.3f} "
+                        f"(tuoi {age:+.3f} s)")
         except Exception as e:
-            print(f"  {a:16s} -> {b:16s} HONG: {type(e).__name__}: {e}")
+            rows.append(f"  {a:16s} -> {b:16s} HONG: {type(e).__name__}: {e}")
+
+    print("=== cay TF ===")
+    print(tree)
+    print(f"gio may (ROS): {now.nanoseconds * 1e-9:.3f}")
+    for r in rows:
+        print(r)
+    print("\n(TF tinh - base_footprint->base_link, base_link->lidar_link - co")
+    print(" stamp = 0 vi di qua /tf_static, khong het han. Tuoi cua chung vo nghia.)")
 
     n.destroy_node()
     rclpy.shutdown()
