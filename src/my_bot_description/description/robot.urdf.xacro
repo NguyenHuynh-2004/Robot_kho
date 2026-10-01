@@ -171,6 +171,10 @@
         <material>Gazebo/Black</material>
     </gazebo>
 
+    <!-- rpy PHAI giu nguyen 0 0 0.
+         Goc lap lech cua LiDAR da duoc bu trong firmware bang
+         LIDAR_ANGLE_OFFSET_DEG (do duoc 180 do). Them yaw vao day nua la bu
+         thua gap doi va anh quet se lech nguoc lai dung chung do. -->
     <joint name="lidar_joint" type="fixed">
         <parent link="chassis"/>
         <child link="lidar_link"/>

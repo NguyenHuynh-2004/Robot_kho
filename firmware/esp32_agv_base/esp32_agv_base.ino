@@ -216,10 +216,23 @@ float maxAccelRPMPerSec = 320.0f;    // ramp, chong giat va sut ap
 // Huong quay: YDLIDAR quay CUNG chieu kim dong ho, ROS quy uoc goc tang NGUOC
 // chieu kim dong ho -> mac dinh lat dau. Anh quet bi lat guong thi doi thanh 0.
 #define LIDAR_ANGLE_FLIP       1
-// Bu lech goc khi gan LiDAR. PHAI DO LAI sau khi lap len xe that:
-// dat vat can ngay truoc mui xe, chinh so nay den khi tia trong RViz
-// nam dung huong truoc.
-#define LIDAR_ANGLE_OFFSET_DEG 90.0f
+// Bu lech goc khi gan LiDAR len xe.
+//
+// DA DO, khong con la so dat tam. Dat mot vat rong ~36 cm ngay truoc mui xe,
+// cach 1.20 m, roi chay tools/check_lidar_offset.py (trung vi truot +-2 bin,
+// 25 vong quet): vat hien ra o phuong vi 90.0 do thay vi 0 do. Tuc voi
+// OFFSET = 90 thi anh quet bi xoay du dung mot goc vuong -> doi thanh 180.
+//
+// Cach suy: bearing phat ra = (360 - OFFSET) - angle_lidar, nen tang OFFSET
+// len bao nhieu la keo bearing xuong bay nhieu. Do duoc du 90 -> +90.
+//
+// Loi nay KHONG lam meo ban do (ban do va anh quet van nhat quan voi nhau,
+// chi cung bi xoay so voi xe) nhung voi Nav2 thi la tai hoa: no se thay vat
+// can lech di dung mot goc vuong, ne sang cho trong va dam vao cho co vat.
+//
+// Do lai neu thao lap lai LiDAR. Chi sua o DAY, dung sua them rpy cua
+// lidar_joint trong URDF - lam ca hai la bu thua gap doi.
+#define LIDAR_ANGLE_OFFSET_DEG 180.0f
 
 // Tran kich thuoc message do thu vien micro_ros_arduino quyet dinh luc bien
 // dich (src/uxr/client/config.h), khong sua duoc tu sketch.
