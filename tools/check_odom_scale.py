@@ -36,6 +36,25 @@ from nav_msgs.msg import Odometry
 WHEEL_RADIUS_NOW = 0.03225      # gia tri dang nam trong firmware
 
 
+def read_live_radius(node, target):
+    """Hoi wheel_radius tu node odometry dang chay. None neu khong hoi duoc."""
+    try:
+        from rclpy.parameter_client import AsyncParameterClient
+        cli = AsyncParameterClient(node, target)
+        if not cli.wait_for_services(timeout_sec=8.0):
+            return None
+        fut = cli.get_parameters(['wheel_radius'])
+        end = time.time() + 8.0
+        while not fut.done() and time.time() < end:
+            time.sleep(0.05)
+        if not fut.done():
+            return None
+        vals = fut.result().values
+        return float(vals[0].double_value) if vals else None
+    except Exception:
+        return None
+
+
 class O(Node):
     def __init__(self):
         super().__init__('check_odom_scale')
@@ -56,15 +75,41 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--distance', type=float, required=True,
                     help='quang duong THAT se chay, met (vd 2.0)')
-    ap.add_argument('--radius', type=float, default=WHEEL_RADIUS_NOW,
-                    help='WHEEL_RADIUS_M dang nam trong firmware')
+    ap.add_argument('--radius', type=float, default=None,
+                    help='chi dung khi khong hoi duoc node dang chay')
+    ap.add_argument('--node', default='wheel_odometry',
+                    help='ten node odometry de hoi tham so')
     a = ap.parse_args()
 
     rclpy.init()
     n = O()
+
     ex = MultiThreadedExecutor()
     ex.add_node(n)
     threading.Thread(target=ex.spin, daemon=True).start()
+
+    # HOI THANG node dang chay thay vi tin vao --radius.
+    # Da mat mot phep do vi cho nay: default trong launch da doi thanh 0.03300
+    # nhung node van dang chay voi 0.03225 tu truoc do (chua khoi dong lai), ma
+    # cong cu thi tinh he so tren 0.03300 -> ra mot con so vo nghia.
+    #
+    # PHAI goi SAU khi executor da chay: AsyncParameterClient tra ve future, ma
+    # future chi hoan tat khi node duoc spin.
+    live_r = read_live_radius(n, a.node)
+    if live_r is not None:
+        if a.radius is not None and abs(a.radius - live_r) > 1e-9:
+            print(f"\n  LUU Y: ban truyen --radius {a.radius:.5f} nhung node "
+                  f"/{a.node} dang chay voi {live_r:.5f}.")
+            print(f"  Dung gia tri DANG CHAY. Neu vua sua launch thi phai khoi "
+                  f"dong lai no.")
+        a.radius = live_r
+        print(f"\nwheel_radius dang dung (hoi tu /{a.node}): {a.radius:.5f} m")
+    else:
+        if a.radius is None:
+            a.radius = WHEEL_RADIUS_NOW
+        print(f"\n  CANH BAO: khong hoi duoc tham so cua /{a.node}. "
+              f"Dung {a.radius:.5f} m.")
+        print(f"  Neu node dang chay voi gia tri khac thi ket qua se sai.")
 
     t0 = time.time()
     while n.last is None and time.time() - t0 < 15:

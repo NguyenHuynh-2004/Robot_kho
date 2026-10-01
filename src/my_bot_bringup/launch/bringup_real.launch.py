@@ -78,19 +78,21 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'agent_port', default_value='8888',
             description='Phai khop AGENT_PORT trong esp32_agv_base.ino'),
-        # DO DUOC, khong phai ban kinh hinh hoc.
-        #   Hinh hoc (duong kinh 64.5 mm)        : 0.03225
-        #   Do bang check_odom_scale.py --distance 2.0:
-        #       odom bao 1.955 m cho 2.000 m that -> he so 1.0230
-        #       0.03225 * 1.0230 = 0.03300
-        #   (doan chay do thang that: lech ngang -0.019 m, doi huong -0.9 do)
+        # Dang la ban kinh HINH HOC (duong kinh banh 64.5 mm), CHUA hieu chinh.
         #
-        # He so nay gop CA HAI nguon sai lech, mot phep do khong tach duoc:
-        # ban kinh LAN cua banh, va ENC_PULSES_PER_REV (dang la 1200, lay tu
-        # sketch goc, chua ai kiem). Tach bang buoc A1 Phu luc A: nhac xe len,
-        # quay tay mot banh dung 10 vong, count phai doi ~12000.
+        # Da thu hieu chinh va phai bo: hai lan do chay thang 2.00 m voi cung
+        # mot cau hinh cho hai ket qua khac han nhau,
+        #       lan 1: odom 1.955 m   (he so 1.023)
+        #       lan 2: odom 3.494 m   (he so 0.572)
+        # tuc gap 1.79 lan. Phep do khong lap lai duoc nen khong con nao dung
+        # de ghi vao day. Giu so hinh hoc cho den khi co mot gia tri lap lai
+        # duoc qua nhieu lan do.
+        #
+        # Truoc khi do lai, lam check_encoder_ppr.py: quay tay banh thi khong
+        # co truot va khong phu thuoc viec danh dau vach, nen no tach duoc
+        # "encoder dem sai" ra khoi "banh truot / do sai quang duong".
         DeclareLaunchArgument(
-            'wheel_radius', default_value='0.03300',
+            'wheel_radius', default_value='0.03225',
             description='Ban kinh LAN cua banh sau (m). Hieu chinh bang '
                         'tools/check_odom_scale.py - KHONG phai nap lai chip'),
         DeclareLaunchArgument(
