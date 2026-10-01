@@ -78,8 +78,19 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'agent_port', default_value='8888',
             description='Phai khop AGENT_PORT trong esp32_agv_base.ino'),
+        # DO DUOC, khong phai ban kinh hinh hoc.
+        #   Hinh hoc (duong kinh 64.5 mm)        : 0.03225
+        #   Do bang check_odom_scale.py --distance 2.0:
+        #       odom bao 1.955 m cho 2.000 m that -> he so 1.0230
+        #       0.03225 * 1.0230 = 0.03300
+        #   (doan chay do thang that: lech ngang -0.019 m, doi huong -0.9 do)
+        #
+        # He so nay gop CA HAI nguon sai lech, mot phep do khong tach duoc:
+        # ban kinh LAN cua banh, va ENC_PULSES_PER_REV (dang la 1200, lay tu
+        # sketch goc, chua ai kiem). Tach bang buoc A1 Phu luc A: nhac xe len,
+        # quay tay mot banh dung 10 vong, count phai doi ~12000.
         DeclareLaunchArgument(
-            'wheel_radius', default_value='0.03225',
+            'wheel_radius', default_value='0.03300',
             description='Ban kinh LAN cua banh sau (m). Hieu chinh bang '
                         'tools/check_odom_scale.py - KHONG phai nap lai chip'),
         DeclareLaunchArgument(

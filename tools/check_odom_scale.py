@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
-"""Hieu chinh WHEEL_RADIUS_M bang mot doan chay thang do bang thuoc.
-Day la buoc A3 trong Phu luc A cua firmware, chua ai lam.
+"""Hieu chinh ban kinh banh bang mot doan chay thang do bang thuoc.
+Tuong ung buoc A3 trong Phu luc A cua firmware.
+
+Tu khi odometry chuyen len laptop, ket qua sua vao THAM SO wheel_radius cua
+bringup_real.launch.py, KHONG phai vao WHEEL_RADIUS_M trong firmware. Khong
+phai nap chip nua.
 
     cd ~/robot_ws_3 && python3 tools/check_odom_scale.py --distance 2.0
 
@@ -14,8 +18,8 @@ CACH LAM:
 Cong cu tra loi hai cau mot luc:
   - DAU cua quang duong: am tuc odometry van bao nguoc -> firmware chua nap
     ban da dao chieu dong co.
-  - DO LON: ti so giua quang duong odom bao va quang duong that chinh la ti so
-    can nhan vao WHEEL_RADIUS_M.
+  - DO LON: ti so giua quang duong that va quang duong odom bao chinh la he so
+    can nhan vao wheel_radius.
 
 Thuan doc, khong publish gi."""
 import argparse
@@ -109,14 +113,26 @@ def main():
 
     print(f"  Dau DUNG (odom bao toi, xe chay toi).")
     print(f"  Odom bao {along:.3f} m cho {a.distance:.3f} m that "
-          f"-> sai {err:+.1f}%")
+          f"-> sai {err:+.1f}%  (he so can nhan: {ratio:.4f})")
     if abs(err) < 2.0:
-        print(f"  Duoi 2% - DAT, khong can sua WHEEL_RADIUS_M.")
+        print(f"  Duoi 2% - DAT, khong can sua gi.")
     else:
-        print(f"\n  Sua trong firmware:")
-        print(f"    WHEEL_RADIUS_M  {a.radius:.5f}f  ->  {new_r:.5f}f")
+        print(f"\n  Sua tren LAPTOP, KHONG phai trong firmware:")
+        print(f"    ros2 launch my_bot_bringup bringup_real.launch.py \\")
+        print(f"        wheel_radius:={new_r:.5f}")
         print(f"  (= {a.radius:.5f} * {a.distance:.3f}/{along:.3f})")
-        print(f"  Nap lai roi do lai cho den khi sai so < 2%.")
+        print(f"  Muon co dinh thi sua default cua wheel_radius trong")
+        print(f"  launch/bringup_real.launch.py. Khoi dong lai node la xong,")
+        print(f"  khong phai nap chip - odometry da chuyen len laptop.")
+        print(f"\n  LUU Y khi do lai: truyen --radius la gia tri DANG DUNG,")
+        print(f"  neu khong cong cu se tinh he so tren mot moc sai.")
+        print(f"      python3 tools/check_odom_scale.py --distance 2.0 "
+              f"--radius {new_r:.5f}")
+        print(f"\n  He so {ratio:.4f} nay gop CA HAI nguon sai lech, khong tach")
+        print(f"  duoc bang mot phep do: ban kinh LAN cua banh, va")
+        print(f"  ENC_PULSES_PER_REV (dang la 1200, lay tu sketch goc, chua ai")
+        print(f"  kiem). Tach bang buoc A1 trong Phu luc A cua firmware: nhac xe")
+        print(f"  len, quay tay mot banh dung 10 vong, count phai doi ~12000.")
 
     if abs(lateral) > 0.1 or abs(dyaw) > 10:
         print(f"\n  LUU Y: doan chay khong thang (lech ngang {lateral:+.2f} m,")
