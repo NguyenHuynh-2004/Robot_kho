@@ -407,12 +407,27 @@ chạy nhanh gấp đôi (0.25 → 0.5 m/s).
 
 ### Lưu bản đồ
 
-Khi bản đồ trong RViz đã kín hết tường:
+Khi bản đồ trong RViz đã kín hết tường — **slam_toolbox phải còn đang chạy**,
+công cụ lưu đọc bản đồ từ topic `/map`:
 
 ```bash
-ros2 run nav2_map_server map_saver_cli -f src/my_bot_bringup/config/my_room_map
+cd ~/robot_ws_3
+ros2 run nav2_map_server map_saver_cli -f src/my_bot_bringup/config/real_room_map
 colcon build --symlink-install
 ```
+
+Ra hai file `real_room_map.pgm` (ảnh) và `real_room_map.yaml` (độ phân giải, gốc
+toạ độ). `colcon build` là bắt buộc — file mới phải được cài vào `install/` thì
+launch mới thấy.
+
+> **Đừng lưu đè lên `my_room_map`.** Đó là bản đồ phòng Gazebo 10×10 m của
+> Chế độ A. `navigation.launch.py` tự chọn: `use_sim_time:=false` → nạp
+> `real_room_map`, mặc định → `my_room_map`. Muốn bản khác thì `map:=<đường dẫn>`.
+
+> **Gốc bản đồ = chỗ xe đứng lúc bật slam_toolbox.** AMCL mặc định đặt xe ở
+> `(0, 0, 0°)` khi khởi động (`set_initial_pose` trong `navigation.yaml`), nên
+> lúc chạy Nav2 hãy đặt xe lại **đúng chỗ và đúng hướng** lúc bắt đầu vẽ. Không
+> thì dùng nút **2D Pose Estimate** trong RViz để chỉ cho nó.
 
 ## B5. Chạy điều hướng
 
