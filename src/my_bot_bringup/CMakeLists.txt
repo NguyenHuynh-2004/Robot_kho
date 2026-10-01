@@ -30,4 +30,11 @@ install(DIRECTORY
   DESTINATION share/${PROJECT_NAME}/
 )
 
+# Node Python chay tren laptop. Vao lib/ chu khong phai share/ thi launch moi
+# goi duoc bang Node(package=..., executable=...).
+install(PROGRAMS
+  scripts/wheel_odometry.py
+  DESTINATION lib/${PROJECT_NAME}
+)
+
 ament_package()

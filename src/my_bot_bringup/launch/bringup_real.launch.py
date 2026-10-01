@@ -78,6 +78,14 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'agent_port', default_value='8888',
             description='Phai khop AGENT_PORT trong esp32_agv_base.ino'),
+        DeclareLaunchArgument(
+            'wheel_radius', default_value='0.03225',
+            description='Ban kinh LAN cua banh sau (m). Hieu chinh bang '
+                        'tools/check_odom_scale.py - KHONG phai nap lai chip'),
+        DeclareLaunchArgument(
+            'yaw_source', default_value='imu_quaternion',
+            description='imu_quaternion (khong troi, nen dung) | imu_gyro '
+                        '(tich phan, giong firmware cu) | wheels (du phong)'),
 
         # 1. Cau noi micro-ROS. udp4 vi firmware dung Wi-Fi.
         *([Node(
@@ -111,13 +119,25 @@ def generate_launch_description():
             parameters=[robot_description],
         ),
 
-        # 3. Banh xe la khop continuous nen robot_state_publisher doi /joint_states.
-        #    Xe that khong phat topic nay -> node nay bom goc 0 vao cho du TF.
-        #    Thuan tuy hien thi: banh trong RViz se khong quay.
+        # 3. Odometry tinh TREN LAPTOP tu /joint_states + /imu/data.
+        #    Truoc day ESP32 tu tinh va phat /odom + /tf, con /joint_states thi
+        #    joint_state_publisher bom goc 0 gia vao cho du TF (banh trong RViz
+        #    khong bao gio quay). Gio ESP32 phat /joint_states THAT nen
+        #    joint_state_publisher khong con can nua, va doi mot y tuong ve
+        #    odometry khong phai nap lai chip.
         Node(
-            package='joint_state_publisher',
-            executable='joint_state_publisher',
-            name='joint_state_publisher',
-            parameters=[{'use_sim_time': False}],
+            package='my_bot_bringup',
+            executable='wheel_odometry.py',
+            name='wheel_odometry',
+            output='screen',
+            parameters=[{
+                'use_sim_time': False,
+                # Ban kinh LAN, nho hon ban kinh hinh hoc 0.03225 vi lop bi nen.
+                # Hieu chinh bang tools/check_odom_scale.py roi sua SO NAY -
+                # khong phai nap lai firmware nua.
+                'wheel_radius': LaunchConfiguration('wheel_radius'),
+                'wheel_separation': 0.200,
+                'yaw_source': LaunchConfiguration('yaw_source'),
+            }],
         ),
     ])

@@ -70,6 +70,7 @@
 #include <geometry_msgs/msg/twist.h>
 #include <nav_msgs/msg/odometry.h>
 #include <sensor_msgs/msg/imu.h>
+#include <sensor_msgs/msg/joint_state.h>
 #include <sensor_msgs/msg/laser_scan.h>
 #include <tf2_msgs/msg/tf_message.h>
 // tf_message.h chi keo struct cua TransformStamped, khong keo cac ham __init.
@@ -205,7 +206,29 @@ float maxAccelRPMPerSec = 320.0f;    // ramp, chong giat va sut ap
 #define STALL_RPM         1.0f
 #define STALL_TIME_MS     1000
 
-// Nguon goc goc quay cho odometry.
+// ----------------------------------------------------------------------------
+// AI TINH ODOMETRY?
+//   0 = LAPTOP tinh  (mac dinh). ESP32 chi phat /joint_states (goc banh TICH
+//       LUY, radian) va /imu/data. Node wheel_odometry.py tren laptop ghep lai
+//       thanh /odom va TF odom->base_footprint.
+//   1 = ESP32 tu tinh va phat /odom + /tf nhu truoc. Giu lam duong lui.
+//
+// VI SAO CHUYEN LEN LAPTOP:
+//   - Sua mot y tuong ve odometry khong con phai nap lai chip.
+//   - WHEEL_RADIUS_M roi khoi duong tinh odometry: ESP32 gui GOC banh, laptop
+//     nhan voi ban kinh. Hieu chinh ban kinh lan = sua mot tham so ROS.
+//   - Laptop tinh bang float64 va co the dung quaternion tuyet doi cua BNO055
+//     thay vi tich phan toc do goc (tich phan thi troi, quaternion thi khong).
+//
+// DIEU KIEN DE LAM DUOC: phai gui gia tri TICH LUY, khong gui so gia.
+//   Da do duoc tren duong truyen nay: /odom co duoi tre toi 32 ms, /scan mat 7
+//   khoang > 200 ms trong 12 giay. Neu gui "chu ky vua roi banh di 3 mm" thi
+//   moi goi roi la mat han 3 mm, sai so khong bao gio lay lai duoc. Gui "goc
+//   banh hien tai la 1234.56 rad" thi goi roi khong ton gi.
+// ----------------------------------------------------------------------------
+#define ODOM_ON_ESP32 0
+
+// Chi con y nghia khi ODOM_ON_ESP32 = 1.
 //   1 = tich phan gyro Z cua BNO055  (chinh xac hon HAN, nen dung)
 //   0 = suy tu chenh lech 2 encoder  (du phong khi IMU hong)
 #define USE_GYRO_FOR_YAW 1
@@ -270,14 +293,28 @@ rcl_node_t      node;
 rclc_executor_t executor;
 
 rcl_subscription_t cmd_vel_sub;
-rcl_publisher_t    scan_pub, odom_pub, imu_pub, tf_pub;
+rcl_publisher_t    scan_pub, imu_pub, js_pub;
+#if ODOM_ON_ESP32
+rcl_publisher_t    odom_pub, tf_pub;
+#endif
 
 geometry_msgs__msg__Twist       cmd_vel_msg;
 sensor_msgs__msg__LaserScan     scan_msg;
-nav_msgs__msg__Odometry         odom_msg;
 sensor_msgs__msg__Imu           imu_msg;
+sensor_msgs__msg__JointState    js_msg;
+#if ODOM_ON_ESP32
+nav_msgs__msg__Odometry         odom_msg;
 tf2_msgs__msg__TFMessage        tf_msg;
 geometry_msgs__msg__TransformStamped tf_transforms[1];
+#endif
+
+// Bo nho tinh cho /joint_states. Ten khop PHAI khop robot.urdf.xacro, neu
+// khong robot_state_publisher se bo qua va banh xe trong RViz khong quay.
+static char  js_name_l[20] = "left_wheel_joint";
+static char  js_name_r[20] = "right_wheel_joint";
+static rosidl_runtime_c__String js_names[2];
+static double js_position[2];      // rad, TICH LUY tu luc khoi dong
+static double js_velocity[2];      // rad/s
 
 // Bo dem tinh cho cac truong chuoi (micro-ROS khong tu cap phat)
 static char odom_frame_buf[16]  = ODOM_FRAME;
@@ -332,6 +369,9 @@ struct Wheel {
 
   int   last_direction  = 0;      // 1 thuan, -1 nghich, 0 dung
   long  prev_count      = 0;
+  // Tong xung TICH LUY tu luc khoi dong, DA ap dung invert_enc. Day la thu
+  // duoc gui len laptop: mat goi khong ton gi vi goi sau mang ca gia tri.
+  long long total_counts = 0;
   float target_rpm      = 0.0f;   // lenh tu /cmd_vel
   float ramped_rpm      = 0.0f;
   float current_rpm     = 0.0f;   // sau loc
@@ -422,6 +462,7 @@ static void wheel_control_step(Wheel &w, const char *name, float dt) {
   long delta = count - w.prev_count;
   w.prev_count = count;
   if (w.invert_enc) delta = -delta;
+  w.total_counts += delta;
 
   float revs   = (float)delta / ENC_PULSES_PER_REV;
   float rawRPM = revs * (60.0f / dt);
@@ -750,6 +791,30 @@ static void publish_scan_if_ready() {
   if (dt > t_scan_max) t_scan_max = dt;
 }
 
+// Phat goc banh TICH LUY (rad) + toc do goc (rad/s). Day la toan bo nhung gi
+// laptop can de tu tinh odometry, va cung dung luon lam /joint_states that cho
+// robot_state_publisher - truoc day phai dung joint_state_publisher bom goc 0
+// gia, nen banh trong RViz khong bao gio quay.
+//
+// Gui GOC chu khong gui quang duong: WHEEL_RADIUS_M khong tham gia, nen hieu
+// chinh ban kinh lan chi la sua tham so ROS tren laptop, khong phai nap chip.
+static void publish_joint_states() {
+  const double CNT2RAD = 2.0 * M_PI / (double)ENC_PULSES_PER_REV;
+  const double RPM2RPS = 2.0 * M_PI / 60.0;
+
+  uint32_t t0 = micros();
+  fill_stamp(&js_msg.header.stamp);
+  js_position[0] = (double)wl.total_counts * CNT2RAD;
+  js_position[1] = (double)wr.total_counts * CNT2RAD;
+  js_velocity[0] = (double)wl.current_rpm * RPM2RPS;
+  js_velocity[1] = (double)wr.current_rpm * RPM2RPS;
+  if (rcl_publish(&js_pub, &js_msg, NULL) != RCL_RET_OK) publish_failed++;
+  else pub_odom++;              // dung chung bo dem voi odom cho dong log gon
+  uint32_t dt = micros() - t0;
+  if (dt > t_pub_max) t_pub_max = dt;
+}
+
+#if ODOM_ON_ESP32
 static void publish_odom_and_tf() {
   float x, y, th, v, w;
   portENTER_CRITICAL(&odom_mux);
@@ -787,6 +852,7 @@ static void publish_odom_and_tf() {
   uint32_t dt = micros() - t0;
   if (dt > t_pub_max) t_pub_max = dt;
 }
+#endif  // ODOM_ON_ESP32
 
 // Do do lech khong cua gyro Z luc khoi dong, luc xe chac chan dung yen.
 //
@@ -875,8 +941,24 @@ void ros_task(void *pv) {
 
     uint32_t now = millis();
 
-    if (now - last_odom >= 20) { last_odom = now; publish_odom_and_tf(); }  // 50 Hz
-    if (now - last_imu  >= 20) { last_imu  = now; read_and_publish_imu(); } // 50 Hz
+    // Nhip 50 Hz. Dung "last += 20" chu khong "last = now": gan bang now thi
+    // phan vuot qua 20 ms bi nuot mat va lich tu troi cham lai. Da do tu phia
+    // ROS: khoang cach dau thoi gian co dinh o 20 ms nhung duoi keo toi 32 ms,
+    // trung binh 22.6 ms = 44 Hz thay vi 50.
+    // Neu tut qua xa (vong lap bi chan lau) thi dat lai, dung don cuc mot lan.
+    if (now - last_odom >= 20) {
+      last_odom += 20;
+      if (now - last_odom > 100) last_odom = now;
+#if ODOM_ON_ESP32
+      publish_odom_and_tf();
+#endif
+      publish_joint_states();
+    }
+    if (now - last_imu >= 20) {
+      last_imu += 20;
+      if (now - last_imu > 100) last_imu = now;
+      read_and_publish_imu();
+    }
 
     // sync_session va ping_agent deu CHAN, va do duoc la chung KHONG ton trong
     // timeout minh dat: ping_agent(150, 1) chan 127 ms, 228 ms, va mot lan
@@ -979,10 +1061,18 @@ static void init_microros() {
       ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, LaserScan), "scan"));
   RCCHECK(rclc_publisher_init_best_effort(&imu_pub, &node,
       ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, Imu), "imu/data"));
+  // /joint_states RELIABLE: ben nhan co hai, wheel_odometry.py (ta tu viet) va
+  // robot_state_publisher. Publisher RELIABLE khop duoc ca subscriber
+  // BEST_EFFORT lan RELIABLE; chieu nguoc lai thi khong. Nen chon RELIABLE la
+  // an toan du robot_state_publisher dung QoS nao.
+  RCCHECK(rclc_publisher_init_default(&js_pub, &node,
+      ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, JointState), "joint_states"));
+#if ODOM_ON_ESP32
   RCCHECK(rclc_publisher_init_default(&odom_pub, &node,
       ROSIDL_GET_MSG_TYPE_SUPPORT(nav_msgs, msg, Odometry), "odom"));
   RCCHECK(rclc_publisher_init_default(&tf_pub, &node,
       ROSIDL_GET_MSG_TYPE_SUPPORT(tf2_msgs, msg, TFMessage), "tf"));
+#endif
 
   RCCHECK(rclc_subscription_init_best_effort(&cmd_vel_sub, &node,
       ROSIDL_GET_MSG_TYPE_SUPPORT(geometry_msgs, msg, Twist), "cmd_vel"));
@@ -1021,6 +1111,30 @@ static void init_microros() {
   scan_msg.intensities.size     = PUBLISH_INTENSITIES ? SCAN_BINS : 0;
   scan_msg.intensities.capacity = SCAN_BINS;
 
+  // /joint_states. micro-ROS khong tu cap phat nen phai tro tung con tro vao
+  // bo nho tinh, ke ca mang chuoi ten khop.
+  sensor_msgs__msg__JointState__init(&js_msg);
+  js_names[0].data = js_name_l;
+  js_names[0].size = strlen(js_name_l);
+  js_names[0].capacity = sizeof(js_name_l);
+  js_names[1].data = js_name_r;
+  js_names[1].size = strlen(js_name_r);
+  js_names[1].capacity = sizeof(js_name_r);
+  js_msg.name.data     = js_names;
+  js_msg.name.size     = 2;
+  js_msg.name.capacity = 2;
+  js_msg.position.data     = js_position;
+  js_msg.position.size     = 2;
+  js_msg.position.capacity = 2;
+  js_msg.velocity.data     = js_velocity;
+  js_msg.velocity.size     = 2;
+  js_msg.velocity.capacity = 2;
+  js_msg.effort.size = 0;          // khong do dong co -> khong co momen
+  js_msg.header.frame_id.data     = base_frame_buf;
+  js_msg.header.frame_id.size     = strlen(base_frame_buf);
+  js_msg.header.frame_id.capacity = sizeof(base_frame_buf);
+
+#if ODOM_ON_ESP32
   nav_msgs__msg__Odometry__init(&odom_msg);
   odom_msg.header.frame_id.data     = odom_frame_buf;
   odom_msg.header.frame_id.size     = strlen(odom_frame_buf);
@@ -1070,7 +1184,11 @@ static void init_microros() {
   tf_transforms[0].child_frame_id.data      = tf_base_buf;
   tf_transforms[0].child_frame_id.size      = strlen(tf_base_buf);
   tf_transforms[0].child_frame_id.capacity  = sizeof(tf_base_buf);
+#endif  // ODOM_ON_ESP32
 
+  Serial.printf("Odometry tinh o: %s\n",
+                ODOM_ON_ESP32 ? "ESP32 (phat /odom + /tf)"
+                              : "LAPTOP (ESP32 chi phat /joint_states)");
   Serial.printf("LaserScan: %d bin, uoc luong %d byte/message (tran %d)\n",
                 SCAN_BINS, EST_MSG_BYTES, MICROROS_MTU);
 }

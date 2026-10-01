@@ -125,6 +125,42 @@ thấy cơ chế chặn cạnh.
 
 # CHẾ ĐỘ B — Xe thật
 
+## B0. Ai làm gì
+
+ESP32 **chỉ làm những việc buộc phải ở gần phần cứng**, mọi tính toán ước lượng
+nằm trên laptop:
+
+| ESP32 | Laptop |
+|---|---|
+| đọc UART LiDAR → `/scan` | `wheel_odometry.py` → `/odom` + TF |
+| đọc encoder → `/joint_states` (**góc tích luỹ**, rad) | `robot_state_publisher` → TF thân xe |
+| đọc BNO055 → `/imu/data` | slam_toolbox / Nav2 |
+| PID động cơ 50 Hz, nhận `/cmd_vel` | |
+
+> **ESP32 gửi giá trị TÍCH LUỸ, không gửi số gia.** Đây là điều kiện để kiến
+> trúc này đúng. Đường truyền này đã đo được có đuôi trễ tới 32 ms và mất 7
+> khoảng > 200 ms trong 12 giây. Với số gia thì mỗi gói rơi là mất hẳn quãng
+> đường đó vĩnh viễn; với giá trị tích luỹ thì gói sau mang cả tổng. Đã kiểm:
+> **bỏ 4/5 số gói, quãng đường vẫn đúng 2.000 m**.
+
+Hệ quả thực tế: **`wheel_radius` không còn trong firmware nữa.** Hiệu chỉnh bán
+kính lăn giờ là sửa tham số launch rồi khởi động lại node — hết phải nạp chip:
+
+```bash
+ros2 launch my_bot_bringup bringup_real.launch.py wheel_radius:=0.0315
+```
+
+Nguồn góc quay chọn bằng `yaw_source`:
+
+| giá trị | nghĩa |
+|---|---|
+| `imu_quaternion` *(mặc định)* | góc tuyệt đối của BNO055, **không trôi** |
+| `imu_gyro` | tích phân gyro — giống firmware cũ, để so sánh |
+| `wheels` | suy từ chênh lệch hai bánh, dự phòng khi IMU hỏng |
+
+Muốn quay lại kiểu cũ (ESP32 tự tính và phát `/odom`): đổi `ODOM_ON_ESP32`
+thành `1` trong firmware rồi nạp lại.
+
 ## B1. Nạp firmware
 
 Mở `firmware/esp32_agv_base/esp32_agv_base.ino` trong Arduino IDE.
