@@ -104,10 +104,24 @@
 // lop bi nen duoi tai -> xe se di ngan hon lenh. Hieu chinh theo Phu luc A3.
 // -----------------------------------------------------------------------------
 
-// Encoder: 1200 xung/vong truc ra khi dung attachHalfQuad (lay tu motor_1_wheel.ino).
-// Doi neu dung dong co khac. Kiem tra: quay tay banh dung 10 vong,
-// count phai tang ~12000.
-#define ENC_PULSES_PER_REV  1200.0f
+// Xung tren mot vong TRUC RA, voi attachHalfQuad (dem 2 canh).
+//
+// DO DUOC bang firmware/encoder_test/encoder_test.ino, quay tay banh:
+//      10 vong : TRAI 21614 -> 2161.4      PHAI 21375 -> 2137.5
+//       3 vong : TRAI  6423 -> 2141.0      PHAI  6401 -> 2133.7
+// Lay trung binh phep 10 vong -> 2150.
+//
+// Khop voi phan cung: encoder 11 PPR * 2 (halfQuad) = 22 xung moi vong truc
+// MOTOR, nhan ti so hop so -> 2150/22 = 97.7. Hop so hanh tinh co nho hiem khi
+// ra ti so nguyen nen 1:97.7 la binh thuong; dung ep ve 2200 (=1:100) cho tron.
+//
+// So cu la 1200, chep tu sketch goc va chua ai kiem - sai 78%. Do chinh la
+// nguyen nhan odometry bao thua: do chay thang 2.00 m ra 3.494 m, dung bang
+// 2.000 * 2150/1200 = 3.58 m trong vong 2%.
+//
+// Do lai bang encoder_test.ino neu doi dong co. Sai so con lai sau khi nap thi
+// bu bang tham so wheel_radius tren laptop, khong phai nap chip lan nua.
+#define ENC_PULSES_PER_REV  2150.0f
 
 // Gioi han an toan
 #define MAX_WHEEL_RPM       120.0f     // tran RPM moi banh (L298N sut ap -> thap hon BTS7960)
