@@ -124,6 +124,7 @@ class WheelOdometry(Node):
         self._gyro_yaw = 0.0       # rad, cong don tu luc bat dau
         self._gyro_yaw_used = 0.0  # phan da dua vao odom
         self._gyro_t = None
+        self._gyro_rx = 0.0        # time.monotonic() luc nhan goi IMU truoc
         self._gyro_prev = 0.0      # gz cua goi truoc, de tich phan hinh thang
         self._imu_ok_t = None      # time.monotonic() cua goi IMU hop le gan nhat
         self._imu_seq = 0          # dem goi IMU hop le
@@ -212,17 +213,25 @@ class WheelOdometry(Node):
             else:
                 self._still_win.clear()
 
+            now_rx = time.monotonic()
             if self._gyro_t is not None:
                 dt = t - self._gyro_t
+                dt_rx = now_rx - self._gyro_rx
                 # Hinh thang: Wi-Fi rot vai goi lien tiep (do duoc lo hong 1.0
                 # s lap lai) thi van tinh du goc, thay vi bo ca khoang. Neu
                 # cb_js da kip tinh khoang do bang banh (IMU bi coi la mat),
                 # luc IMU co lai no dat _gyro_yaw_used = _gyro_yaw nen phan
                 # bac cau nay bi bo, khong bi cong hai lan.
-                if 0.0 < dt < GYRO_BRIDGE_S:
+                # Lo hong dai chi noi khi gio NHAN cung cach xa tuong ung (mat
+                # goi that). Stamp nhay ma gio nhan khong - ESP32 vua dong bo
+                # lai dong ho, da gap nhay toi 1-2 s - thi noi vao la cong ca
+                # giay quay gia.
+                real_gap = abs(dt - dt_rx) < 0.3
+                if 0.0 < dt < IMU_STALE_S or (dt < GYRO_BRIDGE_S and real_gap):
                     self._gyro_yaw += (0.5 * (gz + self._gyro_prev)
                                        - self._gyro_bias) * dt
             self._gyro_t = t
+            self._gyro_rx = now_rx
             self._gyro_prev = gz
 
             self._imu_yaw = yaw_of(q)
@@ -356,6 +365,19 @@ class WheelOdometry(Node):
                     # nam cham dong co lam lech theo huong xe dang quay mat.
                     d_theta = self._gyro_yaw - self._gyro_yaw_used
                     self._gyro_yaw_used = self._gyro_yaw
+                # Hai banh dung yen thi xe KHONG the quay -> moi thay doi goc
+                # IMU luc nay la troi. Da do tren xe that: dung yen 5 phut,
+                # quaternion (che do NDOF, co tu ke) xoay 15 do trong khi
+                # gyro < 1 do; AMCL bam theo, anh quet xoay dan khoi ban do
+                # du xe khong nhuc nhich. Giu nguyen goc, va neo lai moc
+                # quaternion de luc xe chay lai khong bi nhay.
+                wheels_still = (still and
+                                abs(dphi_l) < 0.05 * dt + 0.004 and
+                                abs(dphi_r) < 0.05 * dt + 0.004)
+                if wheels_still:
+                    d_theta = 0.0
+                    if self.yaw_source == 'imu_quaternion':
+                        self._imu_yaw0 = wrap(self._imu_yaw - self.th)
                 if fresh:
                     self._wheel_mark = self._wheel_yaw
 
