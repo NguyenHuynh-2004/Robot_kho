@@ -1205,15 +1205,21 @@ static void init_microros() {
       ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, LaserScan), "scan"));
   RCCHECK(rclc_publisher_init_best_effort(&imu_pub, &node,
       ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, Imu), "imu/data"));
-  // /joint_states BEST_EFFORT. Truoc day la RELIABLE va do la loi:
-  //   micro-ROS gui RELIABLE thi CHO ACK cua laptop, toi da 1000 ms
-  //   (RMW_UXRCE_PUBLISH_RELIABLE_TIMEOUT). Moi lan Wi-Fi rot mot goi,
-  //   ros_task dung 1 giay -> /scan, /imu/data, /joint_states cung im.
-  //   Do tren bag: lo hong 1.00-1.02 s lap lai, xe mat 14 cm moi lan.
-  // Khong can RELIABLE vi goc banh gui la gia tri TICH LUY: goi rot thi goi
-  // sau mang du. Ca hai ben nhan deu nghe BEST_EFFORT (robot_state_publisher
-  // san co, wheel_odometry.py da doi) nen van khop.
-  RCCHECK(rclc_publisher_init_best_effort(&js_pub, &node,
+  // /joint_states PHAI de RELIABLE - da thu doi va phai doi lai:
+  //
+  //   RELIABLE  : moi lan Wi-Fi rot mot goi, ros_task cho ACK toi 1 s
+  //               (lo hong 1.00-1.02 s do tren bag). Truoc day lam mat
+  //               quang duong; nay wheel_odometry.py da dung gia tri tich
+  //               luy qua lo hong nen KHONG con mat gi.
+  //   BEST_EFFORT: do tren xe that, lenh /cmd_vel -> banh quay tre trung vi
+  //               2.9 s, toi 6.2 s (RELIABLE: 87 ms). Xe chay tiep vai giay
+  //               sau khi tha can - nguy hiem. Gia thuyet: luc cho ACK, client
+  //               chay session va doc het goi dang den (gom /cmd_vel); bo
+  //               RELIABLE thi khong con cho nao doc nhanh nhu vay.
+  //
+  // Ca hai ben nhan (robot_state_publisher, wheel_odometry.py) nghe
+  // BEST_EFFORT - khop voi publisher RELIABLE.
+  RCCHECK(rclc_publisher_init_default(&js_pub, &node,
       ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, JointState), "joint_states"));
 #if ODOM_ON_ESP32
   RCCHECK(rclc_publisher_init_default(&odom_pub, &node,
