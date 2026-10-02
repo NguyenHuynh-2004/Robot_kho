@@ -39,6 +39,15 @@ cd ~/robot_ws_3 && colcon build --symlink-install
 > cả thư mục nhà, gặp các bản sao cũ (`robot_ws`, `robot_ws_2`,
 > `robot_ws_thuc_te`…) và báo `Duplicate package names not supported`.
 
+**3. Sửa đồng hồ WSL (một lần, cần mật khẩu):**
+```bash
+sudo bash ~/robot_ws_3/tools/fix_wsl_clock.sh
+```
+Trên máy này dịch vụ `systemd-timesyncd` cãi nhau với Hyper-V, làm đồng hồ
+Ubuntu chạy chậm 8.3% rồi bị giật 2.4 s mỗi ~35 s: mọi dấu thời gian lệch tới
+±1.2 s và tay cầm bị ngắt từng cơn. Script tắt timesyncd (Hyper-V tự giữ giờ
+cho WSL) và đưa tốc độ đồng hồ về chuẩn. Kiểm tra: dòng "Sau:" in `tick=10000`.
+
 Sau bước này, mỗi terminal mới chỉ cần `cd ~/robot_ws_3`.
 
 ### Vì sao cần 2 dòng đặc biệt đó
@@ -176,19 +185,22 @@ Mở `firmware/esp32_agv_base/esp32_agv_base.ino` trong Arduino IDE.
 **Tools → Partition Scheme → Huge APP (3MB No OTA/1MB SPIFFS)** ← bắt buộc.
 Partition mặc định chỉ còn 19% dư, thêm chút nữa là tràn flash.
 
-Sửa các giá trị đầu file:
+**Wi-Fi nằm trong `wifi_config.h`, không nằm trong `.ino` và không nằm trong
+git** — mật khẩu không bao giờ lên GitHub. Lần đầu trên mỗi máy: chép
+`firmware/esp32_agv_base/wifi_config.example.h` thành `wifi_config.h` **vào
+cùng thư mục sketch với file `.ino`** (thư mục Arduino IDE đang mở), rồi điền:
 
 ```cpp
 #define WIFI_SSID   "..."             // wifi của bạn
 #define WIFI_PASS   "..."
 #define AGENT_IP    "192.168.1.21"    // IP laptop; xem bằng: hostname -I
-
-#define WHEEL_RADIUS_M      0.0325f   // ĐO: bán kính bánh LÚC CÓ TẢI
-#define WHEEL_SEPARATION_M  0.190f    // ĐO: khoảng cách tâm–tâm hai bánh
 ```
 
-> Hai giá trị `WHEEL_*` hiện là số đặt tạm. Sai hai số này thì odometry sai và
-> Nav2 vô dụng. Quy trình hiệu chỉnh nằm ở **Phụ lục A** trong file firmware.
+Thiếu file này thì biên dịch dừng với lỗi `Thieu wifi_config.h ...`. Các lần
+nạp sau chỉ cần chép đè file `.ino`; `wifi_config.h` để nguyên.
+
+> Bán kính bánh và hệ số encoder đã hiệu chỉnh xong và bán kính lăn nằm ở phía
+> laptop (`wheel_radius` trong `bringup_real.launch.py`), không cần sửa ở đây.
 
 ### Bấm nút BOOT khi nạp
 
