@@ -12,5 +12,8 @@ __pycache__/
 # Cau hinh ca nhan cua Claude Code
 .claude/settings.local.json
 
+# Mat khau Wi-Fi cua firmware - mau o wifi_config.example.h
+wifi_config.h
+
 # Rac NTFS cua Windows khi tai file ve
 *:Zone.Identifier

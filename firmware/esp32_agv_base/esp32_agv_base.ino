@@ -83,9 +83,14 @@
 // ============================================================================
 
 // --- Mang ---
-#define WIFI_SSID   "SV BACH KHOA"
-#define WIFI_PASS   "YOUR_WIFI_PASSWORD"
-#define AGENT_IP    "192.168.1.21"     // IP laptop dang chay micro_ros_agent
+// WIFI_SSID, WIFI_PASS, AGENT_IP nam trong wifi_config.h (CUNG thu muc voi
+// file .ino nay, khong nam trong git). Lan dau: chep wifi_config.example.h
+// thanh wifi_config.h roi dien gia tri that.
+#if __has_include("wifi_config.h")
+#include "wifi_config.h"
+#else
+#error "Thieu wifi_config.h: chep wifi_config.example.h thanh wifi_config.h (cung thu muc voi .ino) roi dien Wi-Fi"
+#endif
 #define AGENT_PORT  8888
 #define ROBOT_ID    1                  // doi neu chay nhieu xe cung luc
 
