@@ -14,11 +14,15 @@ Có **hai chế độ**:
 
 ## Bước 0 — Chuẩn bị một lần duy nhất
 
+> **Chỉ làm MỘT lần cho mỗi máy.** Chạy lại sẽ thêm các dòng trùng vào
+> `~/.bashrc`. Kiểm tra đã làm chưa: `grep -c DISCOVERY ~/.bashrc` in ra `1`
+> là đã xong, bỏ qua bước này.
+>
+> Chỉ dán phần **bên trong** khung lệnh, không dán dòng ` ```bash `.
+
 Mở terminal WSL:
 
 ```bash
-cd ~/robot_ws_3
-
 # 1. Các dòng source bắt buộc
 echo 'source /opt/ros/jazzy/setup.bash'                >> ~/.bashrc
 echo 'source ~/microros_ws/install/setup.bash'         >> ~/.bashrc
@@ -28,8 +32,12 @@ echo 'source ~/robot_ws_3/install/setup.bash'          >> ~/.bashrc
 echo 'export ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST'  >> ~/.bashrc
 
 source ~/.bashrc
-colcon build --symlink-install
+cd ~/robot_ws_3 && colcon build --symlink-install
 ```
+
+> **`colcon build` luôn phải chạy trong `~/robot_ws_3`.** Chạy ở `~` thì nó quét
+> cả thư mục nhà, gặp các bản sao cũ (`robot_ws`, `robot_ws_2`,
+> `robot_ws_thuc_te`…) và báo `Duplicate package names not supported`.
 
 Sau bước này, mỗi terminal mới chỉ cần `cd ~/robot_ws_3`.
 
