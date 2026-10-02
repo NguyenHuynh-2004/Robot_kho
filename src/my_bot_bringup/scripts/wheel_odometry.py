@@ -68,7 +68,9 @@ IMU_STALE_S = 0.5
 REANCHOR_S = 3.0
 
 # Mat IMU lau hon the nay moi bao loi tren terminal.
-IMU_WARN_S = 2.0
+# Lon hon khoang im ~2.2 s moi phut cua firmware luc xe dung yen (ESP32 dong
+# bo dong ho voi agent chi khi khong co /cmd_vel) - khong bao dong gia.
+IMU_WARN_S = 3.0
 
 # imu_gyro: lo hong giua hai goi IMU ngan hon the nay thi noi bang hinh thang.
 GYRO_BRIDGE_S = 2.0
@@ -284,7 +286,9 @@ class WheelOdometry(Node):
                     'giu nguyen vi tri dang co.')
                 self._prev = (t, pl, pr)
                 return
-            if dt > 2.0:
+            # Chi canh bao khi xe CO chay trong luc mat (0.5 rad banh = 1.6
+            # cm): xe dung yen thi lo hong khong lam sai gi.
+            if dt > 2.0 and abs(dphi_l) + abs(dphi_r) > 0.5:
                 self.get_logger().warn(
                     f'Mat /joint_states {dt:.1f} s. Quang duong van du, nhung '
                     'duong di trong luc mat duoc coi la thang.')
