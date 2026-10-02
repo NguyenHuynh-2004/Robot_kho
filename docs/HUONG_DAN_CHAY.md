@@ -468,9 +468,18 @@ AMCL: càng gom chặt thì nó càng chắc.
 
 ### Vị trí ban đầu
 
-AMCL tự đặt xe ở `(0, 0, 0°)` của bản đồ (`set_initial_pose` trong
-`navigation.yaml`) — tức chỗ xe đứng lúc bắt đầu vẽ bản đồ. Đặt xe lại đúng chỗ
-và đúng hướng đó là xong.
+**Cách nhanh nhất — tự tìm**, xe đứng yên ở đâu cũng được:
+```bash
+cd ~/robot_ws_3 && python3 tools/auto_initial_pose.py
+```
+Nó thử đặt ảnh quét lên mọi chỗ trên bản đồ theo mọi hướng, chọn chỗ khớp tường
+nhất rồi báo cho AMCL. Đo trên xe thật: 88% tia trúng tường, sau đó ảnh quét
+lệch tường trung vị **2.4 cm**. Nếu hai chỗ khác nhau khớp gần bằng nhau (phòng
+gần đối xứng) nó **từ chối đoán** và bảo bạn dùng 2D Pose Estimate.
+
+Không chạy lệnh trên thì AMCL tự đặt xe ở `(0, 0, 0°)` của bản đồ
+(`set_initial_pose` trong `navigation.yaml`) — tức chỗ xe đứng lúc bắt đầu vẽ
+bản đồ.
 
 Nếu điểm quét lệch khỏi tường: bấm **2D Pose Estimate** trên thanh công cụ
 RViz, **bấm vào chỗ xe đang đứng thật trên bản đồ rồi kéo** theo hướng đầu xe,
@@ -495,6 +504,31 @@ Mỗi dòng in độ lệch giữa điểm quét và tường bản đồ, kèm 
 | lệch nhỏ lúc đứng, lớn lúc chạy | Trễ giữa hai lần AMCL sửa; vẫn dùng được |
 | amcl ± nhỏ nhưng lệch > 0.15 m | AMCL **tự tin mà sai chỗ** — đặt lại bằng 2D Pose Estimate |
 | amcl ± lớn mãi không giảm | Không khớp được tường — vị trí ban đầu sai quá xa, hoặc phòng đã thay đổi nhiều so với lúc vẽ |
+
+**Đo kỹ — từng ảnh quét, khi xe đang chạy.** `check_scan_fit.py` lấy mẫu 2 giây
+một lần. Muốn biết chính xác lúc nào lệch và lệch bao nhiêu thì ghi lại rồi phân
+tích sau:
+```bash
+# trong lúc lái (Ctrl-C khi xong)
+ros2 bag record -o ~/bags/thu1 /scan /joint_states /imu/data /tf /tf_static /odom /amcl_pose
+# sau đó
+python3 tools/eval_bag_localization.py ~/bags/thu1 src/my_bot_bringup/config/real_room_map.yaml
+```
+Nó tìm vị trí THẬT của xe ở từng ảnh quét (chỗ ảnh quét khớp tường nhất) rồi so
+với vị trí AMCL đưa ra, tách theo đứng yên / chạy thẳng / quay tại chỗ. **Đạt:**
+sai vị trí lúc chạy trung vị < 5 cm, p90 < 10 cm.
+
+Kết quả đo được trên xe này (cùng một lần lái 185 s, phát lại qua từng phiên bản):
+
+| | sai vị trí lúc chạy (trung vị / p90 / max) |
+|---|---|
+| ban đầu | 6.4 / 18.4 / 22 cm |
+| sửa odometry mất quãng đường qua lỗ hổng Wi-Fi | 4.2 / 8.5 / 14.6 cm |
+| + siết mô hình cảm biến AMCL | **3.6 / 6.1 / 10.4 cm** |
+
+Sai hướng tối đa ~3° suốt cả lần lái. Chỗ lệch nhiều nhất còn lại là lúc **quay
+nhanh tại chỗ** (> 1.4 rad/s): một vòng quét mất 0.115 s, xe đã quay ~10° trong
+lúc đó nên ảnh quét bị nhoè.
 
 Định vị đạt rồi thì **Ctrl-C Terminal 2** trước khi sang B6:
 `navigation.launch.py` tự bật AMCL và map_server của riêng nó.
@@ -564,6 +598,7 @@ Row tăng = đi lên (+Y), Col tăng = sang phải (+X).
 | Các node không thấy nhau, `ros2 topic list` thiếu topic | thiếu biến discovery | `export ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST` |
 | Nav2 đứng im lúc khởi động | `/clock` không chạy | bấm **Play** trong Gazebo |
 | Terminal bringup báo `IMU khong gui goi hop le`; xe quay mà RViz không quay, AMCL lạc ngay | BNO055 trả về toàn số 0 (đã gặp sau khi chỉ bấm reset ESP32 — nút đó không reset BNO055) | **Tắt hẳn nguồn xe** vài giây rồi bật lại, để xe đứng yên lúc khởi động. Vẫn bị thì kiểm tra 4 dây I2C của BNO055. Trong lúc đó odometry tự lấy góc từ bánh xe |
+| Ảnh quét trượt khỏi tường 10–25 cm theo hướng xe chạy, ngay lúc xe vừa chạy/vừa dừng, rồi giữ nguyên tới lần quay sau | Dữ liệu ESP32 im đúng **1.0 s** mỗi khi Wi-Fi rơi một gói: `/joint_states` để RELIABLE nên micro-ROS chờ ACK tới 1000 ms. `wheel_odometry` cũ còn **bỏ** quãng đường của lỗ hổng > 1 s | Đã sửa cả hai: odometry dùng giá trị tích luỹ qua lỗ hổng; firmware gửi `/joint_states` best-effort (phải nạp lại). Kiểm tra: `tools/eval_bag_localization.py` |
 | Nhập toạ độ xong xe không chạy | Nav2 chưa xong | `tf2_echo map base_footprint` báo `Invalid frame ID "map"` → đợi thêm |
 | **Xe thật: mọi thứ treo, không lỗi gì** | sót `use_sim_time:=false` ở một terminal | node đó đợi `/clock` vĩnh viễn và **không in lỗi** |
 | ESP32 reset liên tục | sụt áp | Serial báo `SUT AP (brownout)` → chưa tách nguồn động cơ |

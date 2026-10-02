@@ -1205,11 +1205,15 @@ static void init_microros() {
       ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, LaserScan), "scan"));
   RCCHECK(rclc_publisher_init_best_effort(&imu_pub, &node,
       ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, Imu), "imu/data"));
-  // /joint_states RELIABLE: ben nhan co hai, wheel_odometry.py (ta tu viet) va
-  // robot_state_publisher. Publisher RELIABLE khop duoc ca subscriber
-  // BEST_EFFORT lan RELIABLE; chieu nguoc lai thi khong. Nen chon RELIABLE la
-  // an toan du robot_state_publisher dung QoS nao.
-  RCCHECK(rclc_publisher_init_default(&js_pub, &node,
+  // /joint_states BEST_EFFORT. Truoc day la RELIABLE va do la loi:
+  //   micro-ROS gui RELIABLE thi CHO ACK cua laptop, toi da 1000 ms
+  //   (RMW_UXRCE_PUBLISH_RELIABLE_TIMEOUT). Moi lan Wi-Fi rot mot goi,
+  //   ros_task dung 1 giay -> /scan, /imu/data, /joint_states cung im.
+  //   Do tren bag: lo hong 1.00-1.02 s lap lai, xe mat 14 cm moi lan.
+  // Khong can RELIABLE vi goc banh gui la gia tri TICH LUY: goi rot thi goi
+  // sau mang du. Ca hai ben nhan deu nghe BEST_EFFORT (robot_state_publisher
+  // san co, wheel_odometry.py da doi) nen van khop.
+  RCCHECK(rclc_publisher_init_best_effort(&js_pub, &node,
       ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, JointState), "joint_states"));
 #if ODOM_ON_ESP32
   RCCHECK(rclc_publisher_init_default(&odom_pub, &node,

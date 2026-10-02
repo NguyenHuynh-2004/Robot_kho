@@ -52,14 +52,26 @@ from sensor_msgs.msg import Imu, JointState
 from std_srvs.srv import Empty
 from tf2_ros import TransformBroadcaster
 
-# Mot buoc nhay goc banh lon hon the nay giua hai message khong phai chuyen
-# dong that - la ESP32 vua khoi dong lai va total_counts ve 0. 5 rad o banh
-# 32 mm la 16 cm trong mot chu ky 20 ms, tuc 8 m/s.
-JUMP_RAD = 5.0
+# Banh khong the quay nhanh hon MAX_WHEEL_RPM cua firmware (120 v/p = 12.6
+# rad/s). Goc banh doi nhieu hon muc do (nhan 1.5 + 0.5 rad du phong) giua hai
+# message thi khong phai chuyen dong that.
+MAX_WHEEL_RAD_S = 12.6
 
 # Khong nhan goi IMU hop le trong chung nay (giay) -> coi IMU la hong, tinh goc
 # bang banh xe. Cung la khoang mat goi dai nhat ma imu_gyro con noi suy qua.
 IMU_STALE_S = 0.5
+
+# IMU mat lau hon the nay roi co lai -> co the BNO055 da khoi dong lai, moc
+# goc tuyet doi cua no khac -> neo lai. Mat ngan hon (lo hong Wi-Fi) thi moc
+# van nhu cu: dung tiep, de goc tu quaternion SUA LAI phan banh xe uoc luong
+# trong luc mat, thay vi giu vinh vien sai so cua banh.
+REANCHOR_S = 3.0
+
+# Mat IMU lau hon the nay moi bao loi tren terminal.
+IMU_WARN_S = 2.0
+
+# imu_gyro: lo hong giua hai goi IMU ngan hon the nay thi noi bang hinh thang.
+GYRO_BRIDGE_S = 2.0
 
 
 def yaw_of(q: Quaternion) -> float:
@@ -117,6 +129,7 @@ class WheelOdometry(Node):
         self._wheel_yaw = 0.0      # goc suy tu banh, cong don (luon tinh)
         self._wheel_mark = 0.0     # _wheel_yaw luc co goi IMU tuoi gan nhat
         self._imu_lost = True      # dang tinh goc bang banh (chua co IMU)
+        self._imu_lost_from = None  # _imu_ok_t luc bat dau mat IMU
         self._imu_lost_logged = False
         self._t_start = time.monotonic()
         # Bias con du sau khi firmware da tru bias luc khoi dong. Do duoc
@@ -129,12 +142,14 @@ class WheelOdometry(Node):
         self._lock = threading.Lock()
         self._warned_missing = False
 
-        # ESP32 phat /joint_states RELIABLE va /imu/data BEST_EFFORT.
-        # QoS phai khop, lech la khong nhan duoc message nao ma cung khong bao
-        # loi o cho de thay.
+        # Ca hai deu nghe BEST_EFFORT: khop voi publisher BEST_EFFORT lan
+        # RELIABLE. /joint_states gui gia tri TICH LUY nen roi goi khong mat
+        # gi - khong can RELIABLE. Ma RELIABLE tren micro-ROS con co hai: moi
+        # lan mat mot goi, ESP32 dung CA task gui de cho ACK toi 1 giay (da do:
+        # lo hong 1.00-1.02 s, /scan va /imu/data dung theo).
         self.create_subscription(
             JointState, 'joint_states', self.cb_js,
-            QoSProfile(reliability=QoSReliabilityPolicy.RELIABLE,
+            QoSProfile(reliability=QoSReliabilityPolicy.BEST_EFFORT,
                        history=QoSHistoryPolicy.KEEP_LAST, depth=50))
         self.create_subscription(
             Imu, 'imu/data', self.cb_imu,
@@ -197,10 +212,12 @@ class WheelOdometry(Node):
 
             if self._gyro_t is not None:
                 dt = t - self._gyro_t
-                # Hinh thang: Wi-Fi rot vai goi lien tiep (do duoc khoang trong
-                # toi 1.4 s) thi van tinh du goc, thay vi bo ca khoang. Dai hon
-                # IMU_STALE_S thi cb_js da tinh khoang do bang banh roi.
-                if 0.0 < dt < IMU_STALE_S:
+                # Hinh thang: Wi-Fi rot vai goi lien tiep (do duoc lo hong 1.0
+                # s lap lai) thi van tinh du goc, thay vi bo ca khoang. Neu
+                # cb_js da kip tinh khoang do bang banh (IMU bi coi la mat),
+                # luc IMU co lai no dat _gyro_yaw_used = _gyro_yaw nen phan
+                # bac cau nay bi bo, khong bi cong hai lan.
+                if 0.0 < dt < GYRO_BRIDGE_S:
                     self._gyro_yaw += (0.5 * (gz + self._gyro_prev)
                                        - self._gyro_bias) * dt
             self._gyro_t = t
@@ -241,20 +258,36 @@ class WheelOdometry(Node):
                 return
             t0, pl0, pr0 = self._prev
             dt = t - t0
-            if dt <= 0.0 or dt > 1.0:
-                # Dau thoi gian giat lui hoac nghi qua lau -> lay lai moc,
-                # dung tinh mot buoc khong lo.
+            if dt <= 0.0:
+                # Dau thoi gian giat lui (ESP32 dong bo lai dong ho) -> lay
+                # lai moc.
                 self._prev = (t, pl, pr)
                 return
 
             dphi_l = pl - pl0
             dphi_r = pr - pr0
-            if abs(dphi_l) > JUMP_RAD or abs(dphi_r) > JUMP_RAD:
+            # KHONG bo buoc chi vi lo hong dai. Gia tri tich luy nghia la goi
+            # sau mang du quang duong cua ca lo hong - truoc day buoc > 1 s bi
+            # bo, va moi lo hong 1 s cua Wi-Fi (luc xe chay 0.19 m/s) lam mat
+            # 14 cm, AMCL khong keo lai kip: do duoc lech toi 25 cm.
+            # Chi bo khi khong the la chuyen dong that:
+            #   - nhanh hon banh quay duoc, hoac
+            #   - ca hai goc ve gan 0 trong khi truoc do khong: ESP32 khoi
+            #     dong lai, bo dem encoder ve 0.
+            limit = MAX_WHEEL_RAD_S * dt * 1.5 + 0.5
+            reboot = (abs(pl) < 1.0 and abs(pr) < 1.0 and
+                      max(abs(pl0), abs(pr0)) > 2.0)
+            if abs(dphi_l) > limit or abs(dphi_r) > limit or reboot:
                 self.get_logger().warn(
-                    'Goc banh nhay dot ngot - co le ESP32 vua khoi dong lai. '
-                    'Lay lai moc, giu nguyen vi tri dang co.')
+                    f'Goc banh nhay {dphi_l:+.1f} / {dphi_r:+.1f} rad trong '
+                    f'{dt:.2f} s - co le ESP32 vua khoi dong lai. Lay lai moc, '
+                    'giu nguyen vi tri dang co.')
                 self._prev = (t, pl, pr)
                 return
+            if dt > 2.0:
+                self.get_logger().warn(
+                    f'Mat /joint_states {dt:.1f} s. Quang duong van du, nhung '
+                    'duong di trong luc mat duoc coi la thang.')
 
             d_l = dphi_l * self.R
             d_r = dphi_r * self.R
@@ -276,24 +309,36 @@ class WheelOdometry(Node):
                 d_theta = self._wheel_yaw - self._wheel_mark
                 self._wheel_mark = self._wheel_yaw
                 self._gyro_yaw_used = self._gyro_yaw
+                if not self._imu_lost:
+                    self._imu_lost_from = self._imu_ok_t
                 self._imu_lost = True
+                # Chi bao khi mat LAU: lo hong Wi-Fi ~1 s la chuyen thuong,
+                # da duoc bu (banh xe trong luc mat, quaternion sua lai sau).
+                since = (self._imu_lost_from if self._imu_lost_from is not None
+                         else self._t_start)
                 if (not self._imu_lost_logged and
-                        time.monotonic() - self._t_start > 3.0):
+                        time.monotonic() - since > IMU_WARN_S):
                     self._imu_lost_logged = True
                     self.get_logger().error(
-                        f'IMU khong gui goi hop le qua {IMU_STALE_S} s '
-                        '(quaternion = 0: BNO055 khong tra loi, hoac mat '
+                        f'IMU khong gui goi hop le qua {IMU_WARN_S:.0f} s '
+                        '(BNO055 khong tra loi - quaternion = 0 - hoac mat '
                         'song Wi-Fi). Tam tinh goc bang BANH XE - kem chinh '
                         'xac. Neu keo dai: TAT HAN NGUON xe roi bat lai de '
                         'BNO055 khoi dong lai (nut reset ESP32 khong reset '
                         'duoc no).')
             else:
                 if self._imu_lost:
-                    # IMU vua co lai (luc dau, hoac sau khi hong). Neo goc
-                    # quaternion vao goc odom hien tai de khong nhay: BNO055
-                    # khoi dong lai thi moc tuyet doi cua no da khac.
+                    # IMU vua co lai. Neo goc quaternion vao goc odom hien tai
+                    # khi: moi khoi dong, hoac mat lau (BNO055 co the da khoi
+                    # dong lai, moc tuyet doi da khac). Mat ngan thi giu moc
+                    # cu - goc tuyet doi se sua phan banh xe uoc luong sai
+                    # trong luc mat (quay tai cho, banh sai toi 7%).
+                    lost_for = (time.monotonic() - self._imu_lost_from
+                                if self._imu_lost_from is not None else None)
                     self._imu_lost = False
-                    self._imu_yaw0 = wrap(self._imu_yaw - self.th)
+                    if (self._imu_yaw0 is None or lost_for is None or
+                            lost_for > REANCHOR_S):
+                        self._imu_yaw0 = wrap(self._imu_yaw - self.th)
                     self._gyro_yaw_used = self._gyro_yaw
                     if self._imu_lost_logged:
                         self._imu_lost_logged = False

@@ -142,8 +142,13 @@ def main():
         if walls is None or len(walls) < 10:
             continue
 
+        # Tra TF tai DUNG luc quet (giong RViz), khong phai TF moi nhat. Lay TF
+        # moi nhat cho mot anh quet cu ~0.1 s thi luc xe quay 1 rad/s se lech
+        # gia ~6 do - do lech do do cong cu, khong phai do dinh vi.
         try:
-            tf = n.buf.lookup_transform('map', s.header.frame_id, Time())
+            tf = n.buf.lookup_transform('map', s.header.frame_id,
+                                        Time.from_msg(s.header.stamp),
+                                        timeout=Duration(seconds=0.3))
         except Exception as e:
             print(f"{time.time()-t0:5.0f}   khong tra cuu duoc TF: "
                   f"{type(e).__name__}")

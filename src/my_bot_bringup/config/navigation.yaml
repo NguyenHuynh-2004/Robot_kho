@@ -26,6 +26,29 @@ amcl:
     # xe 18 cm.
     update_min_d: 0.1
     update_min_a: 0.1
+    # (Da thu 0.05/0.05 bang phat lai bag: 3/3 lan AMCL lech 6-11 cm luc xe
+    # vua quay vua dung roi giu nguyen do lech - cap nhat nhieu hon cung la
+    # cap nhat nhieu hon tren anh quet bi nhoe vi xe dang quay.)
+
+    # Mo hinh cam bien. Mac dinh Nav2 (sigma_hit 0.2, z_hit 0.5, z_rand 0.5,
+    # 60 tia) gia dinh LiDAR sai toi 20 cm va mot nua so tia la rac -> do
+    # khop rat "phang", AMCL khong keo vi tri ve kip khi odometry sai.
+    # LiDAR nay o dung cho thi trung vi chi lech tuong 2.4 cm (88% tia trung
+    # tuong), nen siet lai. Do bang cach phat lai cung mot bag 185 s xe chay
+    # (tools/eval_bag_localization.py), sai vi tri luc xe chay:
+    #   mac dinh          trung vi 4.2  p90 8.5  max 14.6 cm
+    #   cac gia tri duoi  trung vi 3.6  p90 6.1  max 10.4 cm
+    sigma_hit: 0.08
+    z_hit: 0.9
+    z_rand: 0.1
+    max_beams: 120
+    laser_likelihood_max_dist: 1.0
+
+    # AMCL dan map->odom voi tem thoi gian = luc quet + transform_tolerance.
+    # Tra TF tai luc t thi dung ban sua cua anh quet t - tolerance: mac dinh
+    # 1.0 s nghia la RViz hien ban sua tre 1 giay. 0.5 van phu duoc lo hong
+    # Wi-Fi ~1 s ma khong lam TF het han giua chung.
+    transform_tolerance: 0.5
 
     # Vi tri ban dau AMCL tu dat khi khoi dong, khoi phai bam "2D Pose Estimate".
     #   Gazebo : xe luon spawn o goc (gazebo.launch.py: x=y=yaw=0).
