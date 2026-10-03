@@ -31,6 +31,7 @@ class GridNavigator(Node):
         # cat qua o sa ban.
         self._action_client = ActionClient(self, FollowPath, 'follow_path')
         self.active_segment = None
+        self.final_yaw = None
         # Xoay tai cho do node nay tu lam (xem rotate_tick): lenh vao
         # cmd_vel_nav = dau vao velocity_smoother, cung cho controller phat.
         self.cmd_pub = self.create_publisher(Twist, 'cmd_vel_nav', 10)
@@ -510,8 +511,8 @@ class GridNavigator(Node):
         return path
 
     # Xe cach diem xuat phat xa hon muc nay thi them mot doan dua xe ve diem do
-    # truoc (bang xy_goal_tolerance cua Nav2).
-    SNAP_DIST = 0.05
+    # truoc (bang xy_goal_tolerance cua Nav2: sai so dich 3 cm).
+    SNAP_DIST = 0.03
 
     def build_segments(self, nodes):
         """Chuoi diem luoi lien tiep -> cac DOAN THANG nam tren canh.
@@ -566,6 +567,11 @@ class GridNavigator(Node):
         target_x, target_y = self.get_coordinates(target_row, target_col)
         self.target_node = (target_x, target_y)
         self.waypoints = segs
+        # Huong chot o diem cuoi = huong doan cuoi (khong tinh doan ve diem)
+        last = segs[-1] if segs else None
+        self.final_yaw = (math.atan2(last[3] - last[1], last[2] - last[0])
+                          if last and math.hypot(last[2] - last[0], last[3] - last[1]) > 0.1
+                          else None)
 
         route = ' -> '.join(f"({r + 1},{c + 1})" for r, c in nodes)
         self.get_logger().info(f'Lộ trình {route}: {len(segs)} đoạn thẳng trên cạnh.')
@@ -668,6 +674,13 @@ class GridNavigator(Node):
 
 
     def send_next_waypoint(self):
+        if not self.waypoints and self.final_yaw is not None:
+            # Toi diem cuoi: dau xe phai theo huong canh vua di, lech <= rot_done
+            fy, self.final_yaw = self.final_yaw, None
+            _, _, yaw = self.get_robot_pose()
+            if yaw is not None and abs(self.normalize_angle(fy - yaw)) > self.rot_done:
+                self.start_rotation(fy, finish=True)
+                return
         if not self.waypoints:
             self.get_logger().info('Đã đến nơi thành công toàn bộ lộ trình!')
             self.current_path_points = []
@@ -805,9 +818,9 @@ class GridNavigator(Node):
         """Goc da RA LENH trong rot_lag giay vua qua nhung banh chua kip quay."""
         return sum(w * 0.05 for _, w in self.rot_hist)
 
-    def start_rotation(self, yaw_des):
+    def start_rotation(self, yaw_des, finish=False):
         self.rot = {'target': yaw_des, 'phase': 'turn', 't': None, 'tries': 0,
-                    't0': self.get_clock().now()}
+                    't0': self.get_clock().now(), 'finish': finish}
         self.get_logger().info(f'Xoay tại chỗ tới hướng {math.degrees(yaw_des):+.0f}°')
         if self.rot_timer is None:
             self.rot_timer = self.create_timer(0.05, self.rotate_tick)
@@ -854,8 +867,12 @@ class GridNavigator(Node):
             self.get_logger().info(
                 f'Xoay xong sau {took:.1f} s, còn lệch {math.degrees(err):+.1f}° '
                 f'({r["tries"]} lần xoay bù)')
+            finish = r['finish']
             self.stop_rotation()
-            self.send_follow_path()
+            if finish:
+                self.send_next_waypoint()      # het doan -> bao da toi noi
+            else:
+                self.send_follow_path()
 
     def abort_route(self, reason):
         """Dừng hẳn lộ trình và trả quyền điều khiển về cho người dùng.
