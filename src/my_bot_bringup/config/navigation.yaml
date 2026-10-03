@@ -101,8 +101,12 @@ controller_server:
     # chon duong cong cat qua o.
     FollowPath:
       plugin: "nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController"
-      # Tran vat ly: MAX_WHEEL_RPM 120, banh 0.0328 m -> 0.41 m/s
-      desired_linear_vel: 0.25
+      # Tran vat ly: MAX_WHEEL_RPM 120, banh 0.0328 m -> 0.41 m/s - nhung do
+      # tren xe that (2026-10-03, pin da dung ca ngay): lenh 0.25 m/s thi CA HAI
+      # banh ket o 5.35 rad/s = 0.175 m/s (PWM 255) -> khong con du de mot banh
+      # nhanh hon -> xe KHONG re duoc de chinh huong. 0.15 m/s (4.6 rad/s) chua
+      # cho de lai cho viec re.
+      desired_linear_vel: 0.15
       lookahead_dist: 0.20
       min_lookahead_dist: 0.15
       max_lookahead_dist: 0.30
@@ -111,7 +115,9 @@ controller_server:
       # Xoay tai cho o dau moi doan (goc cua sa ban 90 do, quay dau 180 do)
       use_rotate_to_heading: true
       rotate_to_heading_min_angle: 0.20        # rad ~ 11 do
-      rotate_to_heading_angular_vel: 1.0       # rad/s
+      # 1.0 rad/s = 29 v/p moi banh -> PWM ~82, khong thang noi ma sat tinh khi
+      # xoay tai cho (do tren xe: banh dung yen 1-2 s, banh lui khong quay).
+      rotate_to_heading_angular_vel: 1.3       # rad/s
       # RPP chi cho lenh quay tang max_angular_accel * 0.05 s moi chu ky, tinh
       # tu toc do quay DO DUOC. 3.0 -> lenh dau 0.15 rad/s, duoi vung chet dong
       # co -> xe khong quay -> do duoc van 0 -> lenh ket mai o 0.15 -> "Failed

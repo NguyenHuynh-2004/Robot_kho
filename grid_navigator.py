@@ -709,16 +709,39 @@ class GridNavigator(Node):
             if self.replan_attempts > self.max_replan_attempts:
                 self.abort_route(f"Nav2 thất bại {self.replan_attempts} lần liên tiếp")
                 return
+            # Nav2 bao that bai (thuong la "Failed to make progress": xe di cham
+            # hon nguong) - KHONG phai bi chan: vat can thi costmap_callback da
+            # huy va BFS lai. Nen DI TIEP doan dang do tu cho xe dang dung.
+            # Truoc day BFS lai tu diem luoi GAN NHAT - thuong la diem vua roi
+            # phia sau - nen xe lui ve diem xuat phat roi di lai, lap mai.
             self.get_logger().warn(
                 f'Nav2 không tới được điểm trung gian (status={status}). '
-                f'Thử tính lại đường lần {self.replan_attempts}/{self.max_replan_attempts}...')
-            self.is_canceling = True
+                f'Đi tiếp đoạn đang dở, lần {self.replan_attempts}/{self.max_replan_attempts}...')
             self.goal_handle = None
-            self.schedule_replan()
+            self.retry_active_segment()
             return
 
         self.replan_attempts = 0
         self.get_logger().info('Đã tới điểm trung gian.')
+        self.send_next_waypoint()
+
+    def retry_active_segment(self):
+        """Gui lai doan dang chay, bat dau tu vi tri xe hien tai, cung diem cuoi.
+
+        Xe dang nam tren canh (di thang tu dau doan) nen doan moi van nam tren
+        canh do va huong ve phia truoc - khong lui ve diem cu.
+        """
+        seg = self.active_segment
+        rx, ry, _ = self.get_robot_pose()
+        if seg is None or rx is None:
+            self.is_canceling = True
+            self.schedule_replan()
+            return
+        x1, y1 = seg[2], seg[3]
+        if math.hypot(x1 - rx, y1 - ry) <= self.SNAP_DIST:
+            self.send_next_waypoint()          # thuc ra da toi diem cuoi
+            return
+        self.waypoints.insert(0, (rx, ry, x1, y1))
         self.send_next_waypoint()
 
     def abort_route(self, reason):
