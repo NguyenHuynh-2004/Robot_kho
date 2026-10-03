@@ -67,6 +67,10 @@ IMU_STALE_S = 0.5
 # trong luc mat, thay vi giu vinh vien sai so cua banh.
 REANCHOR_S = 3.0
 
+# Gyro z (da tru bias) nho hon muc nay (rad/s ~ 3 do/s) moi coi la xe KHONG
+# quay: dung de giu goc khi banh dung yen va de hoc bias gyro.
+GYRO_STILL = 0.05
+
 # Mat IMU lau hon the nay moi bao loi tren terminal.
 # Lon hon khoang im ~2.2 s moi phut cua firmware luc xe dung yen (ESP32 dong
 # bo dong ho voi agent chi khi khong co /cmd_vel) - khong bao dong gia.
@@ -204,8 +208,9 @@ class WheelOdometry(Node):
             t = Time.from_msg(m.header.stamp).nanoseconds * 1e-9
 
             # Hoc bias khi xe dung yen: luc do gyro DUNG RA phai doc 0.
-            # Trung binh truot, keo dan 20% moi lan de khong giat.
-            if self._still:
+            # Trung binh truot, keo dan 20% moi lan de khong giat. Banh dung
+            # ma gyro doc lon (xoay xe bang tay) thi KHONG phai bias - bo qua.
+            if self._still and abs(gz - self._gyro_bias) < GYRO_STILL:
                 self._still_win.append(gz)
                 if len(self._still_win) >= 50:
                     target = sum(self._still_win) / len(self._still_win)
@@ -365,13 +370,18 @@ class WheelOdometry(Node):
                     # nam cham dong co lam lech theo huong xe dang quay mat.
                     d_theta = self._gyro_yaw - self._gyro_yaw_used
                     self._gyro_yaw_used = self._gyro_yaw
-                # Hai banh dung yen thi xe KHONG the quay -> moi thay doi goc
-                # IMU luc nay la troi. Da do tren xe that: dung yen 5 phut,
+                # Hai banh dung yen VA gyro yen -> moi thay doi goc quaternion
+                # luc nay la troi. Da do tren xe that: dung yen 5 phut,
                 # quaternion (che do NDOF, co tu ke) xoay 15 do trong khi
                 # gyro < 1 do; AMCL bam theo, anh quet xoay dan khoi ban do
                 # du xe khong nhuc nhich. Giu nguyen goc, va neo lai moc
                 # quaternion de luc xe chay lai khong bi nhay.
-                wheels_still = (still and
+                # PHAI xet ca gyro: nhac xe / xoay bang tay thi banh dung ma xe
+                # van quay - chi xet banh thi odom dung im, AMCL lac ngay
+                # (gap 2026-10-03). Troi tu ke ~3 do/phut = 0.001 rad/s, xoay
+                # that >> GYRO_STILL.
+                gyro_quiet = abs(self._gyro_z - self._gyro_bias) < GYRO_STILL
+                wheels_still = (still and gyro_quiet and
                                 abs(dphi_l) < 0.05 * dt + 0.004 and
                                 abs(dphi_r) < 0.05 * dt + 0.004)
                 if wheels_still:
