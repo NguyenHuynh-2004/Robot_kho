@@ -574,12 +574,26 @@ trung vị trong khoảng **−150 → +150 ms**.
 > là 50 Hz / trễ −40 ms. Dấu hiệu nhận ra: khoảng giữa hai lần *nhận* ngắn hơn
 > chu kỳ phát (10.7 ms so với 20 ms) — tức đang đọc từ đống tồn.
 
-**Terminal 2** — Nav2:
+**Terminal 2** — Nav2 (gồm sẵn map_server + AMCL):
 ```bash
 ros2 launch my_bot_bringup navigation.launch.py use_sim_time:=false
 ```
+> **Tắt `localization.launch.py` (B5) và `slam.launch.py` trước.** Chạy chung
+> là hai AMCL / hai nguồn `map → odom` tranh nhau.
 
-**Terminal 3** — điều khiển:
+Chờ log có `Managed nodes are active`, rồi **đặt vị trí ban đầu** (xe đứng yên):
+```bash
+cd ~/robot_ws_3 && python3 tools/auto_initial_pose.py
+```
+
+**Terminal 3** — RViz (Fixed Frame `map`; thêm `/grid_visualization` →
+`MarkerArray` để thấy sa bàn):
+```bash
+rviz2 -d /opt/ros/jazzy/share/nav2_bringup/rviz/nav2_default_view.rviz
+```
+Điểm quét đỏ phải trùng tường trước khi cho xe chạy.
+
+**Terminal 4** — điều khiển:
 ```bash
 cd ~/robot_ws_3 && python3 grid_navigator.py --real
 ```
@@ -587,7 +601,20 @@ Dòng đầu phải in `Che do: XE THAT (use_sim_time=false)`, rồi
 `Đã đối chiếu sa bàn với bản đồ: 24/25 điểm`. Không có `/map` thì nó dừng và
 báo phải chạy localization/navigation trước — không tự đoán lưới nữa.
 
-**Terminal 4 (tuỳ chọn)** — RViz, như Chế độ A nhưng bỏ `use_sim_time`.
+**Tay cầm:** đừng bấm LB khi Nav2 đang lái — tay cầm và Nav2 cùng phát
+`/cmd_vel`, hai lệnh xen nhau làm xe giật. **Dừng khẩn cấp:** Ctrl-C Terminal 2
+(Nav2 ngừng phát `/cmd_vel`, ESP32 tự dừng động cơ sau 0.5 s) hoặc tắt công tắc
+nguồn. Lần đầu: chọn điểm gần (vd từ hàng 3 cột 3 sang hàng 3 cột 4, 60 cm).
+
+### Thuật toán đang dùng
+
+| Tầng | Thuật toán | Cấu hình |
+|---|---|---|
+| Sa bàn (`grid_navigator.py`) | **BFS** trên đồ thị 5×5 nối 4 hướng — ít ô nhất, né điểm/cạnh bị chặn; góc cua chèn một điểm xoay tại chỗ; gặp vật cản trên đường thì BFS lại | `grid_real.yaml` |
+| Lập đường (Nav2 `planner_server`) | **A\*** (NavFn, `use_astar: true`) trên global costmap = bản đồ + vật cản LiDAR + vùng phồng 0.25 m; lập lại mỗi 1 s | `navigation.yaml` → `GridBased` |
+| Bám quỹ đạo (Nav2 `controller_server`) | **MPPI** (Model Predictive Path Integral): 20 lần/s thử 2000 chuỗi vận tốc ngẫu nhiên 2.8 s tới theo mô hình vi sai, chấm điểm bằng các critic, lấy trung bình có trọng số | `FollowPath`; vx ≤ 0.35 m/s, ω ≤ 1.5 rad/s |
+| An toàn | `velocity_smoother` (giới hạn gia tốc) → `collision_monitor` (giảm/dừng nếu sẽ va trong 1.2 s) | `collision_monitor` |
+| Bánh xe (ESP32) | **PID** tốc độ từng bánh, 50 Hz | firmware |
 
 ---
 
