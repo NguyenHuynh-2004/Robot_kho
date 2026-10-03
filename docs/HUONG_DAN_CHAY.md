@@ -610,10 +610,12 @@ nguồn. Lần đầu: chọn điểm gần (vd từ hàng 3 cột 3 sang hàng 
 
 | Tầng | Thuật toán | Cấu hình |
 |---|---|---|
-| Sa bàn (`grid_navigator.py`) | **BFS** trên đồ thị 5×5 nối 4 hướng — ít ô nhất, né điểm/cạnh bị chặn; góc cua chèn một điểm xoay tại chỗ; gặp vật cản trên đường thì BFS lại | `grid_real.yaml` |
-| Lập đường (Nav2 `planner_server`) | **A\*** (NavFn, `use_astar: true`) trên global costmap = bản đồ + vật cản LiDAR + vùng phồng 0.25 m; lập lại mỗi 1 s | `navigation.yaml` → `GridBased` |
-| Bám quỹ đạo (Nav2 `controller_server`) | **MPPI** (Model Predictive Path Integral): 20 lần/s thử 2000 chuỗi vận tốc ngẫu nhiên 2.8 s tới theo mô hình vi sai, chấm điểm bằng các critic, lấy trung bình có trọng số | `FollowPath`; vx ≤ 0.35 m/s, ω ≤ 1.5 rad/s |
-| An toàn | `velocity_smoother` (giới hạn gia tốc) → `collision_monitor` (giảm/dừng nếu sẽ va trong 1.2 s) | `collision_monitor` |
+| Sa bàn (`grid_navigator.py`) | **BFS** trên đồ thị 5×5 nối 4 hướng — ít ô nhất, né điểm/cạnh bị chặn; tuyến được cắt thành **đoạn thẳng nằm trên cạnh** (các cạnh liền nhau cùng hướng gộp thành một đoạn) và giao thẳng cho controller qua action `follow_path`; gặp vật cản trên đường thì BFS lại | `grid_real.yaml` |
+| Bám quỹ đạo (Nav2 `controller_server`) | **Regulated Pure Pursuit**: đầu mỗi đoạn, đầu xe lệch > 11° thì **xoay tại chỗ** (1.0 rad/s) cho thẳng hàng, rồi chạy thẳng 0.25 m/s bám điểm cách 0.2 m phía trước trên đoạn; dừng trong 5 cm quanh điểm lưới | `FollowPath` |
+| Lập đường (Nav2 `planner_server`) | **A\*** (NavFn) — vẫn có trong Nav2 nhưng **sa bàn không dùng** (A\* tự tìm đường cong cắt qua ô); chỉ chạy khi bấm "Nav2 Goal" trong RViz | `GridBased` |
+| An toàn | `velocity_smoother` (giới hạn gia tốc, tính từ lệnh trước nên không kẹt ở vùng chết động cơ) → `collision_monitor` (giảm/dừng nếu sẽ va trong 1.2 s) | `velocity_smoother`, `collision_monitor` |
+
+Đã thử với xe ảo động học (có vùng chết động cơ) + đúng `navigation.yaml`, bản đồ và sa bàn thật: hai tuyến (3,3)→(5,5) và (5,5)→(1,1) đều tới nơi; lúc chạy xe lệch khỏi đường kẻ sa bàn trung vị 0 cm, tối đa 3.1 cm; dừng cách điểm 3.4 cm. Xe thật còn thêm sai số định vị AMCL (~3–6 cm).
 | Bánh xe (ESP32) | **PID** tốc độ từng bánh, 50 Hz | firmware |
 
 ---

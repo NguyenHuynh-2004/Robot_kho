@@ -76,40 +76,68 @@ controller_server:
     goal_checker_plugins: ["general_goal_checker"]
     controller_plugins: ["FollowPath"]
 
+    # Xe phai di duoc 0.15 m trong 15 s. Truoc day 0.5 m / 10 s: o sa ban 60 cm
+    # mot doan ngan + mot lan xoay tai cho la du bi bao "Failed to make progress".
     progress_checker:
       plugin: "nav2_controller::SimpleProgressChecker"
-      required_movement_radius: 0.5
-      movement_time_allowance: 10.0
-      
+      required_movement_radius: 0.15
+      movement_time_allowance: 15.0
+
+    # O sa ban 60 cm: dung trong 5 cm quanh diem luoi. Truoc day 25 cm - xe co
+    # the dung lech gan nua o. Goc: chi can xap xi huong canh vua di.
     general_goal_checker:
       plugin: "nav2_controller::SimpleGoalChecker"
-      xy_goal_tolerance: 0.25
-      yaw_goal_tolerance: 0.25
-      
+      xy_goal_tolerance: 0.05
+      yaw_goal_tolerance: 0.35
+      stateful: true
+
+    # REGULATED PURE PURSUIT - bam DUNG duong duoc giao.
+    # grid_navigator.py giao tung doan thang nam tren canh sa ban (khong qua
+    # planner A*). RPP: dau doan, neu dau xe lech > rotate_to_heading_min_angle
+    # thi XOAY TAI CHO cho thang hang, roi chay thang bam duong voi lookahead
+    # ngan -> xe di tren canh, khong cat qua o.
+    # Truoc day MPPI: thu 2000 quy dao moi chu ky, tren may nay chi chay duoc
+    # 7-8 Hz thay vi 20 Hz (log: "Control loop missed its desired rate") va tu
+    # chon duong cong cat qua o.
     FollowPath:
-      plugin: "nav2_mppi_controller::MPPIController"
-      time_steps: 56
-      model_dt: 0.05
-      batch_size: 2000
-      # Tran vat ly cua xe: MAX_WHEEL_RPM 120 voi banh ban kinh 0.03225 m
-      #   120/60 * 2*pi * 0.03225 = 0.405 m/s
-      # De 0.5 thi Nav2 lap ke hoach theo toc do xe khong dat duoc, va firmware
-      # se cat bot -> xe luon chay cham hon du tinh. 0.35 chua trong tam voi.
-      vx_max: 0.35
-      vx_min: -0.2
-      vy_max: 0.0    
-      wz_max: 1.5    
-      motion_model: "DiffDrive"
-      visualize: true
-      critics: [
-        "ConstraintCritic", "CostCritic", "GoalCritic",
-        "GoalAngleCritic", "PathAlignCritic", "PathFollowCritic",
-        "PathAngleCritic", "TwirlingCritic"
-      ]
-      TwirlingCritic:
-        enabled: true
-        cost_power: 1
-        cost_weight: 10.0
+      plugin: "nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController"
+      # Tran vat ly: MAX_WHEEL_RPM 120, banh 0.0328 m -> 0.41 m/s
+      desired_linear_vel: 0.25
+      lookahead_dist: 0.20
+      min_lookahead_dist: 0.15
+      max_lookahead_dist: 0.30
+      lookahead_time: 1.0
+      use_velocity_scaled_lookahead_dist: false
+      # Xoay tai cho o dau moi doan (goc cua sa ban 90 do, quay dau 180 do)
+      use_rotate_to_heading: true
+      rotate_to_heading_min_angle: 0.20        # rad ~ 11 do
+      rotate_to_heading_angular_vel: 1.0       # rad/s
+      # RPP chi cho lenh quay tang max_angular_accel * 0.05 s moi chu ky, tinh
+      # tu toc do quay DO DUOC. 3.0 -> lenh dau 0.15 rad/s, duoi vung chet dong
+      # co -> xe khong quay -> do duoc van 0 -> lenh ket mai o 0.15 -> "Failed
+      # to make progress" (da thay tren xe that va xe ao). 20 -> lenh dau 1.0;
+      # tang toc em giao cho velocity_smoother (tinh tu lenh truoc, khong ket).
+      max_angular_accel: 20.0
+      # Toc do toi thieu khi gan diem den: duoi muc nay dong co co the khong
+      # nhuc nhich (vung chet PWM) va xe dung truoc dich
+      min_approach_linear_velocity: 0.08
+      approach_velocity_scaling_dist: 0.25
+      # Khong tu giam toc theo do cong / gan vat can: duong la doan thang, va
+      # sat tuong la chuyen binh thuong tren sa ban
+      use_regulated_linear_velocity_scaling: false
+      use_cost_regulated_linear_velocity_scaling: false
+      regulated_linear_scaling_min_radius: 0.9
+      regulated_linear_scaling_min_speed: 0.10
+      # Dung neu sap va trong 1 s doc theo duong -> grid_navigator tim duong khac
+      use_collision_detection: true
+      max_allowed_time_to_collision_up_to_carrot: 1.0
+      allow_reversing: false
+      use_fixed_curvature_lookahead: false
+      curvature_lookahead_dist: 0.6
+      interpolate_curvature_after_goal: false
+      max_robot_pose_search_dist: 10.0
+      transform_tolerance: 0.5
+      stateful: true
 
 local_costmap:
   local_costmap:
@@ -206,6 +234,22 @@ behavior_server:
     global_frame: map
     robot_base_frame: base_footprint
 
+# Lam muot lenh tu controller truoc khi xuong xe. OPEN_LOOP: tang toc tinh tu
+# LENH truoc (khong phai toc do do) - nen khong bi ket o vung chet dong co nhu
+# gioi han gia toc cua RPP. Phanh goc nhanh hon tang toc de xe xoay tai cho
+# dung lai gon, khong vuot qua huong canh.
+velocity_smoother:
+  ros__parameters:
+    smoothing_frequency: 20.0
+    scale_velocities: false
+    feedback: "OPEN_LOOP"
+    max_velocity: [0.30, 0.0, 1.5]
+    min_velocity: [-0.30, 0.0, -1.5]
+    max_accel: [1.0, 0.0, 4.0]
+    max_decel: [-1.0, 0.0, -8.0]
+    deadband_velocity: [0.0, 0.0, 0.0]
+    velocity_timeout: 1.0
+
 collision_monitor:
   ros__parameters:
     base_frame_id: "base_footprint"
@@ -213,7 +257,10 @@ collision_monitor:
     cmd_vel_in_topic: "cmd_vel_smoothed"
     cmd_vel_out_topic: "cmd_vel"
     transform_tolerance: 0.2
-    source_timeout: 1.0
+    # /scan im ~1.0-1.02 s moi khi Wi-Fi rot mot goi (ESP32 cho ACK cua
+    # /joint_states RELIABLE). 1.0 s thi lan nao cung dung xe ("invalid source").
+    # 1.5 s: o 0.25 m/s xe di toi da ~37 cm khong co anh quet moi.
+    source_timeout: 1.5
     stop_pub_timeout: 2.0
     polygons: ["FootprintApproach"]
     FootprintApproach:

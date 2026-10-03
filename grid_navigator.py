@@ -2,11 +2,11 @@ import rclpy
 from rclpy.node import Node
 from rclpy.action import ActionClient
 from rclpy.executors import MultiThreadedExecutor
-from nav2_msgs.action import NavigateToPose
+from nav2_msgs.action import FollowPath
 from action_msgs.msg import GoalStatus
 from visualization_msgs.msg import Marker, MarkerArray
-from geometry_msgs.msg import Point
-from nav_msgs.msg import OccupancyGrid
+from geometry_msgs.msg import Point, PoseStamped
+from nav_msgs.msg import OccupancyGrid, Path
 from tf2_ros import Buffer, TransformListener
 from rclpy.qos import QoSProfile, QoSDurabilityPolicy, QoSReliabilityPolicy
 import threading
@@ -26,7 +26,11 @@ class GridNavigator(Node):
             rclpy.parameter.Parameter('use_sim_time', rclpy.Parameter.Type.BOOL, use_sim_time)
         ])
 
-        self._action_client = ActionClient(self, NavigateToPose, 'navigate_to_pose')
+        # Goi thang controller_server (action follow_path) voi duong thang tren
+        # canh - khong qua navigate_to_pose/planner A*, vi A* tu tim duong cong
+        # cat qua o sa ban.
+        self._action_client = ActionClient(self, FollowPath, 'follow_path')
+        self.active_segment = None
         self.marker_pub = self.create_publisher(MarkerArray, '/grid_visualization', 10)
 
         self.tf_buffer = Buffer()
@@ -487,61 +491,101 @@ class GridNavigator(Node):
         path.reverse()
         return path
 
+    # Xe cach diem xuat phat xa hon muc nay thi them mot doan dua xe ve diem do
+    # truoc (bang xy_goal_tolerance cua Nav2).
+    SNAP_DIST = 0.05
+
+    def build_segments(self, nodes):
+        """Chuoi diem luoi lien tiep -> cac DOAN THANG nam tren canh.
+
+        Cac canh lien nhau cung huong gop thanh mot doan: di thang 3 o la mot
+        lenh, khong dung lai o tung diem. Doi huong thi bat dau doan moi - Nav2
+        (Regulated Pure Pursuit) xoay tai cho o dau doan cho thang hang roi moi
+        chay, nen xe khong bao gio cat qua o.
+        """
+        segs = []
+        for a, b in zip(nodes, nodes[1:]):
+            xa, ya = self.get_coordinates(*a)
+            xb, yb = self.get_coordinates(*b)
+            if segs:
+                x0, y0, x1, y1 = segs[-1]
+                la = math.hypot(x1 - x0, y1 - y0)
+                lb = math.hypot(xb - xa, yb - ya)
+                same_dir = (la > 0 and lb > 0 and
+                            abs((x1 - x0) / la - (xb - xa) / lb) < 1e-6 and
+                            abs((y1 - y0) / la - (yb - ya) / lb) < 1e-6)
+                if same_dir and math.hypot(x1 - xa, y1 - ya) < 1e-6:
+                    segs[-1] = (x0, y0, xb, yb)
+                    continue
+            segs.append((xa, ya, xb, yb))
+        return segs
+
     def send_grid_goal(self, start_row, start_col, target_row, target_col, start_yaw=None):
-        self._action_client.wait_for_server()
+        if not self._action_client.wait_for_server(timeout_sec=10.0):
+            self.abort_route('Không thấy Nav2 (action follow_path) - '
+                             'navigation.launch.py đã chạy và "Managed nodes are active" chưa?')
+            return
 
         self.waypoints = []
         self.current_path_points = []
+        self.active_segment = None
 
-        start_x, start_y = self.get_coordinates(start_row, start_col)
-
-        path_coords = self.find_path_bfs(start_row, start_col, target_row, target_col)
-        if path_coords is None:
+        path_nodes = self.find_path_bfs(start_row, start_col, target_row, target_col)
+        if path_nodes is None:
             self.abort_route('Đích đến bị vật cản chặn và không có đường vòng')
             return
-            
-        prev_x, prev_y = start_x, start_y
-        prev_yaw = start_yaw
-        
-        for (nr, nc) in path_coords:
-            nx, ny = self.get_coordinates(nr, nc)
-            yaw = math.atan2(ny - prev_y, nx - prev_x)
-            
-            cy = math.cos(yaw * 0.5)
-            sy = math.sin(yaw * 0.5)
-            qw, qx, qy, qz = cy, 0.0, 0.0, sy
-            
-            if prev_yaw is not None and abs(self.normalize_angle(yaw - prev_yaw)) > 0.01:
-                # Xe đang chuyển hướng -> Chèn 1 waypoint xoay tại chỗ (Spin in place) ở góc cua
-                self.waypoints.append((prev_x, prev_y, qw, qx, qy, qz))
-            
-            self.waypoints.append((nx, ny, qw, qx, qy, qz))
+        nodes = [(start_row, start_col)] + path_nodes
 
-            prev_x, prev_y = nx, ny
-            prev_yaw = yaw
-             
+        segs = []
+        # Xe chua dung dung diem xuat phat (vd vua bi chan giua canh, hoac moi
+        # dat xuong) -> doan dau dua xe ve diem luoi gan nhat
+        rx, ry, _ = self.get_robot_pose()
+        sx, sy = self.get_coordinates(start_row, start_col)
+        if rx is not None and math.hypot(sx - rx, sy - ry) > self.SNAP_DIST:
+            segs.append((rx, ry, sx, sy))
+        segs += self.build_segments(nodes)
+
         target_x, target_y = self.get_coordinates(target_row, target_col)
         self.target_node = (target_x, target_y)
+        self.waypoints = segs
 
+        route = ' -> '.join(f"({r + 1},{c + 1})" for r, c in nodes)
+        self.get_logger().info(f'Lộ trình {route}: {len(segs)} đoạn thẳng trên cạnh.')
         self.refresh_path_points()
         self.publish_markers()
-        self.get_logger().info(f'Lộ trình ({len(self.waypoints)} bước) đã tạo!')
         self.send_next_waypoint()
 
     def refresh_path_points(self):
-        """Dựng lại đường còn phải đi từ danh sách waypoint chưa tới.
+        """Đường còn phải đi: điểm cuối đoạn đang chạy + điểm cuối các đoạn sau.
 
-        Trước đây current_path_points bị pop riêng mỗi khi tới một waypoint, nhưng
-        waypoints còn chứa cả các điểm xoay tại chỗ ở khúc cua nên hai danh sách
-        lệch nhau: đường dùng để kiểm tra va chạm cạn dần rồi chỉ còn 1 đoạn cũ
-        trước khi xe tới nơi, khiến việc phát hiện vật cản tê liệt ở cuối lộ trình.
+        is_path_blocked() nối vị trí xe với các điểm này để xem vật cản mới có
+        nằm trên đường không.
         """
         pts = []
-        for wp in self.waypoints:
-            x, y = wp[0], wp[1]
+        segs = ([self.active_segment] if getattr(self, 'active_segment', None) else []) + self.waypoints
+        for s in segs:
+            x, y = s[2], s[3]
             if not pts or math.hypot(pts[-1][0] - x, pts[-1][1] - y) > 1e-6:
                 pts.append((x, y))
         self.current_path_points = pts
+
+    def make_path(self, x0, y0, x1, y1):
+        """Duong thang tu (x0,y0) toi (x1,y1), moi 5 cm mot diem, huong theo doan."""
+        path = Path()
+        path.header.frame_id = 'map'
+        path.header.stamp = rclpy.time.Time().to_msg()
+        yaw = math.atan2(y1 - y0, x1 - x0)
+        n = max(2, int(math.ceil(math.hypot(x1 - x0, y1 - y0) / 0.05)) + 1)
+        for k in range(n):
+            t = k / (n - 1)
+            p = PoseStamped()
+            p.header = path.header
+            p.pose.position.x = x0 + (x1 - x0) * t
+            p.pose.position.y = y0 + (y1 - y0) * t
+            p.pose.orientation.z = math.sin(yaw / 2)
+            p.pose.orientation.w = math.cos(yaw / 2)
+            path.poses.append(p)
+        return path
 
     def cancel_current_goal_and_replan(self):
         # MultiThreadedExecutor cho phep costmap_callback va timer replan chay
@@ -608,26 +652,30 @@ class GridNavigator(Node):
         if not self.waypoints:
             self.get_logger().info('Đã đến nơi thành công toàn bộ lộ trình!')
             self.current_path_points = []
+            self.active_segment = None
             self.target_node = None
             self.is_canceling = False
             self.publish_markers()
             print(f"\n=== ĐIỀU KHIỂN AGV SA BÀN {self.rows}x{self.cols} ===")
             print("Xe đang chờ lệnh tiếp theo. Hãy nhập trên terminal...")
             return
-            
-        nx, ny, qw, qx, qy, qz = self.waypoints.pop(0)
-        self.refresh_path_points()
-        self.get_logger().info(f'Đang di chuyển tới tọa độ: ({nx:.2f}, {ny:.2f})')
 
-        goal_msg = NavigateToPose.Goal()
-        goal_msg.pose.header.frame_id = 'map'
-        goal_msg.pose.header.stamp = rclpy.time.Time().to_msg()
-        goal_msg.pose.pose.position.x = float(nx)
-        goal_msg.pose.pose.position.y = float(ny)
-        goal_msg.pose.pose.orientation.w = float(qw)
-        goal_msg.pose.pose.orientation.x = float(qx)
-        goal_msg.pose.pose.orientation.y = float(qy)
-        goal_msg.pose.pose.orientation.z = float(qz)
+        x0, y0, x1, y1 = self.waypoints.pop(0)
+        self.active_segment = (x0, y0, x1, y1)
+        self.refresh_path_points()
+        r, c = self.get_closest_grid(x1, y1)
+        self.get_logger().info(
+            f'Đoạn thẳng ({x0:+.2f}, {y0:+.2f}) -> ({x1:+.2f}, {y1:+.2f}), '
+            f'{math.hypot(x1 - x0, y1 - y0):.2f} m, tới ({self.board.label(r, c)})')
+
+        # Giao THANG duong cho controller (khong qua planner A*): xe bam dung
+        # doan thang tren canh sa ban.
+        goal_msg = FollowPath.Goal()
+        goal_msg.path = self.make_path(x0, y0, x1, y1)
+        goal_msg.controller_id = 'FollowPath'
+        goal_msg.goal_checker_id = 'general_goal_checker'
+        if hasattr(goal_msg, 'progress_checker_id'):
+            goal_msg.progress_checker_id = 'progress_checker'
 
         self._send_goal_future = self._action_client.send_goal_async(goal_msg)
         self._send_goal_future.add_done_callback(self.goal_response_callback)
