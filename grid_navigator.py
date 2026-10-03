@@ -7,8 +7,9 @@ from action_msgs.msg import GoalStatus
 from visualization_msgs.msg import Marker, MarkerArray
 from geometry_msgs.msg import Point, PoseStamped, Twist
 from nav_msgs.msg import OccupancyGrid, Odometry, Path
+from sensor_msgs.msg import Imu
 from tf2_ros import Buffer, TransformListener
-from rclpy.qos import QoSProfile, QoSDurabilityPolicy, QoSReliabilityPolicy
+from rclpy.qos import QoSProfile, QoSDurabilityPolicy, QoSReliabilityPolicy, qos_profile_sensor_data
 import threading
 import sys
 import time
@@ -32,6 +33,9 @@ class GridNavigator(Node):
         self._action_client = ActionClient(self, FollowPath, 'follow_path')
         self.active_segment = None
         self.final_yaw = None
+        self.requested_heading = None   # huong nguoi dung chon cho dich hien tai
+        self.imu_yaw = None             # goc tu quaternion BNO055 (/imu/data)
+        self.create_subscription(Imu, 'imu/data', self.cb_imu, qos_profile_sensor_data)
         # Xoay tai cho do node nay tu lam (xem rotate_tick): lenh vao
         # cmd_vel_nav = dau vao velocity_smoother, cung cho controller phat.
         self.cmd_pub = self.create_publisher(Twist, 'cmd_vel_nav', 10)
@@ -539,7 +543,16 @@ class GridNavigator(Node):
             segs.append((xa, ya, xb, yb))
         return segs
 
-    def send_grid_goal(self, start_row, start_col, target_row, target_col, start_yaw=None):
+    # Xe cach diem xuat phat trong khoang nay: KHONG them doan "ve diem" rieng
+    # ma cho doan dau xuat phat luon tu cho xe dang dung. Doan ve diem ngan
+    # theo huong bat ky bat xe xoay - nhich vai cm - xoay lai: "khung khung"
+    # luc moi chay.
+    MERGE_START_DIST = 0.15
+
+    def send_grid_goal(self, start_row, start_col, target_row, target_col, start_yaw=None,
+                       final_heading=None):
+        """final_heading: huong (rad, he map) xe phai quay toi sau khi toi dich;
+        None = giu huong canh cuoi cung."""
         if not self._action_client.wait_for_server(timeout_sec=10.0):
             self.abort_route('Không thấy Nav2 (action follow_path) - '
                              'navigation.launch.py đã chạy và "Managed nodes are active" chưa?')
@@ -555,23 +568,31 @@ class GridNavigator(Node):
             return
         nodes = [(start_row, start_col)] + path_nodes
 
-        segs = []
-        # Xe chua dung dung diem xuat phat (vd vua bi chan giua canh, hoac moi
-        # dat xuong) -> doan dau dua xe ve diem luoi gan nhat
+        segs = self.build_segments(nodes)
         rx, ry, _ = self.get_robot_pose()
         sx, sy = self.get_coordinates(start_row, start_col)
-        if rx is not None and math.hypot(sx - rx, sy - ry) > self.SNAP_DIST:
-            segs.append((rx, ry, sx, sy))
-        segs += self.build_segments(nodes)
+        off = math.hypot(sx - rx, sy - ry) if rx is not None else 0.0
+        if off > self.SNAP_DIST:
+            if segs and off <= self.MERGE_START_DIST:
+                # Gan diem xuat phat: doan dau bat dau tu CHO XE DUNG
+                x0, y0, x1, y1 = segs[0]
+                segs[0] = (rx, ry, x1, y1)
+            else:
+                # Xa (vd bi chan giua canh) hoac dich chinh la diem nay ->
+                # doan rieng dua xe ve diem luoi truoc
+                segs.insert(0, (rx, ry, sx, sy))
 
         target_x, target_y = self.get_coordinates(target_row, target_col)
         self.target_node = (target_x, target_y)
         self.waypoints = segs
-        # Huong chot o diem cuoi = huong doan cuoi (khong tinh doan ve diem)
+        # Huong chot o dich: huong nguoi dung chon, khong thi huong doan cuoi
         last = segs[-1] if segs else None
-        self.final_yaw = (math.atan2(last[3] - last[1], last[2] - last[0])
-                          if last and math.hypot(last[2] - last[0], last[3] - last[1]) > 0.1
-                          else None)
+        if final_heading is not None:
+            self.final_yaw = final_heading
+        elif last and math.hypot(last[2] - last[0], last[3] - last[1]) > 0.1:
+            self.final_yaw = math.atan2(last[3] - last[1], last[2] - last[0])
+        else:
+            self.final_yaw = None
 
         route = ' -> '.join(f"({r + 1},{c + 1})" for r, c in nodes)
         self.get_logger().info(f'Lộ trình {route}: {len(segs)} đoạn thẳng trên cạnh.')
@@ -670,7 +691,8 @@ class GridNavigator(Node):
         # GIU is_canceling = True cho toi khi Nav2 chap nhan goal moi.
         # Ha co o day se mo cua cho costmap_callback ke tiep kich hoat mot luot
         # huy nua tren goal_handle da chet.
-        self.send_grid_goal(current_row, current_col, target_row, target_col, ryaw)
+        self.send_grid_goal(current_row, current_col, target_row, target_col, ryaw,
+                            final_heading=self.requested_heading)
 
 
     def send_next_waypoint(self):
@@ -805,6 +827,11 @@ class GridNavigator(Node):
     def cb_odom(self, msg):
         self.odom_w = msg.twist.twist.angular.z
 
+    def cb_imu(self, msg):
+        q = msg.orientation
+        if abs(q.w * q.w + q.x * q.x + q.y * q.y + q.z * q.z - 1.0) < 0.1:   # bo goi toan 0
+            self.imu_yaw = math.atan2(2 * (q.w * q.z + q.x * q.y), 1 - 2 * (q.y * q.y + q.z * q.z))
+
     def publish_w(self, w):
         t = Twist()
         t.angular.z = float(w)
@@ -858,7 +885,7 @@ class GridNavigator(Node):
         # settle: cho xe dung han roi danh gia
         self.publish_w(0.0)
         still_for = (now - r['t']).nanoseconds * 1e-9
-        if (abs(self.odom_w) < 0.05 and still_for > 0.3) or still_for > 2.0:
+        if (abs(self.odom_w) < 0.05 and still_for > 0.15) or still_for > 2.0:
             if abs(err) > self.rot_done and r['tries'] < 3:
                 r['tries'] += 1
                 r['phase'] = 'turn'
@@ -890,6 +917,71 @@ class GridNavigator(Node):
         self.replan_attempts = 0
         self.publish_markers()
         print(f"\n[LỖI] {reason}. Xe đã dừng — hãy nhập lệnh mới.")
+
+# Huong tai dich, theo SA BAN (khong phai la ban that):
+#   Dong = sang phai (cot tang, +x ban do)   Bac = len tren (hang tang, +y)
+#   Tay  = sang trai                          Nam = xuong duoi
+HEADINGS = {'dong': 0.0, 'bac': math.pi / 2, 'tay': math.pi, 'nam': -math.pi / 2}
+HEADING_NAMES = {'dong': 'Đông', 'bac': 'Bắc', 'tay': 'Tây', 'nam': 'Nam'}
+
+
+def parse_heading(text):
+    """'D'/'Đ'/'dong'/'đông' ... -> (khoa, rad). '' -> (None, None). Sai -> ValueError."""
+    t = text.strip().lower()
+    for a, b in (('đ', 'd'), ('ô', 'o'), ('ơ', 'o'), ('á', 'a'), ('ắ', 'a'), ('â', 'a'),
+                 ('ă', 'a'), ('ấ', 'a'), ('ả', 'a'), ('à', 'a'), ('ạ', 'a')):
+        t = t.replace(a, b)
+    if t == '':
+        return None, None
+    for key in HEADINGS:
+        if t == key or t == key[0]:
+            return key, HEADINGS[key]
+    raise ValueError(f"không hiểu hướng '{text}'")
+
+
+def heading_name(yaw):
+    """Goc (rad, he map) -> ten huong gan nhat + do lech."""
+    best = min(HEADINGS, key=lambda k: abs(math.atan2(math.sin(yaw - HEADINGS[k]),
+                                                       math.cos(yaw - HEADINGS[k]))))
+    d = math.degrees(math.atan2(math.sin(yaw - HEADINGS[best]), math.cos(yaw - HEADINGS[best])))
+    return HEADING_NAMES[best], d
+
+
+def status_line_loop(nav, stop):
+    """Dong trang thai CO DINH o dau terminal: goc IMU, vi tri, huong xe.
+
+    Cap nhat 3 lan/giay ke ca luc dang cho nhap. Dong 1 cua man hinh duoc tach
+    khoi vung cuon (DECSTBM) nen chu nhap va log cuon ben duoi khong de len no.
+    """
+    import shutil
+    rows = shutil.get_terminal_size().lines
+    sys.stdout.write(f"7[2;{rows}r8")      # vung cuon = dong 2..het
+    sys.stdout.flush()
+    while not stop.is_set():
+        parts = []
+        if nav.imu_yaw is not None:
+            parts.append(f"IMU yaw {math.degrees(nav.imu_yaw):+7.1f}°")
+        else:
+            parts.append("IMU: chưa có /imu/data")
+        rx, ry, ryaw = nav.get_robot_pose()
+        if rx is not None:
+            name, d = heading_name(ryaw)
+            r, c = nav.get_closest_grid(rx, ry)
+            parts.append(f"xe ({rx:+.2f}, {ry:+.2f}) hướng {math.degrees(ryaw):+6.1f}° "
+                         f"≈ {name} {d:+.0f}°  gần ({r + 1},{c + 1})")
+        else:
+            parts.append("chưa có vị trí (AMCL)")
+        if nav.rot is not None:
+            parts.append("đang xoay")
+        elif nav.target_node is not None:
+            parts.append("đang chạy")
+        line = " | ".join(parts)
+        sys.stdout.write(f"7[1;1H[2K[7m {line} [0m8")
+        sys.stdout.flush()
+        stop.wait(0.33)
+    sys.stdout.write("7[r8")                  # tra lai vung cuon
+    sys.stdout.flush()
+
 
 def input_thread(navigator):
     print("Đang chờ khởi tạo hệ thống và nhận bản đồ...")
@@ -949,8 +1041,22 @@ def input_thread(navigator):
                 print(f"Điểm ({nav.board.label(target_row, target_col)}) đang bị chặn "
                       "(sát vật cản). Chọn điểm khác.")
                 continue
+            while True:
+                h = input("Hướng tại đích - Đ(ông)=phải, T(ây)=trái, B(ắc)=lên, "
+                          "N(am)=xuống, Enter=giữ hướng đi: ")
+                try:
+                    hkey, hyaw = parse_heading(h)
+                    break
+                except ValueError as e:
+                    print(f"Lỗi: {e}. Nhập D, T, B, N hoặc Enter.")
+            if hkey:
+                print(f"-> Tới ({nav.board.label(target_row, target_col)}) rồi quay về "
+                      f"{HEADING_NAMES[hkey]} ({math.degrees(hyaw):+.0f}°), sai số ≤ "
+                      f"{math.degrees(nav.rot_done):.0f}°.")
 
-            nav.send_grid_goal(current_row, current_col, target_row, target_col, start_yaw)
+            nav.requested_heading = hyaw
+            nav.send_grid_goal(current_row, current_col, target_row, target_col, start_yaw,
+                               final_heading=hyaw)
 
             # Tạm thời khóa thread input để xe chạy
             while len(nav.waypoints) > 0 or nav.target_node is not None:
@@ -984,8 +1090,21 @@ def main(args=None):
     ros_thread = threading.Thread(target=executor.spin, daemon=True)
     ros_thread.start()
 
+    # Dong trang thai co dinh o dau terminal (goc IMU, vi tri, huong)
+    stop_status = threading.Event()
+    status_thread = None
+    if sys.stdout.isatty() and '--no-status' not in sys.argv:
+        status_thread = threading.Thread(target=status_line_loop,
+                                         args=(navigator, stop_status), daemon=True)
+        status_thread.start()
+
     # Thread chính dùng để nhận input liên tục
-    input_thread(navigator)
+    try:
+        input_thread(navigator)
+    finally:
+        stop_status.set()
+        if status_thread is not None:
+            status_thread.join(timeout=1.0)
     
     navigator.destroy_node()
     if rclpy.ok():

@@ -597,6 +597,14 @@ rviz2 -d /opt/ros/jazzy/share/nav2_bringup/rviz/nav2_default_view.rviz
 ```bash
 cd ~/robot_ws_3 && python3 grid_navigator.py --real
 ```
+Nhập lần lượt: **hàng** (1–5), **cột** (1–5), rồi **hướng tại đích**: `D` Đông = sang
+phải (cột tăng), `T` Tây = trái, `B` Bắc = lên (hàng tăng), `N` Nam = xuống, Enter =
+giữ hướng cạnh cuối. Xe tới đích (sai số ≤ 3 cm) rồi xoay về hướng đó (≤ 5°).
+
+**Dòng đầu Terminal 4** luôn hiện, kể cả lúc đang chờ nhập: góc IMU (quaternion
+BNO055), vị trí và hướng xe trên bản đồ (≈ Đông/Tây/Nam/Bắc), điểm lưới gần nhất.
+Không muốn dòng này: thêm `--no-status`.
+
 Dòng đầu phải in `Che do: XE THAT (use_sim_time=false)`, rồi
 `Đã đối chiếu sa bàn với bản đồ: 24/25 điểm`. Không có `/map` thì nó dừng và
 báo phải chạy localization/navigation trước — không tự đoán lưới nữa.

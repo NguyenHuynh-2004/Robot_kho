@@ -409,6 +409,8 @@ struct Wheel {
   float previous_rpm    = 0.0f;
   float integral        = 0.0f;
   int   output_pwm      = 0;
+  bool  started         = false;  // da thoat ma sat tinh tu lan lenh gan nhat
+  unsigned long slow_since = 0;   // bat dau quay cham (< 0.5 v/p) luc nao
   float dist_delta_m    = 0.0f;   // quang duong chu ky vua roi, cho odom
 
   unsigned long wrong_dir_since = 0;
@@ -612,6 +614,7 @@ static void wheel_control_step(Wheel &w, const char *name, float dt) {
     if (fabsf(w.target_rpm) < 0.001f && fabsf(w.ramped_rpm) < 0.001f) {
       w.integral = 0.0f;
       w.output_pwm = 0;
+      w.started = false;          // lan khoi dong sau lai duoc bu ma sat tinh
     } else {
       float error = w.ramped_rpm - w.current_rpm;
 
@@ -627,9 +630,19 @@ static void wheel_control_step(Wheel &w, const char *name, float dt) {
       // Vi phan theo gia tri DO (khong theo sai so) -> khong giat khi doi setpoint
       float d_input = w.current_rpm - w.previous_rpm;
 
-      // Bu ma sat: banh con dung yen thi cong them breakawayPWM (ma sat tinh)
+      // Bu ma sat TINH chi MOT LAN moi lan khoi dong: cong breakawayPWM cho toi
+      // khi banh quay > BREAKAWAY_RPM roi TAT HAN (started). Truoc day bat/tat
+      // theo toc do tuc thoi: banh vua qua 3 v/p thi mat 40 PWM, cham lai duoi
+      // 3, lai duoc cong -> giat giat luc moi chay. Chi bat lai khi lenh ve 0
+      // (nhanh tren) hoac banh dung han > 0.3 s du van co lenh (bi ket).
+      unsigned long now_ms = millis();
+      if (fabsf(w.current_rpm) > BREAKAWAY_RPM) { w.started = true; w.slow_since = 0; }
+      else if (fabsf(w.current_rpm) < 0.5f) {
+        if (w.slow_since == 0) w.slow_since = now_ms;
+        else if (now_ms - w.slow_since > 300) w.started = false;
+      } else w.slow_since = 0;
       int fric = deadbandPWM;
-      if (fabsf(w.current_rpm) < BREAKAWAY_RPM) fric += breakawayPWM;
+      if (!w.started) fric += breakawayPWM;
       float ff = 0.0f;
       if      (w.ramped_rpm >  0.5f) ff = Kf * w.ramped_rpm + fric;
       else if (w.ramped_rpm < -0.5f) ff = Kf * w.ramped_rpm - fric;
