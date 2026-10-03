@@ -212,9 +212,19 @@ const bool INVERT_ENC_R   = false;
 // Van nen do lai tren xe cua ban, xem Phu luc B.
 float Kf    = 1.8f;                  // feedforward: PWM tren moi RPM
 float Kp    = 0.30f;
-float Ki    = 0.02f;
+float Ki    = 0.04f;                 // 0.02 -> 0.04: tich nhanh hon, nhung da kep o INTEGRAL_MAX
 float Kd    = 0.01f;
-int   deadbandPWM = 30;
+int   deadbandPWM = 30;              // bu ma sat KHI BANH DANG QUAY
+// Ma sat TINH lon hon ma sat dong: banh dung yen thi cong them BREAKAWAY_PWM
+// cho toi khi no quay > BREAKAWAY_RPM. Do tren xe (2026-10-03): lenh xoay tai
+// cho 29 v/p -> PWM ~82, banh dung yen 1-2 s, chi khoi dong nho tich phan tich
+// dan -> "khoi dong cham".
+int   breakawayPWM  = 40;
+#define BREAKAWAY_RPM   3.0f
+// Tich phan chi duoc gom toi +-INTEGRAL_MAX PWM (truoc: +-255 = ca dai PWM).
+// Gom lon trong luc banh ket thi luc banh thoat ra no van con day -> banh vot
+// qua toc do dat -> "cuoi qua lon", xe xoay lo goc.
+#define INTEGRAL_MAX    80.0f
 float lpfAlpha    = 0.2f;            // loc thong thap cho RPM do duoc
 float maxAccelRPMPerSec = 320.0f;    // ramp, chong giat va sut ap
 
@@ -609,14 +619,20 @@ static void wheel_control_step(Wheel &w, const char *name, float dt) {
       bool sat_hi = w.output_pwm >=  PWM_MAX && error > 0.0f;
       bool sat_lo = w.output_pwm <= -PWM_MAX && error < 0.0f;
       if (!sat_hi && !sat_lo) w.integral += Ki * error;
-      w.integral = constrain(w.integral, -(float)PWM_MAX, (float)PWM_MAX);
+      // Banh quay NHANH HON dat (sai so nguoc dau voi huong chay): xa bot tich
+      // phan cu thay vi doi no tu giam tung chut - chong vot toc.
+      if (error * w.ramped_rpm < 0.0f) w.integral *= 0.8f;
+      w.integral = constrain(w.integral, -INTEGRAL_MAX, INTEGRAL_MAX);
 
       // Vi phan theo gia tri DO (khong theo sai so) -> khong giat khi doi setpoint
       float d_input = w.current_rpm - w.previous_rpm;
 
+      // Bu ma sat: banh con dung yen thi cong them breakawayPWM (ma sat tinh)
+      int fric = deadbandPWM;
+      if (fabsf(w.current_rpm) < BREAKAWAY_RPM) fric += breakawayPWM;
       float ff = 0.0f;
-      if      (w.ramped_rpm >  0.5f) ff = Kf * w.ramped_rpm + deadbandPWM;
-      else if (w.ramped_rpm < -0.5f) ff = Kf * w.ramped_rpm - deadbandPWM;
+      if      (w.ramped_rpm >  0.5f) ff = Kf * w.ramped_rpm + fric;
+      else if (w.ramped_rpm < -0.5f) ff = Kf * w.ramped_rpm - fric;
 
       float out = ff + Kp * error + w.integral - Kd * d_input;
       w.output_pwm = constrain((int)out, -PWM_MAX, PWM_MAX);

@@ -29,3 +29,16 @@ robot_radius: 0.13
 # Cung dung cho vat can moi xuat hien tren local costmap luc xe chay.
 node_clearance: 0.25
 edge_clearance: 0.20
+
+# Xoay tai cho o dau moi doan (grid_navigator tu lam, khong de Nav2 xoay).
+# Lenh toi banh tre ~0.3 s (do tren xe that): node du doan goc xe se troi them
+# (toc do quay x lag) va ra lenh dung som dung chung do.
+rotate:
+  start_deg: 10      # dau xe lech huong doan hon muc nay thi xoay truoc
+  stop_deg: 2        # du doan con lech duoi muc nay -> ra lenh dung
+  done_deg: 5        # dung han ma con lech hon -> xoay bu (toi da 3 lan)
+  max_speed: 1.3     # rad/s
+  min_speed: 0.7     # rad/s - cham hon thi banh ket o ma sat tinh
+  decel: 2.5         # rad/s2 - giam toc khi gan dich: v = sqrt(2*decel*goc)
+  lag: 0.3           # s - tre lenh -> banh. Van vuot goc: tang; dung som qua: giam
+  motor_tau: 0.12    # s - quan tinh dong co sau khi lenh toi

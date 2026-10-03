@@ -99,6 +99,10 @@ controller_server:
     # Truoc day MPPI: thu 2000 quy dao moi chu ky, tren may nay chi chay duoc
     # 7-8 Hz thay vi 20 Hz (log: "Control loop missed its desired rate") va tu
     # chon duong cong cat qua o.
+    # Xoay tai cho o dau moi doan do grid_navigator.py tu lam (giam toc + bu
+    # tre 0.3 s). Da thu RotationShimController: ban Jazzy xoay voi toc do
+    # KHONG DOI roi cat dot ngot -> xe ao tre 0.3 s vuot 30-40 do moi lan.
+    # RPP chi con xoay du phong khi lech > 20 do (rotate_to_heading_min_angle).
     FollowPath:
       plugin: "nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController"
       # Tran vat ly: MAX_WHEEL_RPM 120, banh 0.0328 m -> 0.41 m/s - nhung do
@@ -114,7 +118,7 @@ controller_server:
       use_velocity_scaled_lookahead_dist: false
       # Xoay tai cho o dau moi doan (goc cua sa ban 90 do, quay dau 180 do)
       use_rotate_to_heading: true
-      rotate_to_heading_min_angle: 0.20        # rad ~ 11 do
+      rotate_to_heading_min_angle: 0.35        # rad ~ 20 do (du phong)
       # 1.0 rad/s = 29 v/p moi banh -> PWM ~82, khong thang noi ma sat tinh khi
       # xoay tai cho (do tren xe: banh dung yen 1-2 s, banh lui khong quay).
       rotate_to_heading_angular_vel: 1.3       # rad/s

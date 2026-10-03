@@ -5,8 +5,8 @@ from rclpy.executors import MultiThreadedExecutor
 from nav2_msgs.action import FollowPath
 from action_msgs.msg import GoalStatus
 from visualization_msgs.msg import Marker, MarkerArray
-from geometry_msgs.msg import Point, PoseStamped
-from nav_msgs.msg import OccupancyGrid, Path
+from geometry_msgs.msg import Point, PoseStamped, Twist
+from nav_msgs.msg import OccupancyGrid, Odometry, Path
 from tf2_ros import Buffer, TransformListener
 from rclpy.qos import QoSProfile, QoSDurabilityPolicy, QoSReliabilityPolicy
 import threading
@@ -31,6 +31,14 @@ class GridNavigator(Node):
         # cat qua o sa ban.
         self._action_client = ActionClient(self, FollowPath, 'follow_path')
         self.active_segment = None
+        # Xoay tai cho do node nay tu lam (xem rotate_tick): lenh vao
+        # cmd_vel_nav = dau vao velocity_smoother, cung cho controller phat.
+        self.cmd_pub = self.create_publisher(Twist, 'cmd_vel_nav', 10)
+        self.odom_w = 0.0
+        self.create_subscription(Odometry, 'odom', self.cb_odom, 10)
+        self.rot = None
+        self.rot_timer = None
+        self.rot_hist = []          # (t, lenh w) trong rot_lag giay qua
         self.marker_pub = self.create_publisher(MarkerArray, '/grid_visualization', 10)
 
         self.tf_buffer = Buffer()
@@ -51,6 +59,16 @@ class GridNavigator(Node):
         self.robot_radius = self.board.robot_radius
         self.node_clearance = self.board.node_clearance
         self.edge_clearance = self.board.edge_clearance
+        # Xoay tai cho (muc "rotate:" trong file sa ban, khong co thi mac dinh)
+        rot = self.board.cfg.get('rotate', {}) or {}
+        self.rot_start = math.radians(rot.get('start_deg', 10.0))   # lech hon -> xoay
+        self.rot_tol = math.radians(rot.get('stop_deg', 2.0))       # du doan toi dich -> dung
+        self.rot_done = math.radians(rot.get('done_deg', 5.0))      # con lech hon -> xoay bu
+        self.rot_wmax = rot.get('max_speed', 1.3)                   # rad/s
+        self.rot_wmin = rot.get('min_speed', 0.7)                   # rad/s, tren vung chet
+        self.rot_accel = rot.get('decel', 2.5)                      # rad/s2, do doc giam toc
+        self.rot_lag = rot.get('lag', 0.3)                          # s, lenh -> banh
+        self.rot_tau = rot.get('motor_tau', 0.12)                   # s, quan tinh dong co
         # Chỉ lấy ô vật cản THẬT (giá trị 100). Ngưỡng thấp hơn sẽ nuốt cả vùng
         # inflation của Nav2 và lại gây chặn quá tay.
         self.lethal_threshold = 99
@@ -598,6 +616,7 @@ class GridNavigator(Node):
             self.is_canceling = True
             handle = self.goal_handle
 
+        self.stop_rotation()        # dang xoay tai cho thi dung luon
         if handle is not None:
             cancel_future = handle.cancel_goal_async()
             cancel_future.add_done_callback(self.cancel_done_callback)
@@ -668,8 +687,20 @@ class GridNavigator(Node):
             f'Đoạn thẳng ({x0:+.2f}, {y0:+.2f}) -> ({x1:+.2f}, {y1:+.2f}), '
             f'{math.hypot(x1 - x0, y1 - y0):.2f} m, tới ({self.board.label(r, c)})')
 
-        # Giao THANG duong cho controller (khong qua planner A*): xe bam dung
-        # doan thang tren canh sa ban.
+        # Dau xe lech huong doan qua nhieu -> tu xoay tai cho truoc (giam toc,
+        # bu tre), xong moi giao doan cho Nav2.
+        yaw_des = math.atan2(y1 - y0, x1 - x0)
+        _, _, yaw = self.get_robot_pose()
+        if (yaw is not None and math.hypot(x1 - x0, y1 - y0) > self.SNAP_DIST and
+                abs(self.normalize_angle(yaw_des - yaw)) > self.rot_start):
+            self.start_rotation(yaw_des)
+            return
+        self.send_follow_path()
+
+    def send_follow_path(self):
+        """Giao THANG doan dang chay cho controller (khong qua planner A*): xe
+        bam dung doan thang tren canh sa ban."""
+        x0, y0, x1, y1 = self.active_segment
         goal_msg = FollowPath.Goal()
         goal_msg.path = self.make_path(x0, y0, x1, y1)
         goal_msg.controller_id = 'FollowPath'
@@ -744,12 +775,95 @@ class GridNavigator(Node):
         self.waypoints.insert(0, (rx, ry, x1, y1))
         self.send_next_waypoint()
 
+    # ------------------------------------------------------------------
+    # XOAY TAI CHO o dau doan - tu lam thay vi de Nav2 xoay.
+    #
+    # RPP / RotationShim (Jazzy) xoay voi toc do KHONG DOI roi cat dot ngot.
+    # Lenh toi banh tre ~0.3 s nen xe troi them toc_do x 0.3 s ~ 20-40 do roi
+    # xoay nguoc sua, qua lai. O day:
+    #   - du doan goc se troi: goc_con_lai - toc_do_quay_do_duoc * rot_lag,
+    #     ra lenh dung khi du doan da toi dich (bu tre);
+    #   - giam toc theo sqrt(2 * rot_accel * goc_con_lai) nhung khong duoi
+    #     rot_wmin: cham qua thi banh ket o ma sat tinh;
+    #   - dung han roi do lai, con lech > rot_done thi xoay bu (toi da 3 lan).
+    # Lenh di vao cmd_vel_nav nhu lenh cua controller -> van qua
+    # velocity_smoother va collision_monitor.
+    # ------------------------------------------------------------------
+    def cb_odom(self, msg):
+        self.odom_w = msg.twist.twist.angular.z
+
+    def publish_w(self, w):
+        t = Twist()
+        t.angular.z = float(w)
+        self.cmd_pub.publish(t)
+        now = self.get_clock().now().nanoseconds * 1e-9
+        self.rot_hist.append((now, float(w)))
+        while self.rot_hist and now - self.rot_hist[0][0] > self.rot_lag:
+            self.rot_hist.pop(0)
+
+    def pending_rotation(self):
+        """Goc da RA LENH trong rot_lag giay vua qua nhung banh chua kip quay."""
+        return sum(w * 0.05 for _, w in self.rot_hist)
+
+    def start_rotation(self, yaw_des):
+        self.rot = {'target': yaw_des, 'phase': 'turn', 't': None, 'tries': 0,
+                    't0': self.get_clock().now()}
+        self.get_logger().info(f'Xoay tại chỗ tới hướng {math.degrees(yaw_des):+.0f}°')
+        if self.rot_timer is None:
+            self.rot_timer = self.create_timer(0.05, self.rotate_tick)
+
+    def stop_rotation(self):
+        if self.rot_timer is not None:
+            self.destroy_timer(self.rot_timer)
+            self.rot_timer = None
+        if self.rot is not None:
+            self.rot = None
+            self.publish_w(0.0)
+
+    def rotate_tick(self):
+        r = self.rot
+        if r is None:
+            return
+        now = self.get_clock().now()
+        _, _, yaw = self.get_robot_pose()
+        if yaw is None:
+            self.publish_w(0.0)
+            return
+        err = self.normalize_angle(r['target'] - yaw)
+        if r['phase'] == 'turn':
+            # Goc con lai SAU KHI xe quay het phan da ra lenh ma chua toi banh
+            # (lenh trong rot_lag giay qua) va phan quan tinh dong co (tau)
+            pred = err - self.pending_rotation() - self.odom_w * self.rot_tau
+            if abs(pred) <= self.rot_tol or pred * err < 0:
+                self.publish_w(0.0)
+                r['phase'], r['t'] = 'settle', now
+                return
+            w = math.sqrt(2.0 * self.rot_accel * abs(pred))
+            w = min(self.rot_wmax, max(self.rot_wmin, w))
+            self.publish_w(math.copysign(w, pred))
+            return
+        # settle: cho xe dung han roi danh gia
+        self.publish_w(0.0)
+        still_for = (now - r['t']).nanoseconds * 1e-9
+        if (abs(self.odom_w) < 0.05 and still_for > 0.3) or still_for > 2.0:
+            if abs(err) > self.rot_done and r['tries'] < 3:
+                r['tries'] += 1
+                r['phase'] = 'turn'
+                return
+            took = (now - r['t0']).nanoseconds * 1e-9
+            self.get_logger().info(
+                f'Xoay xong sau {took:.1f} s, còn lệch {math.degrees(err):+.1f}° '
+                f'({r["tries"]} lần xoay bù)')
+            self.stop_rotation()
+            self.send_follow_path()
+
     def abort_route(self, reason):
         """Dừng hẳn lộ trình và trả quyền điều khiển về cho người dùng.
 
         Cần thiết vì input_thread đang chờ trên `while waypoints or target_node`;
         nếu không dọn trạng thái ở đây thì terminal treo vĩnh viễn.
         """
+        self.stop_rotation()
         self.get_logger().error(f'Huỷ lộ trình: {reason}')
         self.waypoints = []
         self.current_path_points = []

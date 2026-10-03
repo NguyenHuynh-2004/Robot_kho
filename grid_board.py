@@ -35,6 +35,7 @@ class Board:
         if missing:
             raise ValueError(f"{path}: thieu {', '.join(missing)}")
         self.path = path
+        self.cfg = cfg              # ca cac muc tuy chon (vd rotate:)
         self.rows, self.cols = int(cfg['rows']), int(cfg['cols'])
         self.spacing = float(cfg['spacing'])
         self.center_row, self.center_col = int(cfg['center_row']), int(cfg['center_col'])
