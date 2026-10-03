@@ -14,8 +14,10 @@ import sys
 import time
 import math
 
+from grid_board import Board, config_path, edge_key as board_edge_key
+
 class GridNavigator(Node):
-    def __init__(self, use_sim_time=True):
+    def __init__(self, use_sim_time=True, grid_file=None):
         # use_sim_time truoc day bi dong cung = True. Tren xe that khong co
         # /clock nen node se treo vinh vien ma khong bao loi gi.
         #   Mo phong: python3 grid_navigator.py
@@ -26,26 +28,32 @@ class GridNavigator(Node):
 
         self._action_client = ActionClient(self, NavigateToPose, 'navigate_to_pose')
         self.marker_pub = self.create_publisher(MarkerArray, '/grid_visualization', 10)
-        
+
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
-        
-        self.grid_size = 5
-        self.spacing_x = 2.0
-        self.spacing_y = 2.0
-        self.offset_x = -4.0
-        self.offset_y = -4.0
+
+        # Sa ban CO DINH tren ban do, doc tu file cau hinh - khong con tu suy
+        # tu khung bao vung trong cua /map: tren phong that khung bao do bi tia
+        # LiDAR lot qua cua keo ra ngoai, diem luoi roi vao tuong.
+        #   xe that : src/my_bot_bringup/config/grid_real.yaml
+        #   mo phong: src/my_bot_bringup/config/grid_sim.yaml
+        self.real = not use_sim_time
+        self.board = Board.load(grid_file or config_path(self.real))
+        self.rows, self.cols = self.board.rows, self.board.cols
         self.map_received = False
 
-        # Bán kính bao của xe: chassis 0.5m, bánh xe lồi ra tới 0.55 + 0.02 = 0.57m.
-        # clearance = khoảng hở tối thiểu từ tâm xe tới vật cản để coi một vị trí là đi được.
-        # (Trước đây dùng 21 pixel = 1.05m > nửa khoảng cách lưới 1.0m nên một vật cản
-        #  chặn luôn cả 2 node kề nhau, khiến BFS hay báo "không có đường".)
-        self.robot_radius = 0.6
-        self.clearance = 0.65
+        # Ban kinh xe that (0.13 m, giong navigation.yaml). Truoc day 0.6 m /
+        # khoang ho 0.65 m - kich thuoc mo hinh xe cu duong kinh 1 m.
+        self.robot_radius = self.board.robot_radius
+        self.node_clearance = self.board.node_clearance
+        self.edge_clearance = self.board.edge_clearance
         # Chỉ lấy ô vật cản THẬT (giá trị 100). Ngưỡng thấp hơn sẽ nuốt cả vùng
         # inflation của Nav2 và lại gây chặn quá tay.
         self.lethal_threshold = 99
+        # Diem/canh sat vat can tren BAN DO TINH (tinh mot lan khi nhan /map),
+        # cong voi diem/canh bi vat can moi tren local costmap chan luc chay.
+        self.static_blocked_nodes = set()
+        self.static_blocked_edges = set()
 
         qos = QoSProfile(
             depth=1,
@@ -58,15 +66,19 @@ class GridNavigator(Node):
             self.map_callback,
             qos)
             
-        self.blocked_nodes = [[False]*self.grid_size for _ in range(self.grid_size)]
+        self.blocked_nodes = [[False] * self.cols for _ in range(self.rows)]
         self.blocked_edges = set()
         self.costmap_sub = self.create_subscription(
             OccupancyGrid,
             '/local_costmap/costmap',
             self.costmap_callback,
             10)
-            
-        self.get_logger().info("Hệ thống Điều hướng Lưới 5x5 (Auto-Grid) đã khởi động! Đang chờ bản đồ...")
+
+        b = self.board
+        self.get_logger().info(
+            f"Sa bàn {b.rows}x{b.cols}, ô {b.spacing:.2f} m, "
+            f"(hàng {b.center_row}, cột {b.center_col}) = ({b.center_x:+.3f}, {b.center_y:+.3f}) "
+            f"- {b.path}. Đang chờ bản đồ...")
         
         # Publish static grid periodically
         self.create_timer(1.0, self.publish_markers)
@@ -84,63 +96,26 @@ class GridNavigator(Node):
     def map_callback(self, msg: OccupancyGrid):
         if self.map_received:
             return
-            
-        width = msg.info.width
-        height = msg.info.height
-        resolution = msg.info.resolution
-        origin_x = msg.info.origin.position.x
-        origin_y = msg.info.origin.position.y
-        data = msg.data
-        
-        min_x = float('inf')
-        max_x = float('-inf')
-        min_y = float('inf')
-        max_y = float('-inf')
-        free_found = False
-        
-        for y in range(height):
-            for x in range(width):
-                idx = x + (y * width)
-                val = data[idx]
-                if val == 0: # Free space
-                    px = origin_x + x * resolution
-                    py = origin_y + y * resolution
-                    if px < min_x: min_x = px
-                    if px > max_x: max_x = px
-                    if py < min_y: min_y = py
-                    if py > max_y: max_y = py
-                    free_found = True
-                    
-        if not free_found:
-            self.get_logger().warn("Không tìm thấy vùng free space!")
-            return
-            
-        # Do bản đồ SLAM có thể bị nhiễu (noise) lọt ra ngoài tường,
-        # chúng ta giới hạn cứng khu vực an toàn tối đa của phòng 10x10m
-        # để đảm bảo lưới không bao giờ chạm tường (tường ở +-4.9m)
-        min_x = max(min_x, -4.5)
-        max_x = min(max_x, 4.5)
-        min_y = max(min_y, -4.5)
-        max_y = min(max_y, 4.5)
-        
-        margin = 0.5
-        min_x += margin
-        max_x -= margin
-        min_y += margin
-        max_y -= margin
-        
-        if max_x <= min_x or max_y <= min_y:
-            self.get_logger().warn("Phòng quá nhỏ, dùng mặc định.")
-            self.map_received = True
-            return
-            
-        self.spacing_x = (max_x - min_x) / (self.grid_size - 1)
-        self.spacing_y = (max_y - min_y) / (self.grid_size - 1)
-        self.offset_x = min_x
-        self.offset_y = min_y
-        
+
+        info = msg.info
+        bad_nodes, bad_edges, node_dist = self.board.check_map(
+            msg.data, info.width, info.height, info.resolution,
+            info.origin.position.x, info.origin.position.y)
+        self.static_blocked_nodes = bad_nodes
+        self.static_blocked_edges = bad_edges
+        for r, c in bad_nodes:
+            self.blocked_nodes[r][c] = True
+        self.blocked_edges = set(bad_edges)
+
         self.map_received = True
-        self.get_logger().info(f"Đã tự tính lưới từ map! Spacing: {self.spacing_x:.2f}m x {self.spacing_y:.2f}m, Origin: ({self.offset_x:.2f}, {self.offset_y:.2f})")
+        if bad_nodes:
+            for r, c in sorted(bad_nodes):
+                self.get_logger().warn(
+                    f"Bỏ điểm ({self.board.label(r, c)}): cách vật cản trên bản đồ "
+                    f"{node_dist[(r, c)] * 100:.0f} cm < {self.node_clearance * 100:.0f} cm")
+        self.get_logger().info(
+            f"Đã đối chiếu sa bàn với bản đồ: {self.rows * self.cols - len(bad_nodes)}/"
+            f"{self.rows * self.cols} điểm, bỏ {len(bad_edges)} cạnh sát vật cản.")
         self.publish_markers()
 
     def get_robot_pose(self):
@@ -163,17 +138,28 @@ class GridNavigator(Node):
                 return None, None, None
 
     def get_closest_grid(self, x, y):
-        if not self.map_received or self.spacing_x == 0:
-            return 2, 2
-        col = round((x - self.offset_x) / self.spacing_x)
-        row = round((y - self.offset_y) / self.spacing_y)
-        col = max(0, min(col, self.grid_size - 1))
-        row = max(0, min(row, self.grid_size - 1))
-        return row, col
+        """Diem luoi gan (x, y) nhat (chi so tu 0)."""
+        return self.board.closest(x, y)
+
+    def get_start_grid(self, x, y):
+        """Diem XUAT PHAT cho BFS: diem gan xe nhat MA KHONG bi chan.
+
+        Xe dung canh mot diem bi bo (vd hang 1, cot 5 sat chan ghe) thi diem
+        gan nhat la diem do; BFS tu do se bao 'khong co duong' du xe di duoc.
+        """
+        best, best_d = None, float('inf')
+        for r, c in self.board.nodes():
+            if self.blocked_nodes[r][c]:
+                continue
+            nx, ny = self.get_coordinates(r, c)
+            d = math.hypot(nx - x, ny - y)
+            if d < best_d:
+                best, best_d = (r, c), d
+        return best if best is not None else self.get_closest_grid(x, y)
 
     @staticmethod
     def edge_key(r1, c1, r2, c2):
-        return tuple(sorted(((r1, c1), (r2, c2))))
+        return board_edge_key((r1, c1), (r2, c2))
 
     @staticmethod
     def point_blocked(x, y, obstacles, clearance):
@@ -221,11 +207,12 @@ class GridNavigator(Node):
         origin_x = info.origin.position.x
         origin_y = info.origin.position.y
 
-        pad = self.clearance + resolution
-        grid_min_x = self.offset_x - pad
-        grid_max_x = self.offset_x + (self.grid_size - 1) * self.spacing_x + pad
-        grid_min_y = self.offset_y - pad
-        grid_max_y = self.offset_y + (self.grid_size - 1) * self.spacing_y + pad
+        pad = max(self.node_clearance, self.edge_clearance) + resolution
+        b = self.board
+        grid_min_x = b.x0 - pad
+        grid_max_x = b.x0 + (b.cols - 1) * b.spacing + pad
+        grid_min_y = b.y0 - pad
+        grid_max_y = b.y0 + (b.rows - 1) * b.spacing + pad
 
         obstacles = []
         for idx, val in enumerate(msg.data):
@@ -246,27 +233,23 @@ class GridNavigator(Node):
         obstacles = self.collect_obstacles(msg)
 
         changed = False
-        for r in range(self.grid_size):
-            for c in range(self.grid_size):
-                x, y = self.get_coordinates(r, c)
-                is_blocked = self.point_blocked(x, y, obstacles, self.clearance)
-                if self.blocked_nodes[r][c] != is_blocked:
-                    self.blocked_nodes[r][c] = is_blocked
-                    changed = True
+        for r, c in self.board.nodes():
+            x, y = self.get_coordinates(r, c)
+            # Bi chan = sat vat can tren ban do tinh HOAC vat can moi tren costmap
+            is_blocked = ((r, c) in self.static_blocked_nodes or
+                          self.point_blocked(x, y, obstacles, self.node_clearance))
+            if self.blocked_nodes[r][c] != is_blocked:
+                self.blocked_nodes[r][c] = is_blocked
+                changed = True
 
         # Cạnh nối 2 node kề nhau cũng phải đủ rộng cho xe chui qua: vật cản nằm
         # đúng giữa 2 node thì không node nào bị chặn nhưng lối đi thì tắc.
-        new_blocked_edges = set()
-        for r in range(self.grid_size):
-            for c in range(self.grid_size):
-                x1, y1 = self.get_coordinates(r, c)
-                for dr, dc in ((0, 1), (1, 0)):
-                    nr, nc = r + dr, c + dc
-                    if nr >= self.grid_size or nc >= self.grid_size:
-                        continue
-                    x2, y2 = self.get_coordinates(nr, nc)
-                    if self.segment_blocked(x1, y1, x2, y2, obstacles, self.clearance):
-                        new_blocked_edges.add(self.edge_key(r, c, nr, nc))
+        new_blocked_edges = set(self.static_blocked_edges)
+        for (r, c), (nr, nc) in self.board.edges():
+            x1, y1 = self.get_coordinates(r, c)
+            x2, y2 = self.get_coordinates(nr, nc)
+            if self.segment_blocked(x1, y1, x2, y2, obstacles, self.edge_clearance):
+                new_blocked_edges.add(self.edge_key(r, c, nr, nc))
 
         if new_blocked_edges != self.blocked_edges:
             self.blocked_edges = new_blocked_edges
@@ -300,8 +283,7 @@ class GridNavigator(Node):
         return False
 
     def get_coordinates(self, row, col):
-        x = self.offset_x + col * self.spacing_x
-        y = self.offset_y + row * self.spacing_y
+        x, y = self.board.xy(row, col)
         return float(x), float(y)
 
     @staticmethod
@@ -342,20 +324,33 @@ class GridNavigator(Node):
         edges_marker.color.b = 1.0
         edges_marker.color.a = 0.5
 
-        for row in range(self.grid_size):
-            for col in range(self.grid_size):
-                if self.blocked_nodes[row][col]:
-                    continue
-                    
+        # Diem bi bo (sat vat can) - van ve, mau do, de biet vi sao xe di vong
+        blocked_marker = Marker()
+        blocked_marker.header = nodes_marker.header
+        blocked_marker.ns = 'grid_blocked'
+        blocked_marker.id = 4
+        blocked_marker.type = Marker.SPHERE_LIST
+        blocked_marker.action = Marker.ADD
+        blocked_marker.scale.x = blocked_marker.scale.y = blocked_marker.scale.z = 0.08
+        blocked_marker.color.r = 1.0
+        blocked_marker.color.g = 0.2
+        blocked_marker.color.b = 0.2
+        blocked_marker.color.a = 1.0
+
+        for row in range(self.rows):
+            for col in range(self.cols):
                 x, y = self.get_coordinates(row, col)
                 p = Point()
                 p.x = x
                 p.y = y
                 p.z = 0.0
+                if self.blocked_nodes[row][col]:
+                    blocked_marker.points.append(p)
+                    continue
                 nodes_marker.points.append(p)
-                
+
                 # Nối với điểm bên phải
-                if (col < self.grid_size - 1
+                if (col < self.cols - 1
                         and not self.blocked_nodes[row][col + 1]
                         and self.edge_key(row, col, row, col + 1) not in self.blocked_edges):
                     p_right = Point()
@@ -365,7 +360,7 @@ class GridNavigator(Node):
                     edges_marker.points.append(p_right)
 
                 # Nối với điểm phía trên
-                if (row < self.grid_size - 1
+                if (row < self.rows - 1
                         and not self.blocked_nodes[row + 1][col]
                         and self.edge_key(row, col, row + 1, col) not in self.blocked_edges):
                     p_up = Point()
@@ -376,6 +371,31 @@ class GridNavigator(Node):
 
         marker_array.markers.append(nodes_marker)
         marker_array.markers.append(edges_marker)
+        if blocked_marker.points:
+            marker_array.markers.append(blocked_marker)
+        else:
+            blocked_marker.action = Marker.DELETE
+            blocked_marker.points = []
+            marker_array.markers.append(blocked_marker)
+
+        # Nhan "hang,cot" (danh so tu 1) canh moi diem - de doi chieu khi nhap
+        for row in range(self.rows):
+            for col in range(self.cols):
+                x, y = self.get_coordinates(row, col)
+                t = Marker()
+                t.header = nodes_marker.header
+                t.ns = 'grid_labels'
+                t.id = row * self.cols + col
+                t.type = Marker.TEXT_VIEW_FACING
+                t.action = Marker.ADD
+                t.pose.position.x = x + 0.12
+                t.pose.position.y = y + 0.10
+                t.pose.position.z = 0.05
+                t.scale.z = 0.09
+                t.color.r = t.color.g = t.color.b = 0.85
+                t.color.a = 1.0
+                t.text = f"{row + 1},{col + 1}"
+                marker_array.markers.append(t)
 
         # 3. Vẽ Target Node (nếu có)
         if self.target_node is not None:
@@ -447,16 +467,14 @@ class GridNavigator(Node):
             if curr_r == target_r and curr_c == target_c:
                 break
                 
-            for dr, dc in [(0, 1), (1, 0), (0, -1), (-1, 0)]:
-                nr, nc = curr_r + dr, curr_c + dc
-                if 0 <= nr < self.grid_size and 0 <= nc < self.grid_size:
-                    if self.blocked_nodes[nr][nc] or (nr, nc) in visited:
-                        continue
-                    if self.edge_key(curr_r, curr_c, nr, nc) in self.blocked_edges:
-                        continue
-                    visited.add((nr, nc))
-                    parent[(nr, nc)] = (curr_r, curr_c)
-                    queue.append((nr, nc))
+            for nr, nc in self.board.neighbours(curr_r, curr_c):
+                if self.blocked_nodes[nr][nc] or (nr, nc) in visited:
+                    continue
+                if self.edge_key(curr_r, curr_c, nr, nc) in self.blocked_edges:
+                    continue
+                visited.add((nr, nc))
+                parent[(nr, nc)] = (curr_r, curr_c)
+                queue.append((nr, nc))
                         
         if (target_r, target_c) not in parent and (start_r, start_c) != (target_r, target_c):
             return None
@@ -575,9 +593,11 @@ class GridNavigator(Node):
             self.schedule_replan()
             return
 
-        current_row, current_col = self.get_closest_grid(rx, ry)
+        current_row, current_col = self.get_start_grid(rx, ry)
         target_row, target_col = self.get_closest_grid(self.target_node[0], self.target_node[1])
-        self.get_logger().info(f"Bắt đầu Replan từ ({current_row}, {current_col}) đến ({target_row}, {target_col})")
+        self.get_logger().info(
+            f"Bắt đầu Replan từ ({self.board.label(current_row, current_col)}) "
+            f"đến ({self.board.label(target_row, target_col)})")
         # GIU is_canceling = True cho toi khi Nav2 chap nhan goal moi.
         # Ha co o day se mo cua cho costmap_callback ke tiep kich hoat mot luot
         # huy nua tren goal_handle da chet.
@@ -591,7 +611,7 @@ class GridNavigator(Node):
             self.target_node = None
             self.is_canceling = False
             self.publish_markers()
-            print("\n=== ĐIỀU KHIỂN AGV SA BÀN 5x5 ===")
+            print(f"\n=== ĐIỀU KHIỂN AGV SA BÀN {self.rows}x{self.cols} ===")
             print("Xe đang chờ lệnh tiếp theo. Hãy nhập trên terminal...")
             return
             
@@ -671,53 +691,73 @@ class GridNavigator(Node):
 
 def input_thread(navigator):
     print("Đang chờ khởi tạo hệ thống và nhận bản đồ...")
-    
-    timeout = 10  # 10 lần x 0.5s = 5 giây
-    while rclpy.ok() and not navigator.map_received and timeout > 0:
+    nav = navigator
+    R, C = nav.rows, nav.cols
+
+    timeout = 30  # 30 lần x 0.5s = 15 giây (discovery trong WSL có lúc 8 s)
+    while rclpy.ok() and not nav.map_received and timeout > 0:
         time.sleep(0.5)
         timeout -= 1
-        
-    if not navigator.map_received:
-        print("\n[CẢNH BÁO] Không nhận được bản đồ từ Navigation2 sau 5 giây!")
-        print("=> Tự động dùng kích thước sa bàn chuẩn (10x10m).")
-        navigator.map_received = True
+
+    if not nav.map_received:
+        if nav.real:
+            # Truoc day: khong co ban do thi tu dung luoi 10x10 m - tren phong
+            # that 6x5 m nghia la gui xe toi diem nam ngoai tuong.
+            print("\n[LỖI] Không nhận được /map sau 15 giây. Hãy chạy trước:")
+            print("    ros2 launch my_bot_bringup localization.launch.py use_sim_time:=false")
+            print("  (hoặc navigation.launch.py use_sim_time:=false) rồi chạy lại.")
+            rclpy.shutdown()
+            return
+        print("\n[CẢNH BÁO] Không nhận được bản đồ sau 15 giây - chạy tiếp "
+              "nhưng KHÔNG loại được điểm sát vật cản trên bản đồ.")
+        nav.map_received = True
     else:
         # Đợi thêm 1 chút để TF buffer nhận đủ dữ liệu
         time.sleep(1.0)
-    
+
     while rclpy.ok():
-        print("\n=== ĐIỀU KHIỂN AGV SA BÀN 5x5 ===")
-        
-        rx, ry, ryaw = navigator.get_robot_pose()
+        print(f"\n=== ĐIỀU KHIỂN AGV SA BÀN {R}x{C} ===")
+
+        rx, ry, ryaw = nav.get_robot_pose()
         if rx is not None:
-            current_row, current_col = navigator.get_closest_grid(rx, ry)
+            current_row, current_col = nav.get_start_grid(rx, ry)
             start_yaw = ryaw
+            nx, ny = nav.get_coordinates(current_row, current_col)
+            off = math.hypot(nx - rx, ny - ry)
+            where = (f"Xe gần nhất điểm ({nav.board.label(current_row, current_col)}), "
+                     f"cách {off * 100:.0f} cm.")
         else:
-            current_row, current_col = 2, 2
+            current_row, current_col = nav.board.center_row - 1, nav.board.center_col - 1
             start_yaw = None
-            
+            where = "Chưa biết vị trí xe (chưa có TF map -> base_footprint)."
+
         try:
-            target_row_str = input(f"Vị trí xe hiện tại (Row {current_row}, Col {current_col}). Nhập Hàng ĐÍCH (0-4) hoặc 'q' để thoát: ")
-            if target_row_str.lower() == 'q':
+            print(where)
+            target_row_str = input(f"Nhập HÀNG đích (1-{R}, 1 = dưới cùng) hoặc 'q' để thoát: ")
+            if target_row_str.strip().lower() == 'q':
                 rclpy.shutdown()
                 break
-            target_row = int(target_row_str)
-            target_col = int(input("Nhập Cột ĐÍCH (0-4): "))
-            
-            if not (0 <= target_row <= 4 and 0 <= target_col <= 4):
-                print("Lỗi: Tọa độ ngoài sa bàn. Chỉ chấp nhận từ 0 đến 4.")
+            target_row = int(target_row_str) - 1
+            target_col = int(input(f"Nhập CỘT đích (1-{C}, 1 = bên trái): ")) - 1
+
+            if not (0 <= target_row < R and 0 <= target_col < C):
+                print(f"Lỗi: ngoài sa bàn. Hàng 1-{R}, cột 1-{C}.")
                 continue
-                
-            navigator.send_grid_goal(current_row, current_col, target_row, target_col, start_yaw)
-            
+            if nav.blocked_nodes[target_row][target_col]:
+                print(f"Điểm ({nav.board.label(target_row, target_col)}) đang bị chặn "
+                      "(sát vật cản). Chọn điểm khác.")
+                continue
+
+            nav.send_grid_goal(current_row, current_col, target_row, target_col, start_yaw)
+
             # Tạm thời khóa thread input để xe chạy
-            while len(navigator.waypoints) > 0 or navigator.target_node is not None:
-                 time.sleep(1)
-                 if not rclpy.ok():
-                     break
-                     
+            while len(nav.waypoints) > 0 or nav.target_node is not None:
+                time.sleep(1)
+                if not rclpy.ok():
+                    break
+
         except ValueError:
-            print("Lỗi: Vui lòng chỉ nhập số nguyên từ 0 đến 4!")
+            print(f"Lỗi: chỉ nhập số nguyên (hàng 1-{R}, cột 1-{C})!")
         except EOFError:
             break
 
@@ -727,8 +767,14 @@ def main(args=None):
     # --real: chay tren xe that (dung dong ho he thong thay vi /clock cua Gazebo)
     use_sim_time = '--real' not in sys.argv
     print(f"Che do: {'MO PHONG (use_sim_time=true)' if use_sim_time else 'XE THAT (use_sim_time=false)'}")
+    # --grid FILE: dung sa ban khac file mac dinh (grid_real.yaml / grid_sim.yaml)
+    grid_file = None
+    if '--grid' in sys.argv:
+        i = sys.argv.index('--grid')
+        if i + 1 < len(sys.argv):
+            grid_file = sys.argv[i + 1]
 
-    navigator = GridNavigator(use_sim_time=use_sim_time)
+    navigator = GridNavigator(use_sim_time=use_sim_time, grid_file=grid_file)
 
     # Chạy vòng lặp spin của ROS trong background thread
     executor = MultiThreadedExecutor()

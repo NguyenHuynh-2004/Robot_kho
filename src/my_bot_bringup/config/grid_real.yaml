@@ -1,0 +1,31 @@
+# Sa ban 5x5 cho XE THAT tren ban do real_room_map. Doc boi grid_navigator.py --real.
+#
+# Danh so tu 1 (giong anh docs/sa_ban_5x5_preview.png):
+#   hang 1 = duoi cung (y nho nhat) -> hang 5 = tren cung
+#   cot  1 = ben trai  (x nho nhat) -> cot  5 = ben phai
+#
+# Sa ban CO DINH tren ban do: diem (hang 3, cot 3) luon o (center_x, center_y)
+# du xe dang dung o dau. Doi tam sang vi tri xe hien tai:
+#     python3 tools/set_grid_center.py
+# Ve lai anh xem truoc:
+#     python3 tools/preview_grid.py
+
+rows: 5
+cols: 5
+spacing: 0.6            # m, canh moi o vuong
+
+# Diem (center_row, center_col) nam o (center_x, center_y) tren ban do.
+# Lay tu vi tri xe ngay 2026-10-03 (khop anh quet voi ban do, 72% tia trung tuong).
+center_row: 3
+center_col: 3
+center_x: -0.545
+center_y: 0.035
+
+# Xe that: than tron duong kinh 18 cm, banh nho ra -> ban kinh bao 0.13 m
+# (giong robot_radius trong navigation.yaml).
+robot_radius: 0.13
+# Mot DIEM bi bo neu cach tuong / vat can / vung chua biet tren ban do
+# gan hon node_clearance; mot CANH bi bo neu ca doan noi gan hon edge_clearance.
+# Cung dung cho vat can moi xuat hien tren local costmap luc xe chay.
+node_clearance: 0.25
+edge_clearance: 0.20

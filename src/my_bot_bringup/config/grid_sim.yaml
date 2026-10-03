@@ -1,0 +1,19 @@
+# Sa ban 5x5 cho MO PHONG (phong Gazebo 10x10 m, my_room_map). Doc boi
+# grid_navigator.py (khong co --real). Giong luoi cu: diem tu -4 den +4 m,
+# cach nhau 2 m, (hang 3, cot 3) o goc ban do.
+#
+# Danh so tu 1: hang 1 = duoi (y nho), cot 1 = trai (x nho).
+
+rows: 5
+cols: 5
+spacing: 2.0
+
+center_row: 3
+center_col: 3
+center_x: 0.0
+center_y: 0.0
+
+# Mo hinh xe trong Gazebo dung chung URDF voi xe that.
+robot_radius: 0.13
+node_clearance: 0.25
+edge_clearance: 0.20

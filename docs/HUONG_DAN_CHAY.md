@@ -111,7 +111,8 @@ cd ~/robot_ws_3 && python3 grid_navigator.py
 
 Dòng đầu phải in `Che do: MO PHONG (use_sim_time=true)`.
 
-Nhập **hàng** `0`–`4` ↵ rồi **cột** `0`–`4` ↵. Gõ `q` để thoát.
+Nhập **hàng** `1`–`5` ↵ rồi **cột** `1`–`5` ↵ (hàng 1 = dưới cùng, cột 1 = bên
+trái — xem [Sa bàn 5×5](#sa-bàn-55)). Gõ `q` để thoát.
 
 ### Terminal 4 (tuỳ chọn) — RViz
 
@@ -582,23 +583,42 @@ ros2 launch my_bot_bringup navigation.launch.py use_sim_time:=false
 ```bash
 cd ~/robot_ws_3 && python3 grid_navigator.py --real
 ```
-Dòng đầu phải in `Che do: XE THAT (use_sim_time=false)`.
+Dòng đầu phải in `Che do: XE THAT (use_sim_time=false)`, rồi
+`Đã đối chiếu sa bàn với bản đồ: 24/25 điểm`. Không có `/map` thì nó dừng và
+báo phải chạy localization/navigation trước — không tự đoán lưới nữa.
 
 **Terminal 4 (tuỳ chọn)** — RViz, như Chế độ A nhưng bỏ `use_sim_time`.
 
 ---
 
-## Bảng tra toạ độ lưới
+## Sa bàn 5×5
 
-| | Col 0 | Col 1 | Col 2 | Col 3 | Col 4 |
-|---|---|---|---|---|---|
-| **Row 4** | (-4, 4) | (-2, 4) | (0, 4) | (2, 4) | (4, 4) |
-| **Row 3** | (-4, 2) | (-2, 2) | (0, 2) | (2, 2) | (4, 2) |
-| **Row 2** | (-4, 0) | (-2, 0) | **(0,0)** xuất phát | (2, 0) | (4, 0) |
-| **Row 1** | (-4,-2) | (-2,-2) | (0,-2) | (2,-2) | (4,-2) |
-| **Row 0** | (-4,-4) | (-2,-4) | (0,-4) | (2,-4) | (4,-4) |
+Đánh số **từ 1**: **hàng 1 = dưới cùng** (y nhỏ nhất), **cột 1 = bên trái** (x
+nhỏ nhất). Sa bàn **cố định trên bản đồ**, đọc từ file cấu hình — xe đứng đâu
+cũng không kéo sa bàn theo.
 
-Row tăng = đi lên (+Y), Col tăng = sang phải (+X).
+| | file | ô | (hàng 3, cột 3) | phạm vi |
+|---|---|---|---|---|
+| Xe thật | `config/grid_real.yaml` | 60 cm | (−0.545, +0.035) | x −1.75…+0.65, y −1.17…+1.23 |
+| Mô phỏng | `config/grid_sim.yaml` | 2 m | (0, 0) | x −4…+4, y −4…+4 |
+
+Ảnh: [`docs/sa_ban_5x5_preview.png`](sa_ban_5x5_preview.png) (xe thật),
+[`docs/sa_ban_5x5_preview_mo_phong.png`](sa_ban_5x5_preview_mo_phong.png).
+
+**Điểm/cạnh sát vật cản tự bị bỏ** khi `grid_navigator.py` nhận `/map`: điểm cách
+tường, đồ vật hoặc vùng chưa biết < 25 cm, cạnh < 20 cm. Xe thật hiện bỏ **điểm
+(hàng 1, cột 5)** — cách cụm chân bàn/ghế 14 cm — và 2 cạnh nối nó; BFS đi vòng.
+Vật cản MỚI (người, thùng) chặn thêm điểm/cạnh lúc chạy qua local costmap.
+
+Trong RViz (`Add` → `By topic` → `/grid_visualization` → `MarkerArray`): điểm
+xanh đi được, chấm đỏ bị bỏ, nhãn `hàng,cột` cạnh mỗi điểm.
+
+**Dời sa bàn** sang chỗ xe đang đứng (cần AMCL đang chạy và đã định vị):
+```bash
+python3 tools/set_grid_center.py            # ghi grid_real.yaml + vẽ lại ảnh
+python3 tools/set_grid_center.py --x -0.5 --y 0.0   # hoặc nhập tay
+python3 tools/preview_grid.py               # chỉ vẽ lại ảnh
+```
 
 ---
 
@@ -678,8 +698,9 @@ tại (-3.98, 0.24).
 
 - **Nav2 tự lái xe thật (B6)** — chưa chạy lần nào. Lái tay qua `/cmd_vel` và
   vẽ bản đồ bằng slam_toolbox (B4) thì đã chạy được trên xe thật.
-- **`grid_navigator.py --real`** vẫn dùng lưới của phòng Gazebo 10×10 m (điểm
-  tới ±4 m); phòng thật chỉ khoảng 6.3×5.3 m nên phải sửa lưới trước khi chạy.
+- **`grid_navigator.py --real` với Nav2 trên xe thật** — sa bàn 5×5 ô 60 cm đã
+  làm và chạy thử không có xe (nạp bản đồ, bỏ đúng điểm, BFS, từ chối điểm bị
+  chặn), nhưng chưa cho Nav2 lái xe theo nó lần nào.
 - **Việc tắt ping khi đang được điều khiển.** Firmware chỉ chạy
   `ping_agent`/`sync_session` khi mất `/cmd_vel` quá hạn. Lúc xe đứng yên thì
   điều kiện đó luôn đúng nên vẫn thấy `sync ~600000` mỗi 5 giây — đúng như
