@@ -48,7 +48,6 @@ figcaption{color:var(--muted);font-size:14.5px;max-width:80ch}
 svg text{font-family:var(--f-body);fill:var(--ink)}
 .blk{fill:var(--panel);stroke:var(--ink);stroke-width:1.5}
 .blk.soft{stroke:var(--muted);stroke-dasharray:5 4}
-.blk.prop{stroke:var(--warn);stroke-dasharray:6 3}
 .tt{font-family:var(--f-display);font-weight:700;font-size:15px}
 .ts{font-size:12px;fill:var(--muted)}
 .tw{font-size:11.5px;fill:var(--warn);font-weight:600}
@@ -99,14 +98,14 @@ code{font-family:var(--f-mono);font-size:.88em;background:var(--chip);padding:1p
 <header>
   <span class="eyebrow">robot_ws_3 · AGV vi sai · sa bàn 5×5</span>
   <h1>Sơ đồ đấu dây AGV</h1>
-  <p class="lead">ESP32 nhận lệnh qua Wi-Fi, điều khiển hai động cơ JGA25-370 qua L298N, đọc encoder, IMU BNO055 và LiDAR YDLIDAR X2; INA226 đo điện áp và dòng của pin. Số chân lấy đúng từ firmware <code>esp32_agv_base.ino</code>; số đo ghi rõ nguồn gốc.</p>
+  <p class="lead">ESP32 nhận lệnh qua Wi-Fi, điều khiển hai động cơ JGA25-370 qua L298N, đọc encoder, IMU BNO055 và LiDAR YDLIDAR X2. Số chân lấy đúng từ firmware <code>esp32_agv_base.ino</code>; số đo ghi rõ nguồn gốc.</p>
 </header>
 
 <section aria-labelledby="h-wiring">
   <h2 id="h-wiring">Sơ đồ nối dây</h2>
   <figure>
     <div class="sheet">
-<svg viewBox="0 0 1190 720" role="img" aria-label="Sơ đồ nối dây: pin 3S qua INA226 rồi cấp 12 V cho L298N và mạch hạ áp 5 V; INA226 nối bus I2C riêng GPIO19, GPIO17 và lấy 3,3 V từ ESP32; 5 V nuôi ESP32 và LiDAR; ESP32 cấp 3,3 V cho BNO055 và encoder; ESP32 điều khiển L298N bằng 6 chân; L298N cấp điện hai động cơ; encoder trả xung về ESP32; mọi GND nối chung.">
+<svg viewBox="0 0 1190 720" role="img" aria-label="Sơ đồ nối dây: pin 3S cấp 12 V cho L298N và mạch hạ áp 5 V; 5 V nuôi ESP32 và LiDAR; ESP32 cấp 3,3 V cho BNO055 và encoder; ESP32 điều khiển L298N bằng 6 chân; L298N cấp điện hai động cơ; encoder trả xung về ESP32; mọi GND nối chung.">
   <!-- ===== Pin 3S ===== -->
   <rect class="blk" x="30" y="24" width="190" height="78" rx="4"/>
   <text class="tt" x="42" y="50">PIN LI-ION 3S</text>
@@ -117,31 +116,11 @@ code{font-family:var(--f-mono);font-size:.88em;background:var(--chip);padding:1p
   <path class="g" d="M60 102 V118"/>
   <path class="g" d="M51 118 H69 M54 122 H66 M57 126 H63"/>
 
-  <!-- ===== INA226 (đề xuất) ===== -->
-  <text class="lbl" x="337" y="18" text-anchor="middle" style="fill:var(--warn)">chưa có code trong firmware</text>
-  <rect class="blk prop" x="262" y="26" width="150" height="78" rx="4"/>
-  <text class="pin" x="268" y="47">IN+</text>
-  <text class="pin" x="406" y="47" text-anchor="end">IN−</text>
-  <text class="tt" x="337" y="64" text-anchor="middle">INA226</text>
-  <text class="ts" x="337" y="80" text-anchor="middle">đo V, I của pin</text>
-  <text class="pin" x="280" y="99" text-anchor="middle">VCC</text>
-  <text class="pin" x="310" y="99" text-anchor="middle">GND</text>
-  <text class="pin" x="345" y="99" text-anchor="middle">SCL</text>
-  <text class="pin" x="380" y="99" text-anchor="middle">SDA</text>
-  <path class="w w33" d="M280 104 V118"/>
-  <text class="lbl l33" x="280" y="132" text-anchor="middle">3V3</text>
-  <path class="g" d="M310 104 V116"/>
-  <path class="g" d="M301 116 H319 M304 120 H316 M307 124 H313"/>
-  <path class="w wi2c" d="M345 104 V118 M380 104 V118"/>
-  <text class="lbl li2c" x="345" y="132" text-anchor="middle">IO17</text>
-  <text class="lbl li2c" x="382" y="132" text-anchor="middle">IO19</text>
-
-  <!-- 12 V bus: pin + → INA226 IN+ ; IN− → tải -->
-  <path class="w w12" d="M220 52 H262"/>
-  <path class="w w12" d="M412 52 H940 V150"/>
-  <circle class="f12" cx="430" cy="52" r="3.8"/>
+  <!-- 12 V bus -->
+  <path class="w w12" d="M220 52 H940 V150"/>
+  <circle class="f12" cx="250" cy="52" r="3.8"/>
   <circle class="f12" cx="900" cy="52" r="3.8"/>
-  <text class="lbl l12" x="660" y="44" text-anchor="middle">12 V sau INA226 → động cơ</text>
+  <text class="lbl l12" x="600" y="44" text-anchor="middle">12 V từ pin → động cơ</text>
   <!-- Tụ 1000 µF -->
   <path class="w w12" d="M900 52 V76"/>
   <path class="g" d="M886 76 H914"/>
@@ -156,7 +135,7 @@ code{font-family:var(--f-mono);font-size:.88em;background:var(--chip);padding:1p
   <text class="ts" x="42" y="202">buck / BEC</text>
   <text class="pin" x="212" y="176" text-anchor="end">IN</text>
   <text class="pin" x="212" y="208" text-anchor="end">OUT</text>
-  <path class="w w12" d="M430 52 V140 H250 V172 H220"/>
+  <path class="w w12" d="M250 52 V172 H220"/>
   <path class="g" d="M60 220 V232"/>
   <path class="g" d="M51 232 H69 M54 236 H66 M57 240 H63"/>
 
@@ -215,11 +194,6 @@ code{font-family:var(--f-mono);font-size:.88em;background:var(--chip);padding:1p
   <text class="ts" x="570" y="440" text-anchor="middle">micro-ROS · PID 50 Hz</text>
   <!-- chân trái -->
   <text class="pin" x="448" y="208">VIN 5V</text>
-  <text class="pin" x="448" y="266">GPIO19 SDA2</text>
-  <text class="pin" x="448" y="291">GPIO17 SCL2</text>
-  <path class="w wi2c" d="M440 262 H404 M440 287 H404"/>
-  <text class="lbl li2c" x="398" y="266" text-anchor="end">INA226 SDA</text>
-  <text class="lbl li2c" x="398" y="291" text-anchor="end">INA226 SCL</text>
   <text class="pin" x="448" y="366">GPIO16 RX2</text>
   <text class="pin" x="448" y="391">GPIO18</text>
   <text class="pin" x="448" y="524">3V3</text>
@@ -332,7 +306,7 @@ code{font-family:var(--f-mono);font-size:.88em;background:var(--chip);padding:1p
       <li style="color:var(--wuart)"><span class="sw"></span><span style="color:var(--ink)">dây LiDAR</span></li>
       <li><span class="sw g" style="color:var(--gnd)">⏚</span><span>GND, mọi ký hiệu nối về một điểm chung</span></li>
     </ul>
-    <figcaption>Mũi tên chỉ chiều tín hiệu. INA226 (viền cam đứt) đặt ngay sau cực + của pin để đo dòng của cả xe. Nhãn ở chân INA226 nối về chân cùng tên trên ESP32: 3V3, IO19 (SDA), IO17 (SCL) — bus I2C thứ hai, tách khỏi BNO055. Động cơ chạy từ 12 V của pin qua L298N; ESP32 và LiDAR lấy 5 V từ mạch hạ áp riêng, không lấy từ chân +5V của L298N. BNO055 và encoder lấy 3,3 V từ ESP32.</figcaption>
+    <figcaption>Mũi tên chỉ chiều tín hiệu. Động cơ chạy trực tiếp từ 12 V của pin qua L298N; ESP32 và LiDAR lấy 5 V từ mạch hạ áp riêng, không lấy từ chân +5V của L298N. BNO055 và encoder lấy 3,3 V từ ESP32.</figcaption>
   </figure>
 </section>
 
@@ -346,7 +320,6 @@ code{font-family:var(--f-mono);font-size:.88em;background:var(--chip);padding:1p
   <text class="ts" x="34" y="78">YDLIDAR X2 · UART</text>
   <text class="ts" x="34" y="96">BNO055 · I2C</text>
   <text class="ts" x="34" y="114">2 encoder · ngắt GPIO</text>
-  <text class="ts" x="34" y="132">INA226 · I2C riêng (chưa có code)</text>
 
   <rect class="blk" x="310" y="30" width="200" height="110" rx="4"/>
   <text class="tt" x="324" y="56">ESP32</text>
@@ -389,7 +362,7 @@ code{font-family:var(--f-mono);font-size:.88em;background:var(--chip);padding:1p
 
 <section aria-labelledby="h-pins">
   <h2 id="h-pins">Bảng chân ESP32</h2>
-  <p>16 chân tín hiệu, cộng nguồn. Firmware tránh GPIO 0, 2, 5, 12, 15 (chân quyết định chế độ khởi động), 6–11 (nối với flash) và 1, 3 (Serial qua USB). Còn trống: GPIO13 (vào/ra), GPIO36 và 39 (chỉ vào). Nếu đổi sang LiDAR X4 thì dùng GPIO13 làm chân EN.</p>
+  <p>14 chân tín hiệu, cộng nguồn. Firmware tránh GPIO 0, 2, 5, 12, 15 (chân quyết định chế độ khởi động) và 6–11 (nối với flash). GPIO 17 và 19 đang trống.</p>
   <div class="tablewrap">
   <table>
     <thead><tr><th>ESP32</th><th>Nối tới</th><th>Chức năng</th><th>Ghi chú</th></tr></thead>
@@ -406,18 +379,15 @@ code{font-family:var(--f-mono);font-size:.88em;background:var(--chip);padding:1p
       <tr><td class="gp"><span class="dot" style="color:var(--wenc)"></span>GPIO34</td><td>Encoder trái B</td><td>đếm xung</td><td>chỉ vào, không có điện trở kéo lên nội; dây xanh lá</td></tr>
       <tr><td class="gp"><span class="dot" style="color:var(--wenc)"></span>GPIO4</td><td>Encoder phải A</td><td>đếm xung</td><td>dây vàng</td></tr>
       <tr><td class="gp"><span class="dot" style="color:var(--wenc)"></span>GPIO35</td><td>Encoder phải B</td><td>đếm xung</td><td>chỉ vào, không có điện trở kéo lên nội; dây xanh lá</td></tr>
-      <tr class="group"><td colspan="4">BNO055 · bus I2C 1</td></tr>
+      <tr class="group"><td colspan="4">BNO055</td></tr>
       <tr><td class="gp"><span class="dot" style="color:var(--wi2c)"></span>GPIO21</td><td>SDA</td><td>I2C dữ liệu</td><td>địa chỉ 0x29 (0x28 nếu chân ADR nối GND)</td></tr>
       <tr><td class="gp"><span class="dot" style="color:var(--wi2c)"></span>GPIO22</td><td>SCL</td><td>I2C xung nhịp</td><td></td></tr>
-      <tr class="group"><td colspan="4">INA226 · bus I2C 2 (chân trống trước đây)</td></tr>
-      <tr><td class="gp"><span class="dot" style="color:var(--wi2c)"></span>GPIO19</td><td>SDA</td><td>I2C dữ liệu</td><td>địa chỉ 0x40 khi A0, A1 nối GND; firmware chưa đọc</td></tr>
-      <tr><td class="gp"><span class="dot" style="color:var(--wi2c)"></span>GPIO17</td><td>SCL</td><td>I2C xung nhịp</td><td>UART2 không dùng chân TX nên GPIO17 rảnh</td></tr>
       <tr class="group"><td colspan="4">YDLIDAR X2</td></tr>
       <tr><td class="gp"><span class="dot" style="color:var(--wuart)"></span>GPIO16</td><td>Tx của LiDAR</td><td>UART2 RX</td><td>LiDAR chỉ phát, không nhận lệnh</td></tr>
       <tr><td class="gp"><span class="dot" style="color:var(--wuart)"></span>GPIO18</td><td>PWM của LiDAR</td><td>tốc độ mô-tơ quét</td><td>10 kHz, 11 bit</td></tr>
       <tr class="group"><td colspan="4">Nguồn</td></tr>
       <tr><td class="gp"><span class="dot" style="color:var(--w5)"></span>VIN</td><td>OUT mạch hạ áp</td><td>5 V nuôi ESP32</td><td>không cắm USB cùng lúc</td></tr>
-      <tr><td class="gp"><span class="dot" style="color:var(--w33)"></span>3V3</td><td>BNO055 VIN, INA226 VCC, VCC hai encoder</td><td>3,3 V</td><td>encoder cấp 5 V sẽ làm hỏng GPIO</td></tr>
+      <tr><td class="gp"><span class="dot" style="color:var(--w33)"></span>3V3</td><td>BNO055 VIN, VCC hai encoder</td><td>3,3 V</td><td>encoder cấp 5 V sẽ làm hỏng GPIO</td></tr>
       <tr><td class="gp"><span class="dot" style="color:var(--gnd)"></span>GND</td><td>GND chung</td><td>mass</td><td>mọi GND về một điểm</td></tr>
     </tbody>
   </table>
@@ -511,34 +481,14 @@ code{font-family:var(--f-mono);font-size:.88em;background:var(--chip);padding:1p
     </article>
 
     <article class="part">
-      <h3>INA226<span class="code">đo điện áp, dòng · I2C</span></h3>
-      <p class="role">Đo điện áp pin, dòng cả xe và công suất, để biết lúc nào pin yếu thay vì phải đoán từ tốc độ bánh. Firmware chưa đọc module này.</p>
-      <dl class="spec">
-        <dt>Giao tiếp</dt><dd>bus I2C thứ hai (<code>Wire1</code>): SDA GPIO19, SCL GPIO17; địa chỉ 0x40 khi A0, A1 nối GND<span class="src">hãng</span></dd>
-        <dt>Vì sao bus riêng</dt><dd>BNO055 hay giữ xung nhịp I2C (clock stretching); tách bus để INA226 không bị ảnh hưởng và ngược lại</dd>
-        <dt>Nguồn</dt><dd>chung nguồn với ESP32: VCC lấy từ chân 3V3 của ESP32 (module chịu 2,7–5,5 V)<span class="src">hãng</span></dd>
-        <dt>Cách mắc đo</dt><dd>nối tiếp trên dây + của pin, trước mọi điểm rẽ nhánh: IN+ phía pin, IN− phía tải. VBUS nối IN− (nhiều module nối sẵn)</dd>
-        <dt>Đo áp</dt><dd>0–36 V, bước 1,25 mV; đủ cho pin 3S 12,6 V<span class="src">hãng</span></dd>
-        <dt>Đo dòng</dt><dd>qua điện trở shunt, áp shunt tối đa ±81,92 mV<span class="src">hãng</span></dd>
-        <dt>Dòng tối đa</dt><dd>shunt 0,1 Ω (in R100): ≈ 0,82 A · shunt 0,01 Ω (in R010): ≈ 8,2 A</dd>
-      </dl>
-      <div class="note">
-        <span><b>VCC 3,3 V, không 5 V:</b> điện trở kéo lên của SDA, SCL trên module nối vào VCC. Cấp 5 V thì hai chân GPIO19, GPIO17 nhận 5 V và có thể hỏng.</span>
-        <span><b>Kiểm tra shunt:</b> module phổ biến hàn sẵn R100, chỉ đo được tới ≈ 0,82 A. Hai động cơ khi khởi động hay xoay tại chỗ có thể vượt mức này; khi đó nên thay shunt R010.</span>
-        <span>Muốn dùng: thêm code đọc INA226 vào firmware và phát <code>/battery_state</code> (sensor_msgs/BatteryState).</span>
-      </div>
-    </article>
-
-    <article class="part">
       <h3>Nguồn<span class="code">pin 3S + hạ áp 5 V</span></h3>
       <p class="role">Hai nhánh tách biệt: 12 V cho động cơ, 5 V sạch cho phần logic.</p>
       <dl class="spec">
         <dt>Pin</dt><dd>Li-ion 3S, 12,6 V khi đầy, 4,2 V mỗi cell</dd>
         <dt>Điện áp đo</dt><dd>12,08 V (≈ 4,03 V/cell) ngày 03/10<span class="src">đo</span></dd>
-        <dt>Đo pin</dt><dd>pin + → shunt INA226 → hai nhánh dưới</dd>
-        <dt>Nhánh 12 V</dt><dd>→ cọc +12V của L298N → động cơ</dd>
-        <dt>Nhánh 5 V</dt><dd>→ mạch hạ áp → ESP32 VIN và LiDAR VCC</dd>
-        <dt>Nhánh 3,3 V</dt><dd>ổn áp trên ESP32 → BNO055, INA226 và hai encoder</dd>
+        <dt>Nhánh 12 V</dt><dd>pin → cọc +12V của L298N → động cơ</dd>
+        <dt>Nhánh 5 V</dt><dd>pin → mạch hạ áp → ESP32 VIN và LiDAR VCC</dd>
+        <dt>Nhánh 3,3 V</dt><dd>ổn áp trên ESP32 → BNO055 và hai encoder</dd>
       </dl>
       <div class="note">
         <span><b>Bắt buộc:</b> mọi GND nối chung về một điểm. Không nuôi ESP32 từ chân +5V của L298N. Không cắm USB và nguồn ngoài vào ESP32 cùng lúc.</span>
@@ -552,8 +502,7 @@ code{font-family:var(--f-mono);font-size:.88em;background:var(--chip);padding:1p
   <h2 id="h-check">Kiểm tra khi lắp lại</h2>
   <ul class="must">
     <li>Jumper ENA và ENB trên L298N đã tháo.</li>
-    <li>Encoder, BNO055 và INA226 cấp 3,3 V; chỉ ESP32 và LiDAR dùng 5 V.</li>
-    <li>INA226: VCC từ 3V3 của ESP32, SDA → GPIO19, SCL → GPIO17; mắc nối tiếp trên dây + của pin, IN+ phía pin; shunt R010 nếu muốn đo dòng động cơ.</li>
+    <li>Encoder và BNO055 cấp 3,3 V; chỉ ESP32 và LiDAR dùng 5 V.</li>
     <li>ESP32 nuôi từ mạch hạ áp, không từ chân +5V của L298N, không kèm USB.</li>
     <li>Tụ 1000 µF sát cọc 12 V của L298N; mọi GND về một điểm chung.</li>
     <li>Bánh trái nối OUT1/OUT2, bánh phải nối OUT3/OUT4. Đổi dây động cơ thì đổi luôn bốn cờ <code>INVERT_*</code> trong firmware.</li>

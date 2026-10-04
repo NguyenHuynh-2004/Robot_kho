@@ -238,7 +238,7 @@ vào được nên không có điện trở nội. Vô hại — nhưng đúng n
 Encoder bên dưới: **nếu encoder của bạn là loại hở cực thu thì kênh B bắt buộc
 phải có điện trở 10kΩ kéo lên ngoài**, không thì odometry loạn.
 
-## B2. Nối dây — 16 chân
+## B2. Nối dây — 14 chân
 
 Sơ đồ đầy đủ (mở bằng trình duyệt): [docs/so_do_day_agv.html](so_do_day_agv.html).
 
@@ -288,26 +288,6 @@ push-pull chạy tốt; nếu là loại hở cực thu thì hàn thêm 10kΩ l�
 Địa chỉ I2C mặc định trong firmware là `0x29`. Nếu Serial báo
 `khong thay BNO055`, đổi `BNO055_ADDR` thành `0x28`.
 
-### INA226 (đo điện áp, dòng pin) — bus I2C thứ hai
-
-| ESP32 | → INA226 |
-|---|---|
-| GPIO 19 | **SDA** |
-| GPIO 17 | **SCL** |
-| **3V3** | **VCC** (chung nguồn với ESP32) |
-| GND | **GND** |
-
-Đo: mắc **nối tiếp trên dây + của pin**, trước mọi điểm rẽ nhánh — **IN+** phía
-pin, **IN−** phía tải (L298N + mạch hạ áp). VBUS nối IN− (nhiều module nối sẵn).
-Địa chỉ `0x40` khi A0, A1 nối GND. Firmware **chưa** đọc INA226 (cần thêm `Wire1`).
-
-> ⚠️ **VCC 3,3 V, không 5 V.** Điện trở kéo lên SDA/SCL trên module nối vào VCC;
-> cấp 5 V thì GPIO19/17 nhận 5 V.
->
-> Bus riêng thay vì chung với BNO055: BNO055 hay giữ xung nhịp I2C (clock
-> stretching). Shunt in **R100** (0,1 Ω) chỉ đo tới ≈ 0,82 A; muốn đo dòng động
-> cơ thì dùng **R010** (≈ 8,2 A).
-
 ### YDLIDAR X2/X2L — 4 chân
 
 | LiDAR | → ESP32 |
@@ -317,13 +297,12 @@ pin, **IN−** phía tải (L298N + mạch hạ áp). VBUS nối IN− (nhiều 
 | **Tx** | **GPIO 16** |
 | **PWM** | **GPIO 18** |
 
-LiDAR không cần chân TX của ESP32 — nó chỉ phát một chiều, không nhận lệnh
+GPIO 17 và 19 **để trống** — LiDAR này chỉ phát một chiều, không nhận lệnh
 (đã kiểm thư viện: `LDS_YDLIDAR_X2_X2L::start()` không ghi byte nào ra UART),
-và driver X2/X2L không dùng chân EN. GPIO 17 và 19 vì thế rảnh và nay dùng
-cho INA226.
+và driver X2/X2L không dùng chân EN.
 
 > Nếu sau này đổi sang **YDLIDAR X4**, driver đó *có* dùng chân EN — phải gán
-> `LIDAR_EN_PIN` một GPIO thật: **GPIO 13** là chân vào/ra duy nhất còn trống.
+> `LIDAR_EN_PIN` một GPIO thật (17 hoặc 19 đang rảnh).
 
 ### Nguồn
 
