@@ -1,0 +1,565 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sơ đồ đấu dây AGV</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800&family=Source+Sans+3:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Bố cục: tờ bản vẽ kỹ thuật một cột — sơ đồ đấu dây lớn trên cùng, rồi luồng tín hiệu, bảng chân, thẻ linh kiện.
+   Màu dây theo loại tín hiệu, giống màu dây thật trên xe. */
+:root{
+  --bg:#f2f4f1; --panel:#ffffff; --ink:#1b211d; --muted:#5a645e; --line:#cfd6d0; --accent:#2563a8; --warn:#b4471f;
+  --w12:#c43d2b; --w5:#c27400; --w33:#8a46c2; --gnd:#3a423d; --wctl:#2563a8; --wenc:#2f8a3a; --wi2c:#0d8585; --wuart:#b0347a; --wmot:#80552f;
+  --chip:#e6ebe7;
+  --f-display:"Archivo","Segoe UI",system-ui,sans-serif;
+  --f-body:"Source Sans 3","Segoe UI",system-ui,sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,"Cascadia Mono",Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#111513; --panel:#191f1b; --ink:#e3e8e4; --muted:#9ba69f; --line:#2d3530; --accent:#7fb2ef; --warn:#f08a5d;
+  --w12:#ff7b67; --w5:#f2a83f; --w33:#c69df1; --gnd:#b8c2bb; --wctl:#7fb2ef; --wenc:#72d27e; --wi2c:#4fd2cd; --wuart:#f17cba; --wmot:#d7a679;
+  --chip:#232b26; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#111513; --panel:#191f1b; --ink:#e3e8e4; --muted:#9ba69f; --line:#2d3530; --accent:#7fb2ef; --warn:#f08a5d;
+  --w12:#ff7b67; --w5:#f2a83f; --w33:#c69df1; --gnd:#b8c2bb; --wctl:#7fb2ef; --wenc:#72d27e; --wi2c:#4fd2cd; --wuart:#f17cba; --wmot:#d7a679;
+  --chip:#232b26; color-scheme:dark}
+
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:16px;line-height:1.55}
+.wrap{max-width:1180px;margin:0 auto;padding-inline:20px;padding-block:28px 64px;display:flex;flex-direction:column;gap:44px}
+header{display:flex;flex-direction:column;gap:8px;max-width:72ch}
+.eyebrow{font-family:var(--f-mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+h1{font-family:var(--f-display);font-weight:800;font-size:clamp(28px,4.4vw,42px);line-height:1.1;margin:0;text-wrap:balance;letter-spacing:-.01em}
+h2{font-family:var(--f-display);font-weight:700;font-size:24px;margin:0;text-wrap:balance}
+h3{font-family:var(--f-display);font-weight:700;font-size:19px;margin:0}
+p{margin:0}
+.lead{color:var(--muted);font-size:17px}
+section{display:flex;flex-direction:column;gap:14px}
+section > p{max-width:72ch}
+
+figure{margin:0;display:flex;flex-direction:column;gap:10px}
+.sheet{background:var(--panel);border:1px solid var(--line);border-radius:6px;overflow-x:auto}
+.sheet svg{display:block;width:100%;min-width:900px;height:auto}
+.sheet.flow svg{min-width:760px}
+figcaption{color:var(--muted);font-size:14.5px;max-width:80ch}
+
+/* SVG */
+svg text{font-family:var(--f-body);fill:var(--ink)}
+.blk{fill:var(--panel);stroke:var(--ink);stroke-width:1.5}
+.blk.soft{stroke:var(--muted);stroke-dasharray:5 4}
+.blk.prop{stroke:var(--warn);stroke-dasharray:6 3}
+.tt{font-family:var(--f-display);font-weight:700;font-size:15px}
+.ts{font-size:12px;fill:var(--muted)}
+.tw{font-size:11.5px;fill:var(--warn);font-weight:600}
+.pin{font-family:var(--f-mono);font-size:10.5px;fill:var(--muted)}
+.lbl{font-family:var(--f-mono);font-size:10.5px}
+.w{fill:none;stroke-width:2.4;stroke-linejoin:round;stroke-linecap:round}
+.w12{stroke:var(--w12)} .w5{stroke:var(--w5)} .w33{stroke:var(--w33)} .gnd{stroke:var(--gnd)}
+.wctl{stroke:var(--wctl)} .wenc{stroke:var(--wenc)} .wi2c{stroke:var(--wi2c)} .wuart{stroke:var(--wuart)} .wmot{stroke:var(--wmot)}
+.f12{fill:var(--w12)} .f5{fill:var(--w5)} .fctl{fill:var(--wctl)} .fenc{fill:var(--wenc)} .fuart{fill:var(--wuart)} .fgnd{fill:var(--gnd)} .fink{fill:var(--ink)}
+.l12{fill:var(--w12)} .l5{fill:var(--w5)} .l33{fill:var(--w33)} .lctl{fill:var(--wctl)} .lenc{fill:var(--wenc)} .li2c{fill:var(--wi2c)} .luart{fill:var(--wuart)}
+.g{stroke:var(--gnd);stroke-width:2;fill:none;stroke-linecap:round}
+.air{stroke:var(--muted);stroke-width:1.6;stroke-dasharray:4 4;fill:none}
+.arw{fill:none;stroke:var(--ink);stroke-width:1.6}
+.nc{stroke:var(--muted);stroke-width:1.5}
+
+.legend{display:flex;flex-wrap:wrap;gap:8px 18px;list-style:none;margin:0;padding:0;font-size:14px}
+.legend li{display:flex;align-items:center;gap:8px}
+.sw{width:26px;height:0;border-top:3px solid currentColor;display:inline-block}
+.sw.g{border:0;width:auto;height:auto;font-family:var(--f-mono);font-weight:600}
+
+/* Bảng chân */
+.tablewrap{overflow-x:auto;background:var(--panel);border:1px solid var(--line);border-radius:6px}
+table{border-collapse:collapse;width:100%;min-width:680px;font-size:14.5px}
+th,td{text-align:left;padding:8px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-family:var(--f-mono);font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600;background:var(--chip)}
+tr:last-child td{border-bottom:0}
+td.gp{font-family:var(--f-mono);font-weight:600;white-space:nowrap;font-variant-numeric:tabular-nums}
+.dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:8px;vertical-align:baseline;background:currentColor}
+tr.group td{background:var(--chip);font-family:var(--f-display);font-weight:700;font-size:13px;letter-spacing:.02em}
+
+/* Linh kiện */
+.parts{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr));gap:18px}
+.part{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:18px 18px 16px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.part .role{color:var(--muted);font-size:15px}
+.part h3 .code{font-family:var(--f-mono);font-weight:600;font-size:12px;color:var(--muted);margin-left:8px;letter-spacing:.02em}
+dl.spec{display:grid;grid-template-columns:minmax(110px,38%) 1fr;gap:6px 14px;margin:0;font-size:14.5px}
+dl.spec dt{color:var(--muted)}
+dl.spec dd{margin:0;min-width:0;font-variant-numeric:tabular-nums}
+.src{font-family:var(--f-mono);font-size:10.5px;color:var(--muted);background:var(--chip);border-radius:3px;padding:1px 5px;margin-left:6px;white-space:nowrap}
+.note{border-top:1px dashed var(--line);padding-top:10px;font-size:14.5px;display:flex;flex-direction:column;gap:6px}
+.note b{color:var(--warn)}
+ul.must{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:8px;max-width:80ch}
+code{font-family:var(--f-mono);font-size:.88em;background:var(--chip);padding:1px 5px;border-radius:3px}
+@media (max-width:520px){dl.spec{grid-template-columns:1fr;gap:2px 0} dl.spec dd{margin-bottom:6px}}
+</style>
+
+<div class="wrap">
+<header>
+  <span class="eyebrow">robot_ws_3 · AGV vi sai · sa bàn 5×5</span>
+  <h1>Sơ đồ đấu dây AGV</h1>
+  <p class="lead">ESP32 nhận lệnh qua Wi-Fi, điều khiển hai động cơ JGA25-370 qua L298N, đọc encoder, IMU BNO055 và LiDAR YDLIDAR X2; INA226 đo điện áp và dòng của pin. Số chân lấy đúng từ firmware <code>esp32_agv_base.ino</code>; số đo ghi rõ nguồn gốc.</p>
+</header>
+
+<section aria-labelledby="h-wiring">
+  <h2 id="h-wiring">Sơ đồ nối dây</h2>
+  <figure>
+    <div class="sheet">
+<svg viewBox="0 0 1190 720" role="img" aria-label="Sơ đồ nối dây: pin 3S qua INA226 rồi cấp 12 V cho L298N và mạch hạ áp 5 V; INA226 nối bus I2C riêng GPIO19, GPIO17 và lấy 3,3 V từ ESP32; 5 V nuôi ESP32 và LiDAR; ESP32 cấp 3,3 V cho BNO055 và encoder; ESP32 điều khiển L298N bằng 6 chân; L298N cấp điện hai động cơ; encoder trả xung về ESP32; mọi GND nối chung.">
+  <!-- ===== Pin 3S ===== -->
+  <rect class="blk" x="30" y="24" width="190" height="78" rx="4"/>
+  <text class="tt" x="42" y="50">PIN LI-ION 3S</text>
+  <text class="ts" x="42" y="70">12,6 V khi đầy (4,2 V/cell)</text>
+  <text class="ts" x="42" y="88">đo ngày 03/10: 12,08 V</text>
+  <text class="pin" x="212" y="56" text-anchor="end">+</text>
+  <!-- GND pin -->
+  <path class="g" d="M60 102 V118"/>
+  <path class="g" d="M51 118 H69 M54 122 H66 M57 126 H63"/>
+
+  <!-- ===== INA226 (đề xuất) ===== -->
+  <text class="lbl" x="337" y="18" text-anchor="middle" style="fill:var(--warn)">chưa có code trong firmware</text>
+  <rect class="blk prop" x="262" y="26" width="150" height="78" rx="4"/>
+  <text class="pin" x="268" y="47">IN+</text>
+  <text class="pin" x="406" y="47" text-anchor="end">IN−</text>
+  <text class="tt" x="337" y="64" text-anchor="middle">INA226</text>
+  <text class="ts" x="337" y="80" text-anchor="middle">đo V, I của pin</text>
+  <text class="pin" x="280" y="99" text-anchor="middle">VCC</text>
+  <text class="pin" x="310" y="99" text-anchor="middle">GND</text>
+  <text class="pin" x="345" y="99" text-anchor="middle">SCL</text>
+  <text class="pin" x="380" y="99" text-anchor="middle">SDA</text>
+  <path class="w w33" d="M280 104 V118"/>
+  <text class="lbl l33" x="280" y="132" text-anchor="middle">3V3</text>
+  <path class="g" d="M310 104 V116"/>
+  <path class="g" d="M301 116 H319 M304 120 H316 M307 124 H313"/>
+  <path class="w wi2c" d="M345 104 V118 M380 104 V118"/>
+  <text class="lbl li2c" x="345" y="132" text-anchor="middle">IO17</text>
+  <text class="lbl li2c" x="382" y="132" text-anchor="middle">IO19</text>
+
+  <!-- 12 V bus: pin + → INA226 IN+ ; IN− → tải -->
+  <path class="w w12" d="M220 52 H262"/>
+  <path class="w w12" d="M412 52 H940 V150"/>
+  <circle class="f12" cx="430" cy="52" r="3.8"/>
+  <circle class="f12" cx="900" cy="52" r="3.8"/>
+  <text class="lbl l12" x="660" y="44" text-anchor="middle">12 V sau INA226 → động cơ</text>
+  <!-- Tụ 1000 µF -->
+  <path class="w w12" d="M900 52 V76"/>
+  <path class="g" d="M886 76 H914"/>
+  <path class="g" d="M886 84 Q900 78 914 84"/>
+  <path class="g" d="M900 82 V100"/>
+  <path class="g" d="M891 100 H909 M894 104 H906 M897 108 H903"/>
+  <text class="lbl" x="866" y="82" text-anchor="end">tụ 1000 µF</text>
+
+  <!-- ===== Hạ áp 5 V ===== -->
+  <rect class="blk" x="30" y="156" width="190" height="64" rx="4"/>
+  <text class="tt" x="42" y="182">HẠ ÁP 5 V</text>
+  <text class="ts" x="42" y="202">buck / BEC</text>
+  <text class="pin" x="212" y="176" text-anchor="end">IN</text>
+  <text class="pin" x="212" y="208" text-anchor="end">OUT</text>
+  <path class="w w12" d="M430 52 V140 H250 V172 H220"/>
+  <path class="g" d="M60 220 V232"/>
+  <path class="g" d="M51 232 H69 M54 236 H66 M57 240 H63"/>
+
+  <!-- 5 V -->
+  <path class="w w5" d="M220 204 H440"/>
+  <circle class="f5" cx="330" cy="204" r="3.8"/>
+  <path class="w w5" d="M330 204 V312 H220"/>
+  <text class="lbl l5" x="385" y="197" text-anchor="middle">5 V</text>
+
+  <!-- ===== LiDAR ===== -->
+  <rect class="blk" x="30" y="290" width="190" height="114" rx="4"/>
+  <text class="tt" x="42" y="326">YDLIDAR X2</text>
+  <text class="ts" x="42" y="346">LiDAR 360°</text>
+  <text class="ts" x="42" y="364">loại 4 chân</text>
+  <text class="pin" x="212" y="316" text-anchor="end">VCC</text>
+  <text class="pin" x="212" y="366" text-anchor="end">Tx</text>
+  <text class="pin" x="212" y="391" text-anchor="end">PWM</text>
+  <path class="g" d="M60 404 V416"/>
+  <path class="g" d="M51 416 H69 M54 420 H66 M57 424 H63"/>
+  <!-- Tx -> GPIO16 -->
+  <path class="w wuart" d="M220 362 H432"/>
+  <polygon class="fuart" points="440,362 430,357 430,367"/>
+  <text class="lbl luart" x="330" y="354" text-anchor="middle">UART2 · 115200</text>
+  <!-- GPIO18 -> PWM -->
+  <path class="w wuart" d="M440 387 H228"/>
+  <polygon class="fuart" points="220,387 230,382 230,392"/>
+  <text class="lbl luart" x="330" y="404" text-anchor="middle">PWM tốc độ quay</text>
+
+  <!-- ===== BNO055 ===== -->
+  <rect class="blk" x="30" y="500" width="190" height="122" rx="4"/>
+  <text class="tt" x="42" y="540">BNO055</text>
+  <text class="ts" x="42" y="560">IMU 9 trục</text>
+  <text class="ts" x="42" y="578">I2C địa chỉ 0x29</text>
+  <text class="pin" x="212" y="524" text-anchor="end">VIN</text>
+  <text class="pin" x="212" y="579" text-anchor="end">SDA</text>
+  <text class="pin" x="212" y="604" text-anchor="end">SCL</text>
+  <path class="g" d="M60 622 V634"/>
+  <path class="g" d="M51 634 H69 M54 638 H66 M57 642 H63"/>
+  <path class="w w33" d="M440 520 H220"/>
+  <text class="lbl l33" x="330" y="513" text-anchor="middle">3,3 V</text>
+  <path class="w wi2c" d="M440 575 H220"/>
+  <path class="w wi2c" d="M440 600 H220"/>
+  <text class="lbl li2c" x="330" y="568" text-anchor="middle">I2C (SDA, SCL)</text>
+
+  <!-- ===== Laptop / Wi-Fi ===== -->
+  <rect class="blk soft" x="455" y="72" width="230" height="52" rx="4"/>
+  <text class="tt" x="570" y="94" text-anchor="middle" style="font-size:13.5px">Laptop · WSL2</text>
+  <text class="ts" x="570" y="112" text-anchor="middle">micro_ros_agent, UDP 8888</text>
+  <path class="air" d="M570 124 V150"/>
+  <text class="lbl" x="580" y="142" fill="currentColor" style="fill:var(--muted)">Wi-Fi</text>
+
+  <!-- ===== ESP32 ===== -->
+  <rect class="blk" x="440" y="150" width="260" height="520" rx="5"/>
+  <text class="tt" x="570" y="400" text-anchor="middle" style="font-size:22px">ESP32</text>
+  <text class="ts" x="570" y="422" text-anchor="middle">firmware esp32_agv_base</text>
+  <text class="ts" x="570" y="440" text-anchor="middle">micro-ROS · PID 50 Hz</text>
+  <!-- chân trái -->
+  <text class="pin" x="448" y="208">VIN 5V</text>
+  <text class="pin" x="448" y="266">GPIO19 SDA2</text>
+  <text class="pin" x="448" y="291">GPIO17 SCL2</text>
+  <path class="w wi2c" d="M440 262 H404 M440 287 H404"/>
+  <text class="lbl li2c" x="398" y="266" text-anchor="end">INA226 SDA</text>
+  <text class="lbl li2c" x="398" y="291" text-anchor="end">INA226 SCL</text>
+  <text class="pin" x="448" y="366">GPIO16 RX2</text>
+  <text class="pin" x="448" y="391">GPIO18</text>
+  <text class="pin" x="448" y="524">3V3</text>
+  <text class="pin" x="448" y="579">GPIO21 SDA</text>
+  <text class="pin" x="448" y="604">GPIO22 SCL</text>
+  <!-- chân phải -->
+  <text class="pin" x="692" y="184" text-anchor="end">GPIO25</text>
+  <text class="pin" x="692" y="209" text-anchor="end">GPIO27</text>
+  <text class="pin" x="692" y="234" text-anchor="end">GPIO26</text>
+  <text class="pin" x="692" y="259" text-anchor="end">GPIO14</text>
+  <text class="pin" x="692" y="284" text-anchor="end">GPIO33</text>
+  <text class="pin" x="692" y="309" text-anchor="end">GPIO32</text>
+  <text class="pin" x="692" y="438" text-anchor="end">GPIO23</text>
+  <text class="pin" x="692" y="463" text-anchor="end">GPIO34</text>
+  <text class="pin" x="692" y="488" text-anchor="end">3V3</text>
+  <text class="pin" x="692" y="568" text-anchor="end">GPIO4</text>
+  <text class="pin" x="692" y="593" text-anchor="end">GPIO35</text>
+  <text class="pin" x="692" y="618" text-anchor="end">3V3</text>
+  <path class="g" d="M570 670 V682"/>
+  <path class="g" d="M561 682 H579 M564 686 H576 M567 690 H573"/>
+
+  <!-- ESP32 -> L298N -->
+  <path class="w wctl" d="M700 180 H872 M700 205 H872 M700 230 H872 M700 255 H872 M700 280 H872 M700 305 H872"/>
+  <polygon class="fctl" points="880,180 870,175 870,185"/>
+  <polygon class="fctl" points="880,205 870,200 870,210"/>
+  <polygon class="fctl" points="880,230 870,225 870,235"/>
+  <polygon class="fctl" points="880,255 870,250 870,260"/>
+  <polygon class="fctl" points="880,280 870,275 870,285"/>
+  <polygon class="fctl" points="880,305 870,300 870,310"/>
+  <text class="lbl lctl" x="790" y="172" text-anchor="middle">ENA/ENB: PWM 5 kHz</text>
+  <text class="lbl lctl" x="790" y="327" text-anchor="middle">IN1–IN4: chiều quay</text>
+
+  <!-- ===== L298N ===== -->
+  <rect class="blk" x="880" y="150" width="210" height="190" rx="4"/>
+  <text class="pin" x="888" y="184">ENA</text>
+  <text class="pin" x="888" y="209">IN1</text>
+  <text class="pin" x="888" y="234">IN2</text>
+  <text class="pin" x="888" y="259">ENB</text>
+  <text class="pin" x="888" y="284">IN3</text>
+  <text class="pin" x="888" y="309">IN4</text>
+  <text class="pin" x="940" y="168" text-anchor="middle">+12V</text>
+  <text class="pin" x="1000" y="168" text-anchor="middle">GND</text>
+  <text class="pin" x="1058" y="168" text-anchor="middle">+5V</text>
+  <text class="tt" x="1000" y="232" text-anchor="middle">L298N</text>
+  <text class="ts" x="1000" y="252" text-anchor="middle">cầu H kép</text>
+  <text class="tw" x="1000" y="276" text-anchor="middle">tháo jumper ENA, ENB</text>
+  <text class="pin" x="1082" y="284" text-anchor="end">OUT3</text>
+  <text class="pin" x="1082" y="309" text-anchor="end">OUT4</text>
+  <text class="pin" x="1010" y="332" text-anchor="middle">OUT1</text>
+  <text class="pin" x="1060" y="332" text-anchor="middle">OUT2</text>
+  <!-- GND L298N -->
+  <path class="g" d="M1000 150 V128"/>
+  <path class="g" d="M991 128 H1009 M994 124 H1006 M997 120 H1003"/>
+  <!-- +5V bỏ trống -->
+  <path class="nc" d="M1058 150 V134 M1052 128 L1064 140 M1064 128 L1052 140"/>
+  <text class="lbl" x="1072" y="132" style="fill:var(--muted)">bỏ trống</text>
+
+  <!-- Động cơ trái: OUT1, OUT2 thẳng xuống -->
+  <path class="w wmot" d="M1010 340 V410 M1060 340 V410"/>
+  <!-- Động cơ phải: OUT3, OUT4 vòng bên phải -->
+  <path class="w wmot" d="M1090 280 H1170 V606 H1090"/>
+  <path class="w wmot" d="M1090 305 H1146 V582 H1090"/>
+
+  <!-- ===== Động cơ trái ===== -->
+  <rect class="blk" x="880" y="410" width="210" height="110" rx="4"/>
+  <text class="pin" x="888" y="438">A</text>
+  <text class="pin" x="888" y="463">B</text>
+  <text class="pin" x="888" y="488">VCC</text>
+  <text class="pin" x="888" y="512">GND</text>
+  <text class="tt" x="996" y="448" text-anchor="middle">ĐỘNG CƠ TRÁI</text>
+  <text class="ts" x="996" y="468" text-anchor="middle">JGA25-370 + encoder</text>
+  <text class="ts" x="996" y="486" text-anchor="middle">đảo chiều motor + enc</text>
+  <path class="w wenc" d="M880 434 H708 M880 459 H708"/>
+  <polygon class="fenc" points="700,434 710,429 710,439"/>
+  <polygon class="fenc" points="700,459 710,454 710,464"/>
+  <text class="lbl lenc" x="790" y="427" text-anchor="middle">encoder A, B</text>
+  <path class="w w33" d="M700 484 H880"/>
+  <text class="lbl l33" x="790" y="479" text-anchor="middle" dy="-3">3,3 V</text>
+  <path class="g" d="M880 508 H862 V512"/>
+  <path class="g" d="M853 512 H871 M856 516 H868 M859 520 H865"/>
+
+  <!-- ===== Động cơ phải ===== -->
+  <rect class="blk" x="880" y="540" width="210" height="110" rx="4"/>
+  <text class="pin" x="888" y="568">A</text>
+  <text class="pin" x="888" y="593">B</text>
+  <text class="pin" x="888" y="618">VCC</text>
+  <text class="pin" x="888" y="642">GND</text>
+  <text class="tt" x="990" y="572" text-anchor="middle">ĐỘNG CƠ PHẢI</text>
+  <text class="ts" x="990" y="592" text-anchor="middle">JGA25-370</text>
+  <text class="pin" x="1082" y="586" text-anchor="end">OUT4</text>
+  <text class="pin" x="1082" y="610" text-anchor="end">OUT3</text>
+  <path class="w wenc" d="M880 564 H708 M880 589 H708"/>
+  <polygon class="fenc" points="700,564 710,559 710,569"/>
+  <polygon class="fenc" points="700,589 710,584 710,594"/>
+  <text class="lbl lenc" x="790" y="557" text-anchor="middle">encoder A, B</text>
+  <path class="w w33" d="M700 614 H880"/>
+  <text class="lbl l33" x="790" y="607" text-anchor="middle">3,3 V</text>
+  <path class="g" d="M880 638 H862 V642"/>
+  <path class="g" d="M853 642 H871 M856 646 H868 M859 650 H865"/>
+</svg>
+    </div>
+    <ul class="legend" aria-label="Chú giải màu dây">
+      <li style="color:var(--w12)"><span class="sw"></span><span style="color:var(--ink)">12 V từ pin</span></li>
+      <li style="color:var(--w5)"><span class="sw"></span><span style="color:var(--ink)">5 V sau hạ áp</span></li>
+      <li style="color:var(--w33)"><span class="sw"></span><span style="color:var(--ink)">3,3 V từ ESP32</span></li>
+      <li style="color:var(--wctl)"><span class="sw"></span><span style="color:var(--ink)">điều khiển L298N</span></li>
+      <li style="color:var(--wmot)"><span class="sw"></span><span style="color:var(--ink)">điện động cơ</span></li>
+      <li style="color:var(--wenc)"><span class="sw"></span><span style="color:var(--ink)">xung encoder</span></li>
+      <li style="color:var(--wi2c)"><span class="sw"></span><span style="color:var(--ink)">I2C</span></li>
+      <li style="color:var(--wuart)"><span class="sw"></span><span style="color:var(--ink)">dây LiDAR</span></li>
+      <li><span class="sw g" style="color:var(--gnd)">⏚</span><span>GND, mọi ký hiệu nối về một điểm chung</span></li>
+    </ul>
+    <figcaption>Mũi tên chỉ chiều tín hiệu. INA226 (viền cam đứt) đặt ngay sau cực + của pin để đo dòng của cả xe. Nhãn ở chân INA226 nối về chân cùng tên trên ESP32: 3V3, IO19 (SDA), IO17 (SCL) — bus I2C thứ hai, tách khỏi BNO055. Động cơ chạy từ 12 V của pin qua L298N; ESP32 và LiDAR lấy 5 V từ mạch hạ áp riêng, không lấy từ chân +5V của L298N. BNO055 và encoder lấy 3,3 V từ ESP32.</figcaption>
+  </figure>
+</section>
+
+<section aria-labelledby="h-flow">
+  <h2 id="h-flow">Đường đi của dữ liệu</h2>
+  <figure>
+    <div class="sheet flow">
+<svg viewBox="0 0 1120 250" role="img" aria-label="Cảm biến gửi dữ liệu vào ESP32; ESP32 gửi /scan, /imu/data, /joint_states qua Wi-Fi UDP 8888 tới micro_ros_agent trên laptop; ROS 2 trên laptop tính odometry, định vị và đường đi rồi gửi /cmd_vel ngược về ESP32; ESP32 điều khiển L298N và động cơ.">
+  <rect class="blk" x="20" y="30" width="200" height="110" rx="4"/>
+  <text class="tt" x="34" y="56">Cảm biến</text>
+  <text class="ts" x="34" y="78">YDLIDAR X2 · UART</text>
+  <text class="ts" x="34" y="96">BNO055 · I2C</text>
+  <text class="ts" x="34" y="114">2 encoder · ngắt GPIO</text>
+  <text class="ts" x="34" y="132">INA226 · I2C riêng (chưa có code)</text>
+
+  <rect class="blk" x="310" y="30" width="200" height="110" rx="4"/>
+  <text class="tt" x="324" y="56">ESP32</text>
+  <text class="ts" x="324" y="78">đọc cảm biến, đóng gói</text>
+  <text class="ts" x="324" y="96">PID tốc độ bánh 50 Hz</text>
+  <text class="ts" x="324" y="114">dừng xe nếu mất lệnh 0,5 s</text>
+
+  <rect class="blk soft" x="600" y="30" width="200" height="110" rx="4"/>
+  <text class="tt" x="614" y="56">micro_ros_agent</text>
+  <text class="ts" x="614" y="78">WSL2 trên laptop</text>
+  <text class="ts" x="614" y="96">cầu XRCE-DDS ↔ ROS 2</text>
+
+  <rect class="blk soft" x="890" y="30" width="210" height="110" rx="4"/>
+  <text class="tt" x="904" y="56">ROS 2 Jazzy</text>
+  <text class="ts" x="904" y="78">wheel_odometry → /odom</text>
+  <text class="ts" x="904" y="96">AMCL · Nav2 RPP</text>
+  <text class="ts" x="904" y="114">grid_navigator</text>
+
+  <rect class="blk" x="310" y="190" width="200" height="46" rx="4"/>
+  <text class="tt" x="324" y="218" style="font-size:13.5px">L298N → 2 động cơ</text>
+
+  <!-- lên -->
+  <path class="arw" d="M220 70 H302"/><polygon class="fink" points="310,70 300,65 300,75"/>
+  <path class="arw" d="M510 70 H592"/><polygon class="fink" points="600,70 590,65 590,75"/>
+  <path class="arw" d="M800 70 H882"/><polygon class="fink" points="890,70 880,65 880,75"/>
+  <text class="lbl" x="555" y="22" text-anchor="middle">/scan ~8–9 Hz · /imu/data 50 Hz · /joint_states 50 Hz</text>
+  <text class="lbl" x="555" y="62" text-anchor="middle" style="fill:var(--muted)">UDP 8888</text>
+  <!-- xuống -->
+  <path class="arw" d="M890 112 H808"/><polygon class="fink" points="800,112 810,107 810,117"/>
+  <path class="arw" d="M600 112 H518"/><polygon class="fink" points="510,112 520,107 520,117"/>
+  <text class="lbl" x="845" y="132" text-anchor="middle">/cmd_vel</text>
+  <text class="lbl" x="555" y="132" text-anchor="middle">/cmd_vel</text>
+  <path class="arw" d="M410 140 V182"/><polygon class="fink" points="410,190 405,180 415,180"/>
+  <text class="lbl" x="420" y="168">PWM + chiều</text>
+</svg>
+    </div>
+    <figcaption>Laptop làm mọi phần tính toán nặng: định vị, lập đường và bám quỹ đạo. ESP32 chỉ đọc cảm biến, chạy PID cho từng bánh và thực hiện <code>/cmd_vel</code>.</figcaption>
+  </figure>
+</section>
+
+<section aria-labelledby="h-pins">
+  <h2 id="h-pins">Bảng chân ESP32</h2>
+  <p>16 chân tín hiệu, cộng nguồn. Firmware tránh GPIO 0, 2, 5, 12, 15 (chân quyết định chế độ khởi động), 6–11 (nối với flash) và 1, 3 (Serial qua USB). Còn trống: GPIO13 (vào/ra), GPIO36 và 39 (chỉ vào). Nếu đổi sang LiDAR X4 thì dùng GPIO13 làm chân EN.</p>
+  <div class="tablewrap">
+  <table>
+    <thead><tr><th>ESP32</th><th>Nối tới</th><th>Chức năng</th><th>Ghi chú</th></tr></thead>
+    <tbody>
+      <tr class="group"><td colspan="4">L298N</td></tr>
+      <tr><td class="gp"><span class="dot" style="color:var(--wctl)"></span>GPIO25</td><td>ENA</td><td>PWM bánh trái</td><td>5 kHz, 8 bit</td></tr>
+      <tr><td class="gp"><span class="dot" style="color:var(--wctl)"></span>GPIO27</td><td>IN1</td><td>chiều bánh trái</td><td></td></tr>
+      <tr><td class="gp"><span class="dot" style="color:var(--wctl)"></span>GPIO26</td><td>IN2</td><td>chiều bánh trái</td><td></td></tr>
+      <tr><td class="gp"><span class="dot" style="color:var(--wctl)"></span>GPIO14</td><td>ENB</td><td>PWM bánh phải</td><td>5 kHz, 8 bit</td></tr>
+      <tr><td class="gp"><span class="dot" style="color:var(--wctl)"></span>GPIO33</td><td>IN3</td><td>chiều bánh phải</td><td></td></tr>
+      <tr><td class="gp"><span class="dot" style="color:var(--wctl)"></span>GPIO32</td><td>IN4</td><td>chiều bánh phải</td><td></td></tr>
+      <tr class="group"><td colspan="4">Encoder</td></tr>
+      <tr><td class="gp"><span class="dot" style="color:var(--wenc)"></span>GPIO23</td><td>Encoder trái A</td><td>đếm xung</td><td>dây vàng</td></tr>
+      <tr><td class="gp"><span class="dot" style="color:var(--wenc)"></span>GPIO34</td><td>Encoder trái B</td><td>đếm xung</td><td>chỉ vào, không có điện trở kéo lên nội; dây xanh lá</td></tr>
+      <tr><td class="gp"><span class="dot" style="color:var(--wenc)"></span>GPIO4</td><td>Encoder phải A</td><td>đếm xung</td><td>dây vàng</td></tr>
+      <tr><td class="gp"><span class="dot" style="color:var(--wenc)"></span>GPIO35</td><td>Encoder phải B</td><td>đếm xung</td><td>chỉ vào, không có điện trở kéo lên nội; dây xanh lá</td></tr>
+      <tr class="group"><td colspan="4">BNO055 · bus I2C 1</td></tr>
+      <tr><td class="gp"><span class="dot" style="color:var(--wi2c)"></span>GPIO21</td><td>SDA</td><td>I2C dữ liệu</td><td>địa chỉ 0x29 (0x28 nếu chân ADR nối GND)</td></tr>
+      <tr><td class="gp"><span class="dot" style="color:var(--wi2c)"></span>GPIO22</td><td>SCL</td><td>I2C xung nhịp</td><td></td></tr>
+      <tr class="group"><td colspan="4">INA226 · bus I2C 2 (chân trống trước đây)</td></tr>
+      <tr><td class="gp"><span class="dot" style="color:var(--wi2c)"></span>GPIO19</td><td>SDA</td><td>I2C dữ liệu</td><td>địa chỉ 0x40 khi A0, A1 nối GND; firmware chưa đọc</td></tr>
+      <tr><td class="gp"><span class="dot" style="color:var(--wi2c)"></span>GPIO17</td><td>SCL</td><td>I2C xung nhịp</td><td>UART2 không dùng chân TX nên GPIO17 rảnh</td></tr>
+      <tr class="group"><td colspan="4">YDLIDAR X2</td></tr>
+      <tr><td class="gp"><span class="dot" style="color:var(--wuart)"></span>GPIO16</td><td>Tx của LiDAR</td><td>UART2 RX</td><td>LiDAR chỉ phát, không nhận lệnh</td></tr>
+      <tr><td class="gp"><span class="dot" style="color:var(--wuart)"></span>GPIO18</td><td>PWM của LiDAR</td><td>tốc độ mô-tơ quét</td><td>10 kHz, 11 bit</td></tr>
+      <tr class="group"><td colspan="4">Nguồn</td></tr>
+      <tr><td class="gp"><span class="dot" style="color:var(--w5)"></span>VIN</td><td>OUT mạch hạ áp</td><td>5 V nuôi ESP32</td><td>không cắm USB cùng lúc</td></tr>
+      <tr><td class="gp"><span class="dot" style="color:var(--w33)"></span>3V3</td><td>BNO055 VIN, INA226 VCC, VCC hai encoder</td><td>3,3 V</td><td>encoder cấp 5 V sẽ làm hỏng GPIO</td></tr>
+      <tr><td class="gp"><span class="dot" style="color:var(--gnd)"></span>GND</td><td>GND chung</td><td>mass</td><td>mọi GND về một điểm</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section aria-labelledby="h-parts">
+  <h2 id="h-parts">Chi tiết linh kiện</h2>
+  <p>Nhãn <span class="src">đo</span> là số đo trên xe, <span class="src">fw</span> là giá trị trong firmware hoặc cấu hình, <span class="src">hãng</span> là thông số phổ biến của loại linh kiện này, chưa đo lại.</p>
+  <div class="parts">
+
+    <article class="part">
+      <h3>ESP32<span class="code">esp32_agv_base.ino</span></h3>
+      <p class="role">Bộ điều khiển trên xe: đọc cảm biến, chạy PID từng bánh, nói chuyện với laptop qua micro-ROS.</p>
+      <dl class="spec">
+        <dt>Kết nối</dt><dd>Wi-Fi tới micro_ros_agent, UDP cổng 8888<span class="src">fw</span></dd>
+        <dt>Phát</dt><dd><code>/scan</code>, <code>/imu/data</code> 50 Hz, <code>/joint_states</code> 50 Hz<span class="src">đo</span></dd>
+        <dt>Nhận</dt><dd><code>/cmd_vel</code>; mất lệnh 500 ms thì dừng xe<span class="src">fw</span></dd>
+        <dt>Tác vụ</dt><dd>MotorTask ưu tiên 3 (PID 20 ms) và ROS_Task ưu tiên 1, cùng core 0<span class="src">fw</span></dd>
+        <dt>PID bánh</dt><dd>Kf 3,0 · Kp 0,30 · Ki 0,04 · Kd 0,01 · tích phân ≤ 200 PWM · bù ma sát 30 + 40 khi khởi động<span class="src">fw</span></dd>
+        <dt>Giới hạn</dt><dd>120 rpm mỗi bánh, tăng tốc 320 rpm/s<span class="src">fw</span></dd>
+      </dl>
+      <div class="note">
+        <span><b>Nguồn:</b> nuôi bằng 5 V từ mạch hạ áp riêng. Nếu Serial báo <code>SUT AP (brownout)</code> liên tục là do nguồn, không phải lỗi code.</span>
+      </div>
+    </article>
+
+    <article class="part">
+      <h3>L298N<span class="code">cầu H kép</span></h3>
+      <p class="role">Đổi tín hiệu PWM 3,3 V của ESP32 thành điện 12 V cho hai động cơ.</p>
+      <dl class="spec">
+        <dt>Bánh trái</dt><dd>ENA, IN1, IN2 → OUT1, OUT2<span class="src">fw</span></dd>
+        <dt>Bánh phải</dt><dd>ENB, IN3, IN4 → OUT3, OUT4<span class="src">fw</span></dd>
+        <dt>Điều khiển</dt><dd>IN1 cao, IN2 thấp: quay thuận · ngược lại: quay nghịch · cả hai thấp: thả trôi</dd>
+        <dt>PWM</dt><dd>5 kHz, 8 bit (0–255); L298N dùng BJT chậm nên không chạy 20 kHz<span class="src">fw</span></dd>
+        <dt>Sụt áp</dt><dd>khoảng 2 V qua cầu H, động cơ không nhận đủ 12 V<span class="src">fw</span></dd>
+      </dl>
+      <div class="note">
+        <span><b>Bắt buộc:</b> tháo hai jumper ENA, ENB. Còn jumper thì PWM vô tác dụng, xe chỉ chạy hết tốc hoặc đứng.</span>
+        <span>Chân +5V trên module để trống. Tụ 1000 µF đặt sát cọc 12 V.</span>
+      </div>
+    </article>
+
+    <article class="part">
+      <h3>Động cơ JGA25-370 và encoder<span class="code">× 2</span></h3>
+      <p class="role">Hai bánh sau của xe vi sai, mỗi bánh một động cơ hộp số có encoder Hall hai kênh.</p>
+      <dl class="spec">
+        <dt>Encoder</dt><dd>11 xung/vòng trục động cơ, đếm 2 cạnh → 22 xung<span class="src">fw</span></dd>
+        <dt>Xung/vòng bánh</dt><dd>2150 (trái 2161, phải 2138 khi quay tay 10 vòng)<span class="src">đo</span></dd>
+        <dt>Tỉ số hộp số</dt><dd>≈ 1 : 97,7 (2150 / 22)<span class="src">đo</span></dd>
+        <dt>Bánh xe</dt><dd>Ø 64,5 mm; bán kính lăn dùng cho odom 32,81 mm<span class="src">đo</span></dd>
+        <dt>Khoảng cách 2 bánh</dt><dd>200 mm tâm–tâm<span class="src">đo</span></dd>
+        <dt>Đảo chiều</dt><dd>bánh trái đảo cả motor lẫn encoder, bánh phải giữ nguyên<span class="src">fw</span></dd>
+        <dt>Tốc độ thực tế</dt><dd>chạy thẳng đạt 90% lệnh; xoay tại chỗ tối đa ≈ 1 rad/s<span class="src">đo</span></dd>
+      </dl>
+      <div class="note">
+        <span><b>Bắt buộc:</b> encoder lấy nguồn 3,3 V, không phải 5 V. GPIO34/35 không có điện trở kéo lên; encoder loại hở cực thu phải hàn thêm 10 kΩ lên 3,3 V.</span>
+        <span>Đổi dây ở đầu ra L298N thì phải đổi lại cả bốn cờ <code>INVERT_*</code> cùng lúc.</span>
+      </div>
+    </article>
+
+    <article class="part">
+      <h3>BNO055<span class="code">IMU · I2C</span></h3>
+      <p class="role">Cho góc quay của xe. Odometry lấy hướng từ quaternion BNO055, còn bộ xoay tại chỗ dùng gyro.</p>
+      <dl class="spec">
+        <dt>Giao tiếp</dt><dd>I2C, SDA GPIO21, SCL GPIO22, địa chỉ 0x29<span class="src">fw</span></dd>
+        <dt>Nguồn</dt><dd>VIN 3,3 V từ ESP32</dd>
+        <dt>Tần số</dt><dd>50 Hz trên <code>/imu/data</code><span class="src">đo</span></dd>
+        <dt>Bias gyro</dt><dd>đo 2 giây lúc khởi động và tự trừ; xe phải đứng yên lúc đó<span class="src">fw</span></dd>
+        <dt>Độ trôi</dt><dd>quaternion trôi ≈ 4°/phút khi đứng yên; gyro sau khi trừ bias ≈ 0<span class="src">đo</span></dd>
+      </dl>
+      <div class="note">
+        <span><b>Lưu ý:</b> khi khởi động lại, tắt nguồn cả xe. Chỉ bấm reset ESP32 đã từng làm BNO055 trả toàn số 0.</span>
+      </div>
+    </article>
+
+    <article class="part">
+      <h3>YDLIDAR X2<span class="code">LiDAR · 4 chân</span></h3>
+      <p class="role">Quét 360° để AMCL so với bản đồ và để Nav2 thấy vật cản.</p>
+      <dl class="spec">
+        <dt>Chân</dt><dd>VCC 5 V, GND, Tx → GPIO16, PWM ← GPIO18<span class="src">fw</span></dd>
+        <dt>UART</dt><dd>UART2 của ESP32, 115200 baud, chỉ chiều LiDAR → ESP32<span class="src">fw</span></dd>
+        <dt>PWM mô-tơ</dt><dd>10 kHz, 11 bit<span class="src">fw</span></dd>
+        <dt>Tốc độ quét</dt><dd>7,6–9 vòng/s trên <code>/scan</code><span class="src">đo</span></dd>
+        <dt>Tầm đo</dt><dd>0,12–8 m<span class="src">hãng</span></dd>
+        <dt>Vị trí lắp</dt><dd>URDF: tâm xe, cao 7,5 cm. Đo từ các lần xoay: lệch trục quay ≈ 1,1 cm về phía trước<span class="src">đo</span></dd>
+      </dl>
+      <div class="note">
+        <span><b>Lưu ý:</b> VCC lấy 5 V từ nguồn ngoài, không từ ESP32. Chân TX và EN của ESP32 không dùng; nếu đổi sang X4 thì phải gán chân EN (GPIO17 hoặc 19).</span>
+      </div>
+    </article>
+
+    <article class="part">
+      <h3>INA226<span class="code">đo điện áp, dòng · I2C</span></h3>
+      <p class="role">Đo điện áp pin, dòng cả xe và công suất, để biết lúc nào pin yếu thay vì phải đoán từ tốc độ bánh. Firmware chưa đọc module này.</p>
+      <dl class="spec">
+        <dt>Giao tiếp</dt><dd>bus I2C thứ hai (<code>Wire1</code>): SDA GPIO19, SCL GPIO17; địa chỉ 0x40 khi A0, A1 nối GND<span class="src">hãng</span></dd>
+        <dt>Vì sao bus riêng</dt><dd>BNO055 hay giữ xung nhịp I2C (clock stretching); tách bus để INA226 không bị ảnh hưởng và ngược lại</dd>
+        <dt>Nguồn</dt><dd>chung nguồn với ESP32: VCC lấy từ chân 3V3 của ESP32 (module chịu 2,7–5,5 V)<span class="src">hãng</span></dd>
+        <dt>Cách mắc đo</dt><dd>nối tiếp trên dây + của pin, trước mọi điểm rẽ nhánh: IN+ phía pin, IN− phía tải. VBUS nối IN− (nhiều module nối sẵn)</dd>
+        <dt>Đo áp</dt><dd>0–36 V, bước 1,25 mV; đủ cho pin 3S 12,6 V<span class="src">hãng</span></dd>
+        <dt>Đo dòng</dt><dd>qua điện trở shunt, áp shunt tối đa ±81,92 mV<span class="src">hãng</span></dd>
+        <dt>Dòng tối đa</dt><dd>shunt 0,1 Ω (in R100): ≈ 0,82 A · shunt 0,01 Ω (in R010): ≈ 8,2 A</dd>
+      </dl>
+      <div class="note">
+        <span><b>VCC 3,3 V, không 5 V:</b> điện trở kéo lên của SDA, SCL trên module nối vào VCC. Cấp 5 V thì hai chân GPIO19, GPIO17 nhận 5 V và có thể hỏng.</span>
+        <span><b>Kiểm tra shunt:</b> module phổ biến hàn sẵn R100, chỉ đo được tới ≈ 0,82 A. Hai động cơ khi khởi động hay xoay tại chỗ có thể vượt mức này; khi đó nên thay shunt R010.</span>
+        <span>Muốn dùng: thêm code đọc INA226 vào firmware và phát <code>/battery_state</code> (sensor_msgs/BatteryState).</span>
+      </div>
+    </article>
+
+    <article class="part">
+      <h3>Nguồn<span class="code">pin 3S + hạ áp 5 V</span></h3>
+      <p class="role">Hai nhánh tách biệt: 12 V cho động cơ, 5 V sạch cho phần logic.</p>
+      <dl class="spec">
+        <dt>Pin</dt><dd>Li-ion 3S, 12,6 V khi đầy, 4,2 V mỗi cell</dd>
+        <dt>Điện áp đo</dt><dd>12,08 V (≈ 4,03 V/cell) ngày 03/10<span class="src">đo</span></dd>
+        <dt>Đo pin</dt><dd>pin + → shunt INA226 → hai nhánh dưới</dd>
+        <dt>Nhánh 12 V</dt><dd>→ cọc +12V của L298N → động cơ</dd>
+        <dt>Nhánh 5 V</dt><dd>→ mạch hạ áp → ESP32 VIN và LiDAR VCC</dd>
+        <dt>Nhánh 3,3 V</dt><dd>ổn áp trên ESP32 → BNO055, INA226 và hai encoder</dd>
+      </dl>
+      <div class="note">
+        <span><b>Bắt buộc:</b> mọi GND nối chung về một điểm. Không nuôi ESP32 từ chân +5V của L298N. Không cắm USB và nguồn ngoài vào ESP32 cùng lúc.</span>
+      </div>
+    </article>
+
+  </div>
+</section>
+
+<section aria-labelledby="h-check">
+  <h2 id="h-check">Kiểm tra khi lắp lại</h2>
+  <ul class="must">
+    <li>Jumper ENA và ENB trên L298N đã tháo.</li>
+    <li>Encoder, BNO055 và INA226 cấp 3,3 V; chỉ ESP32 và LiDAR dùng 5 V.</li>
+    <li>INA226: VCC từ 3V3 của ESP32, SDA → GPIO19, SCL → GPIO17; mắc nối tiếp trên dây + của pin, IN+ phía pin; shunt R010 nếu muốn đo dòng động cơ.</li>
+    <li>ESP32 nuôi từ mạch hạ áp, không từ chân +5V của L298N, không kèm USB.</li>
+    <li>Tụ 1000 µF sát cọc 12 V của L298N; mọi GND về một điểm chung.</li>
+    <li>Bánh trái nối OUT1/OUT2, bánh phải nối OUT3/OUT4. Đổi dây động cơ thì đổi luôn bốn cờ <code>INVERT_*</code> trong firmware.</li>
+    <li>Khởi động lại bằng cách tắt cả nguồn xe, và để xe đứng yên 2 giây đầu cho BNO055 đo bias gyro.</li>
+  </ul>
+</section>
+</div>
+
+</html>

@@ -113,8 +113,8 @@ def main():
     d.text((x, y), f"Sa bàn {board.rows}×{board.cols}, ô {board.spacing * 100:.0f} cm", fill=INK, font=F(24, True)); y += 40
     for line in (f"(hàng {board.center_row}, cột {board.center_col}) = "
                  f"({board.center_x:+.3f}, {board.center_y:+.3f}) m",
-                 f"x {board.x0:+.2f} .. {board.x0 + (board.cols - 1) * board.spacing:+.2f} m,"
-                 f"  y {board.y0:+.2f} .. {board.y0 + (board.rows - 1) * board.spacing:+.2f} m",
+                 "x {0:+.2f} .. {1:+.2f} m,  y {2:+.2f} .. {3:+.2f} m".format(*board.bounds()),
+                 f"lưới xoay {math.degrees(board.yaw):+.1f}° so với trục bản đồ",
                  f"{n_all - len(bad_nodes)}/{n_all} điểm, {n_e - len(bad_edges)}/{n_e} cạnh đi được",
                  "hàng 1 = dưới cùng, cột 1 = bên trái",
                  f"file: config/{os.path.basename(board.path)}"):

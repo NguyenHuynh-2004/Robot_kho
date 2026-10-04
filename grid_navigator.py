@@ -1,6 +1,7 @@
 import rclpy
 from rclpy.node import Node
 from rclpy.action import ActionClient
+from rclpy.duration import Duration
 from rclpy.executors import MultiThreadedExecutor
 from nav2_msgs.action import FollowPath
 from action_msgs.msg import GoalStatus
@@ -40,6 +41,7 @@ class GridNavigator(Node):
         # cmd_vel_nav = dau vao velocity_smoother, cung cho controller phat.
         self.cmd_pub = self.create_publisher(Twist, 'cmd_vel_nav', 10)
         self.odom_w = 0.0
+        self.gyro_w, self.gyro_t = 0.0, -1e9
         self.create_subscription(Odometry, 'odom', self.cb_odom, 10)
         self.rot = None
         self.rot_timer = None
@@ -74,6 +76,13 @@ class GridNavigator(Node):
         self.rot_accel = rot.get('decel', 2.5)                      # rad/s2, do doc giam toc
         self.rot_lag = rot.get('lag', 0.3)                          # s, lenh -> banh
         self.rot_tau = rot.get('motor_tau', 0.12)                   # s, quan tinh dong co
+        # Goc xe con quay them sau lenh 0 = coast * w do duoc (s); 0 = mo hinh cu theo lenh
+        self.rot_coast = rot.get('coast', 0.0)
+        # Xung vong ho cho goc <= pulse_max_deg (0 = tat): bien do (rad/s) va
+        # phan dau xung bi ma sat nuot (s, tu hoc)
+        self.rot_pulse_max = math.radians(rot.get('pulse_max_deg', 0.0))
+        self.rot_wp = rot.get('pulse_speed', self.rot_wmin)
+        self.rot_T0 = rot.get('pulse_dead', 0.0)
         # Chỉ lấy ô vật cản THẬT (giá trị 100). Ngưỡng thấp hơn sẽ nuốt cả vùng
         # inflation của Nav2 và lại gây chặn quá tay.
         self.lethal_threshold = 99
@@ -104,7 +113,8 @@ class GridNavigator(Node):
         b = self.board
         self.get_logger().info(
             f"Sa bàn {b.rows}x{b.cols}, ô {b.spacing:.2f} m, "
-            f"(hàng {b.center_row}, cột {b.center_col}) = ({b.center_x:+.3f}, {b.center_y:+.3f}) "
+            f"(hàng {b.center_row}, cột {b.center_col}) = ({b.center_x:+.3f}, {b.center_y:+.3f}), "
+            f"xoay {math.degrees(b.yaw):+.1f}° "
             f"- {b.path}. Đang chờ bản đồ...")
         
         # Publish static grid periodically
@@ -236,10 +246,9 @@ class GridNavigator(Node):
 
         pad = max(self.node_clearance, self.edge_clearance) + resolution
         b = self.board
-        grid_min_x = b.x0 - pad
-        grid_max_x = b.x0 + (b.cols - 1) * b.spacing + pad
-        grid_min_y = b.y0 - pad
-        grid_max_y = b.y0 + (b.rows - 1) * b.spacing + pad
+        min_x, max_x, min_y, max_y = b.bounds()
+        grid_min_x, grid_max_x = min_x - pad, max_x + pad
+        grid_min_y, grid_max_y = min_y - pad, max_y + pad
 
         obstacles = []
         for idx, val in enumerate(msg.data):
@@ -484,32 +493,46 @@ class GridNavigator(Node):
         if self.blocked_nodes[start_r][start_c] or self.blocked_nodes[target_r][target_c]:
             return None
             
-        queue = [(start_r, start_c)]
-        visited = set()
-        visited.add((start_r, start_c))
+        if (start_r, start_c) == (target_r, target_c):
+            return []
+        # Duong NGAN NHAT (it canh nhat); trong cac duong dai bang nhau chon
+        # duong IT CHO RE nhat - moi cho re la mot lan xoay tai cho ~5-8 s tren
+        # xe that. BFS tron truoc day hay chon duong zic-zac (4 doan thay vi 2).
+        # Trang thai = (diem, huong vua di toi), chi phi = (so canh, so lan re).
+        import heapq
+        start = (start_r, start_c, None)
+        best = {start: (0, 0)}
         parent = {}
-        
-        while queue:
-            curr_r, curr_c = queue.pop(0)
-            if curr_r == target_r and curr_c == target_c:
+        seq = 0                     # chen giua de heap khong phai so sanh huong (None vs tuple)
+        heap = [(0, 0, seq, start_r, start_c, None)]
+        goal = None
+        while heap:
+            n_edge, n_turn, _, r, c, d = heapq.heappop(heap)
+            if best.get((r, c, d)) != (n_edge, n_turn):
+                continue
+            if (r, c) == (target_r, target_c):
+                goal = (r, c, d)
                 break
-                
-            for nr, nc in self.board.neighbours(curr_r, curr_c):
-                if self.blocked_nodes[nr][nc] or (nr, nc) in visited:
+            for nr, nc in self.board.neighbours(r, c):
+                if self.blocked_nodes[nr][nc]:
                     continue
-                if self.edge_key(curr_r, curr_c, nr, nc) in self.blocked_edges:
+                if self.edge_key(r, c, nr, nc) in self.blocked_edges:
                     continue
-                visited.add((nr, nc))
-                parent[(nr, nc)] = (curr_r, curr_c)
-                queue.append((nr, nc))
-                        
-        if (target_r, target_c) not in parent and (start_r, start_c) != (target_r, target_c):
+                nd = (nr - r, nc - c)
+                cost = (n_edge + 1, n_turn + (1 if d is not None and nd != d else 0))
+                key = (nr, nc, nd)
+                if key not in best or cost < best[key]:
+                    best[key] = cost
+                    parent[key] = (r, c, d)
+                    seq += 1
+                    heapq.heappush(heap, (cost[0], cost[1], seq, nr, nc, nd))
+        if goal is None:
             return None
-            
+
         path = []
-        curr = (target_r, target_c)
-        while curr != (start_r, start_c):
-            path.append(curr)
+        curr = goal
+        while curr != start:
+            path.append((curr[0], curr[1]))
             curr = parent[curr]
         path.reverse()
         return path
@@ -517,6 +540,13 @@ class GridNavigator(Node):
     # Xe cach diem xuat phat xa hon muc nay thi them mot doan dua xe ve diem do
     # truoc (bang xy_goal_tolerance cua Nav2: sai so dich 3 cm).
     SNAP_DIST = 0.03
+
+    # Xoay tai cho: xe coi la DA QUAY khi /odom do duoc |w| tu muc nay (rad/s,
+    # nhieu gyro luc dung yen ~0.01); so lan xoay bu toi da.
+    ROT_MOVING = 0.15
+    ROT_TRIES = 5
+    # Xung dai nhat bi ma sat nuot ma van chap nhan (s)
+    ROT_T0_MAX = 0.6
 
     def build_segments(self, nodes):
         """Chuoi diem luoi lien tiep -> cac DOAN THANG nam tren canh.
@@ -831,6 +861,17 @@ class GridNavigator(Node):
         q = msg.orientation
         if abs(q.w * q.w + q.x * q.x + q.y * q.y + q.z * q.z - 1.0) < 0.1:   # bo goi toan 0
             self.imu_yaw = math.atan2(2 * (q.w * q.z + q.x * q.y), 1 - 2 * (q.y * q.y + q.z * q.z))
+        self.gyro_w = msg.angular_velocity.z        # firmware da tru bias
+        self.gyro_t = time.monotonic()
+
+    def rot_w(self):
+        """Toc do quay that (rad/s) cho bo xoay: gyro /imu/data neu con moi.
+        /odom twist KHONG dung duoc: tinh tu do chenh goc giua 2 lan cap nhat
+        nen giat 0 / 128 do/s (gyro that 55 do/s) - gai lam bo xoay tuong da
+        quay du, dung som 20-40 do."""
+        if time.monotonic() - self.gyro_t < 0.2:
+            return self.gyro_w
+        return self.odom_w
 
     def publish_w(self, w):
         t = Twist()
@@ -845,8 +886,21 @@ class GridNavigator(Node):
         """Goc da RA LENH trong rot_lag giay vua qua nhung banh chua kip quay."""
         return sum(w * 0.05 for _, w in self.rot_hist)
 
+    def learn_pulse(self, T, turned):
+        """Cap nhat rot_T0 (phan dau xung bi ma sat nuot) tu mot xung dai T
+        giay da lam xe quay `turned` rad (duong = dung chieu)."""
+        if turned < math.radians(1.0):
+            # Xe gan nhu khong nhuc nhich: ca xung bi nuot
+            if self.rot_T0 >= self.ROT_T0_MAX - 1e-6:
+                # Xung dai toi da van khong du: tang bien do xung
+                self.rot_wp = min(self.rot_wmax, self.rot_wp * 1.25)
+            self.rot_T0 = min(self.ROT_T0_MAX, max(self.rot_T0, T))
+            return
+        obs = T - turned / self.rot_wp
+        self.rot_T0 = min(self.ROT_T0_MAX, max(0.0, 0.5 * (self.rot_T0 + obs)))
+
     def start_rotation(self, yaw_des, finish=False):
-        self.rot = {'target': yaw_des, 'phase': 'turn', 't': None, 'tries': 0,
+        self.rot = {'target': yaw_des, 'phase': None, 't': None, 'tries': 0,
                     't0': self.get_clock().now(), 'finish': finish}
         self.get_logger().info(f'Xoay tại chỗ tới hướng {math.degrees(yaw_des):+.0f}°')
         if self.rot_timer is None:
@@ -870,10 +924,43 @@ class GridNavigator(Node):
             self.publish_w(0.0)
             return
         err = self.normalize_angle(r['target'] - yaw)
+        if r.get('err0') is None:
+            # Bat dau mot lan xoay (lan dau hoac xoay bu)
+            r['err0'], r['yaw0'], r['wpeak'] = err, yaw, 0.0
+            if abs(err) <= self.rot_pulse_max:
+                # Goc nho: XUNG vong ho. Lenh toi banh tre ~0.3 s nen vong kin
+                # khong dung chinh xac duoc goc nho (luc thay xe nhuc nhich da
+                # co 0.3 s lenh nam san tren duong ~12-17 do -> vot qua dich,
+                # hoac dung som khi xe con ket ma sat tinh -> dung im). Xung
+                # w*T thi tong goc quay = tich phan lenh, khong phu thuoc tre;
+                # rot_T0 = phan dau xung bi ma sat nuot, hoc dan sau moi xung.
+                T = abs(err) / self.rot_wp + self.rot_T0
+                r['phase'], r['T'] = 'pulse', T
+                r['pulse_end'] = now + Duration(seconds=T)
+            else:
+                r['phase'] = 'turn'
+        r['wpeak'] = max(r['wpeak'], abs(self.rot_w()))
+        if r['phase'] == 'pulse':
+            if now < r['pulse_end']:
+                self.publish_w(math.copysign(self.rot_wp, r['err0']))
+            else:
+                self.publish_w(0.0)
+                r['phase'], r['t'] = 'settle', now
+            return
         if r['phase'] == 'turn':
-            # Goc con lai SAU KHI xe quay het phan da ra lenh ma chua toi banh
-            # (lenh trong rot_lag giay qua) va phan quan tinh dong co (tau)
-            pred = err - self.pending_rotation() - self.odom_w * self.rot_tau
+            if self.rot_coast > 0:
+                # Goc xe con quay them sau khi ra lenh 0 ~ rot_coast * w DO DUOC
+                # (xe that 2026-10-03: 0.36 s, on dinh 0.3-0.45). Dua tren toc
+                # do THAT nen dung ca khi banh yeu khong theo kip lenh (lenh 1.3
+                # rad/s, xe chi quay 0.86) - tinh theo lenh thi dung som ~20 do.
+                pred = err - self.rot_coast * self.rot_w()
+            elif r['wpeak'] >= self.ROT_MOVING:
+                # Mo hinh cu: lenh trong rot_lag giay qua chac chan toi banh.
+                # Chi tru khi xe DA QUAY THAT (dang dung yen thi lenh ngan bi
+                # ma sat tinh nuot - tru vao thi dung som ma xe khong nhuc nhich).
+                pred = err - self.pending_rotation() - self.rot_w() * self.rot_tau
+            else:
+                pred = err
             if abs(pred) <= self.rot_tol or pred * err < 0:
                 self.publish_w(0.0)
                 r['phase'], r['t'] = 'settle', now
@@ -882,18 +969,33 @@ class GridNavigator(Node):
             w = min(self.rot_wmax, max(self.rot_wmin, w))
             self.publish_w(math.copysign(w, pred))
             return
-        # settle: cho xe dung han roi danh gia
+        # settle: cho xe dung han roi danh gia. Doi it nhat rot_lag + 3 tau:
+        # vua ra lenh dung thi lenh cu van dang tren duong toi banh, xe co the
+        # chua kip nhuc nhich (odom_w = 0) ma chua phai da xong.
         self.publish_w(0.0)
         still_for = (now - r['t']).nanoseconds * 1e-9
-        if (abs(self.odom_w) < 0.05 and still_for > 0.15) or still_for > 2.0:
-            if abs(err) > self.rot_done and r['tries'] < 3:
+        min_wait = self.rot_lag + 3 * self.rot_tau
+        if (abs(self.rot_w()) < 0.05 and still_for > min_wait) or still_for > 2.5:
+            turned = self.normalize_angle(yaw - r['yaw0'])
+            note = f"ω max {math.degrees(r['wpeak']):.0f}°/s"
+            if 'T' in r:
+                self.learn_pulse(r['T'], turned * math.copysign(1.0, r['err0']))
+                note = f"xung {r['T']*1000:.0f} ms, quay {math.degrees(abs(turned)):.1f}°"
+            r.setdefault('log', []).append(
+                f"{math.degrees(r['err0']):+.0f}°→{math.degrees(err):+.1f}° ({note})")
+            r['err0'] = None
+            r.pop('T', None)
+            if abs(err) > self.rot_done and r['tries'] < self.ROT_TRIES:
                 r['tries'] += 1
                 r['phase'] = 'turn'
                 return
             took = (now - r['t0']).nanoseconds * 1e-9
-            self.get_logger().info(
-                f'Xoay xong sau {took:.1f} s, còn lệch {math.degrees(err):+.1f}° '
-                f'({r["tries"]} lần xoay bù)')
+            msg = (f'Xoay xong sau {took:.1f} s, còn lệch {math.degrees(err):+.1f}° '
+                   f'({r["tries"]} lần xoay bù: {", ".join(r["log"])})')
+            if abs(err) > self.rot_done:
+                self.get_logger().warn(msg + f' - CHƯA ĐẠT ≤ {math.degrees(self.rot_done):.0f}°')
+            else:
+                self.get_logger().info(msg)
             finish = r['finish']
             self.stop_rotation()
             if finish:
@@ -918,15 +1020,16 @@ class GridNavigator(Node):
         self.publish_markers()
         print(f"\n[LỖI] {reason}. Xe đã dừng — hãy nhập lệnh mới.")
 
-# Huong tai dich, theo SA BAN (khong phai la ban that):
-#   Dong = sang phai (cot tang, +x ban do)   Bac = len tren (hang tang, +y)
-#   Tay  = sang trai                          Nam = xuong duoi
+# Huong tai dich, theo SA BAN (khong phai la ban that), tinh tu truc sa ban
+# (yaw_deg trong grid_*.yaml) - grid_yaw cong them de ra goc tren ban do:
+#   Dong = sang phai (cot tang)   Bac = len tren (hang tang)
+#   Tay  = sang trai              Nam = xuong duoi
 HEADINGS = {'dong': 0.0, 'bac': math.pi / 2, 'tay': math.pi, 'nam': -math.pi / 2}
 HEADING_NAMES = {'dong': 'Đông', 'bac': 'Bắc', 'tay': 'Tây', 'nam': 'Nam'}
 
 
-def parse_heading(text):
-    """'D'/'Đ'/'dong'/'đông' ... -> (khoa, rad). '' -> (None, None). Sai -> ValueError."""
+def parse_heading(text, grid_yaw=0.0):
+    """'D'/'Đ'/'dong'/'đông' ... -> (khoa, rad he map). '' -> (None, None). Sai -> ValueError."""
     t = text.strip().lower()
     for a, b in (('đ', 'd'), ('ô', 'o'), ('ơ', 'o'), ('á', 'a'), ('ắ', 'a'), ('â', 'a'),
                  ('ă', 'a'), ('ấ', 'a'), ('ả', 'a'), ('à', 'a'), ('ạ', 'a')):
@@ -935,12 +1038,14 @@ def parse_heading(text):
         return None, None
     for key in HEADINGS:
         if t == key or t == key[0]:
-            return key, HEADINGS[key]
+            a = HEADINGS[key] + grid_yaw
+            return key, math.atan2(math.sin(a), math.cos(a))
     raise ValueError(f"không hiểu hướng '{text}'")
 
 
-def heading_name(yaw):
-    """Goc (rad, he map) -> ten huong gan nhat + do lech."""
+def heading_name(yaw, grid_yaw=0.0):
+    """Goc (rad, he map) -> ten huong sa ban gan nhat + do lech."""
+    yaw -= grid_yaw
     best = min(HEADINGS, key=lambda k: abs(math.atan2(math.sin(yaw - HEADINGS[k]),
                                                        math.cos(yaw - HEADINGS[k]))))
     d = math.degrees(math.atan2(math.sin(yaw - HEADINGS[best]), math.cos(yaw - HEADINGS[best])))
@@ -965,7 +1070,7 @@ def status_line_loop(nav, stop):
             parts.append("IMU: chưa có /imu/data")
         rx, ry, ryaw = nav.get_robot_pose()
         if rx is not None:
-            name, d = heading_name(ryaw)
+            name, d = heading_name(ryaw, nav.board.yaw)
             r, c = nav.get_closest_grid(rx, ry)
             parts.append(f"xe ({rx:+.2f}, {ry:+.2f}) hướng {math.degrees(ryaw):+6.1f}° "
                          f"≈ {name} {d:+.0f}°  gần ({r + 1},{c + 1})")
@@ -1045,7 +1150,7 @@ def input_thread(navigator):
                 h = input("Hướng tại đích - Đ(ông)=phải, T(ây)=trái, B(ắc)=lên, "
                           "N(am)=xuống, Enter=giữ hướng đi: ")
                 try:
-                    hkey, hyaw = parse_heading(h)
+                    hkey, hyaw = parse_heading(h, nav.board.yaw)
                     break
                 except ValueError as e:
                     print(f"Lỗi: {e}. Nhập D, T, B, N hoặc Enter.")

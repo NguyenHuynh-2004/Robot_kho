@@ -238,7 +238,9 @@ vào được nên không có điện trở nội. Vô hại — nhưng đúng n
 Encoder bên dưới: **nếu encoder của bạn là loại hở cực thu thì kênh B bắt buộc
 phải có điện trở 10kΩ kéo lên ngoài**, không thì odometry loạn.
 
-## B2. Nối dây — 14 chân
+## B2. Nối dây — 16 chân
+
+Sơ đồ đầy đủ (mở bằng trình duyệt): [docs/so_do_day_agv.html](so_do_day_agv.html).
 
 ### L298N (động cơ)
 
@@ -286,6 +288,26 @@ push-pull chạy tốt; nếu là loại hở cực thu thì hàn thêm 10kΩ l�
 Địa chỉ I2C mặc định trong firmware là `0x29`. Nếu Serial báo
 `khong thay BNO055`, đổi `BNO055_ADDR` thành `0x28`.
 
+### INA226 (đo điện áp, dòng pin) — bus I2C thứ hai
+
+| ESP32 | → INA226 |
+|---|---|
+| GPIO 19 | **SDA** |
+| GPIO 17 | **SCL** |
+| **3V3** | **VCC** (chung nguồn với ESP32) |
+| GND | **GND** |
+
+Đo: mắc **nối tiếp trên dây + của pin**, trước mọi điểm rẽ nhánh — **IN+** phía
+pin, **IN−** phía tải (L298N + mạch hạ áp). VBUS nối IN− (nhiều module nối sẵn).
+Địa chỉ `0x40` khi A0, A1 nối GND. Firmware **chưa** đọc INA226 (cần thêm `Wire1`).
+
+> ⚠️ **VCC 3,3 V, không 5 V.** Điện trở kéo lên SDA/SCL trên module nối vào VCC;
+> cấp 5 V thì GPIO19/17 nhận 5 V.
+>
+> Bus riêng thay vì chung với BNO055: BNO055 hay giữ xung nhịp I2C (clock
+> stretching). Shunt in **R100** (0,1 Ω) chỉ đo tới ≈ 0,82 A; muốn đo dòng động
+> cơ thì dùng **R010** (≈ 8,2 A).
+
 ### YDLIDAR X2/X2L — 4 chân
 
 | LiDAR | → ESP32 |
@@ -295,12 +317,13 @@ push-pull chạy tốt; nếu là loại hở cực thu thì hàn thêm 10kΩ l�
 | **Tx** | **GPIO 16** |
 | **PWM** | **GPIO 18** |
 
-GPIO 17 và 19 **để trống** — LiDAR này chỉ phát một chiều, không nhận lệnh
+LiDAR không cần chân TX của ESP32 — nó chỉ phát một chiều, không nhận lệnh
 (đã kiểm thư viện: `LDS_YDLIDAR_X2_X2L::start()` không ghi byte nào ra UART),
-và driver X2/X2L không dùng chân EN.
+và driver X2/X2L không dùng chân EN. GPIO 17 và 19 vì thế rảnh và nay dùng
+cho INA226.
 
 > Nếu sau này đổi sang **YDLIDAR X4**, driver đó *có* dùng chân EN — phải gán
-> `LIDAR_EN_PIN` một GPIO thật (17 hoặc 19 đang rảnh).
+> `LIDAR_EN_PIN` một GPIO thật: **GPIO 13** là chân vào/ra duy nhất còn trống.
 
 ### Nguồn
 
@@ -599,7 +622,20 @@ cd ~/robot_ws_3 && python3 grid_navigator.py --real
 ```
 Nhập lần lượt: **hàng** (1–5), **cột** (1–5), rồi **hướng tại đích**: `D` Đông = sang
 phải (cột tăng), `T` Tây = trái, `B` Bắc = lên (hàng tăng), `N` Nam = xuống, Enter =
-giữ hướng cạnh cuối. Xe tới đích (sai số ≤ 3 cm) rồi xoay về hướng đó (≤ 5°).
+giữ hướng cạnh cuối. Xe tới đích (sai số ≤ 3 cm) rồi xoay về hướng đó (≤ 3°,
+`done_deg` trong grid_real.yaml). Đây là sai số cho phép **tại đích**; lúc bám cạnh
+xe phải nằm sát vạch.
+
+**Xoay tại chỗ:** vòng kín theo **gyro** (/imu/data). Dừng lệnh khi góc còn lại
+≤ `coast` × ω_đo (`coast: 0.36` s, đo trên xe: sau lệnh 0 xe còn quay thêm 0.36 s × ω).
+Không dùng ω của /odom (giật 0 / 128°/s khi gyro thật 55°/s) và không dự đoán theo
+lệnh (bánh không theo kịp: lệnh 1.3 rad/s, xe chỉ quay ~1 rad/s). Còn lệch > 3° thì
+xoay bù (tối đa 5 lần); vẫn chưa được thì log cảnh báo `CHƯA ĐẠT`. Log
+`Xoay xong ... (1 lần xoay bù: +91°→+3.3° (ω max 56°/s), ...)` cho biết từng lần.
+Xe thật 2026-10-03: 9/9 lần xoay ≤ 2.8°, 4–6 s mỗi lần.
+
+**Tìm đường:** đường ít cạnh nhất; nếu nhiều đường dài bằng nhau thì chọn đường **ít
+chỗ rẽ nhất** (mỗi chỗ rẽ = một lần xoay ~5 s).
 
 **Dòng đầu Terminal 4** luôn hiện, kể cả lúc đang chờ nhập: góc IMU (quaternion
 BNO055), vị trí và hướng xe trên bản đồ (≈ Đông/Tây/Nam/Bắc), điểm lưới gần nhất.
@@ -656,6 +692,21 @@ python3 tools/set_grid_center.py            # ghi grid_real.yaml + vẽ lại �
 python3 tools/set_grid_center.py --x -0.5 --y 0.0   # hoặc nhập tay
 python3 tools/preview_grid.py               # chỉ vẽ lại ảnh
 ```
+
+**Góc sa bàn (`yaw_deg` trong grid_real.yaml).** Bản đồ SLAM có hướng tuỳ ý (theo
+lúc bắt đầu vẽ), nên tường và vạch gạch thật lệch vài độ so với trục x/y bản đồ —
+bản đồ hiện tại lệch **−5.0°**. Nếu sa bàn vẽ thẳng trục bản đồ thì trên RViz xe
+bám cạnh đúng nhưng ngoài sàn xe lệch khỏi vạch (5 cm ở cách tâm 0.6 m, 10 cm ở
+1.2 m). Đo lại góc khi vẽ bản đồ mới:
+```bash
+python3 tools/set_grid_center.py --yaw-walls --keep-center   # chỉ đo góc tường
+python3 tools/set_grid_center.py --yaw-walls                 # góc + tâm theo xe
+```
+Hướng Đ/T/B/N lúc nhập đích cũng tính theo trục sa bàn đã xoay.
+
+**Đặt tâm cho khớp vạch:** đặt tâm xe đúng giao điểm vạch (hàng 3, cột 3), rồi chạy
+`python3 tools/set_grid_center.py --dry-run` để xem tâm cũ lệch bao nhiêu; nếu
+lệch > 2 cm thì chạy lại không có `--dry-run`.
 
 ---
 

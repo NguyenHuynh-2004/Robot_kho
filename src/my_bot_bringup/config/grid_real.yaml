@@ -36,9 +36,16 @@ edge_clearance: 0.20
 rotate:
   start_deg: 10      # dau xe lech huong doan hon muc nay thi xoay truoc
   stop_deg: 2        # du doan con lech duoi muc nay -> ra lenh dung
-  done_deg: 5        # dung han ma con lech hon -> xoay bu (toi da 3 lan)
+  done_deg: 3        # dung han ma con lech hon -> xoay bu (toi da 3 lan); = sai so goc cho phep o dich
   max_speed: 1.3     # rad/s
   min_speed: 0.7     # rad/s - cham hon thi banh ket o ma sat tinh
   decel: 2.5         # rad/s2 - giam toc khi gan dich: v = sqrt(2*decel*goc)
   lag: 0.3           # s - tre lenh -> banh. Van vuot goc: tang; dung som qua: giam
   motor_tau: 0.12    # s - quan tinh dong co sau khi lenh toi
+  # Xe con quay them coast * w_do_duoc sau khi ra lenh 0 (do tren xe 2026-10-03,
+  # firmware Kf 3.0: 0.36 s). Dung thay cho lag/motor_tau (mo hinh theo lenh
+  # dung som ~20 do vi xe chi quay duoc 0.86 rad/s khi lenh 1.3). 0 = mo hinh cu.
+  coast: 0.36
+  # Xung vong ho cho goc <= pulse_max_deg (0 = tat). Tren xe that xung 0.7 rad/s
+  # chi quay ~6 do/s, nhieu +-2.6 do -> khong dat 3 do, nen tat.
+  pulse_max_deg: 0

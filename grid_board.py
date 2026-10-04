@@ -6,6 +6,7 @@ tren ban do, va kiem tra diem/canh nao qua sat vat can.
 Ben trong dung chi so tu 0 (r, c); NGUOI DUNG thay va nhap tu 1:
     hang = r + 1 (1 = duoi cung, y nho nhat)
     cot  = c + 1 (1 = ben trai,  x nho nhat)
+(khi yaw_deg != 0 thi "duoi/trai" tinh theo truc sa ban da xoay)
 """
 import math
 import os
@@ -46,9 +47,11 @@ class Board:
         if not (1 <= self.center_row <= self.rows and 1 <= self.center_col <= self.cols):
             raise ValueError(f"{path}: tam (hang {self.center_row}, cot {self.center_col}) "
                              f"nam ngoai sa ban {self.rows}x{self.cols}")
-        # Toa do cua diem (hang 1, cot 1)
-        self.x0 = self.center_x - (self.center_col - 1) * self.spacing
-        self.y0 = self.center_y - (self.center_row - 1) * self.spacing
+        # Goc cua truc "cot tang" so voi truc x ban do (tuy chon, mac dinh 0).
+        # Ban do SLAM co huong tuy y (theo luc bat dau ve) nen vach gach that
+        # thuong lech vai do so voi truc x/y ban do.
+        self.yaw = math.radians(float(cfg.get('yaw_deg', 0.0)))
+        self._cos, self._sin = math.cos(self.yaw), math.sin(self.yaw)
 
     @classmethod
     def load(cls, path):
@@ -58,13 +61,25 @@ class Board:
     # ------------------------------------------------------------------
     def xy(self, r, c):
         """Toa do (x, y) tren ban do cua diem (r, c) tinh tu 0."""
-        return self.x0 + c * self.spacing, self.y0 + r * self.spacing
+        u = (c - (self.center_col - 1)) * self.spacing      # doc theo hang (cot tang)
+        v = (r - (self.center_row - 1)) * self.spacing      # doc theo cot (hang tang)
+        return (self.center_x + u * self._cos - v * self._sin,
+                self.center_y + u * self._sin + v * self._cos)
 
     def closest(self, x, y):
         """Diem (r, c) gan (x, y) nhat, ep vao trong sa ban."""
-        c = round((x - self.x0) / self.spacing)
-        r = round((y - self.y0) / self.spacing)
+        dx, dy = x - self.center_x, y - self.center_y
+        u = dx * self._cos + dy * self._sin
+        v = -dx * self._sin + dy * self._cos
+        c = round(u / self.spacing) + self.center_col - 1
+        r = round(v / self.spacing) + self.center_row - 1
         return min(max(r, 0), self.rows - 1), min(max(c, 0), self.cols - 1)
+
+    def bounds(self):
+        """(min_x, max_x, min_y, max_y) cua 4 goc sa ban tren ban do."""
+        corners = [self.xy(r, c) for r in (0, self.rows - 1) for c in (0, self.cols - 1)]
+        xs, ys = zip(*corners)
+        return min(xs), max(xs), min(ys), max(ys)
 
     def nodes(self):
         for r in range(self.rows):

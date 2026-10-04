@@ -210,7 +210,10 @@ const bool INVERT_ENC_R   = false;
 // He so lay tu motor_1_wheel_l298n.ino (ban L298N, KHONG phai ban BTS7960).
 // L298N sut ap ~2V qua cau H nen deadband lon hon han: 30 thay vi 3.
 // Van nen do lai tren xe cua ban, xem Phu luc B.
-float Kf    = 1.8f;                  // feedforward: PWM tren moi RPM
+// Kf 1.8 do luc banh quay KHONG TAI. Tren san (2026-10-03, pin 12.08 V): chay
+// thang PWM ~193 chi duoc 29 v/p (~5.6 PWM/v/p), xoay tai cho con nang hon
+// -> banh chi dat 55% toc do lenh, lenh xoay < 0.8 rad/s banh dung im.
+float Kf    = 3.0f;                  // feedforward: PWM tren moi RPM
 float Kp    = 0.30f;
 float Ki    = 0.04f;                 // 0.02 -> 0.04: tich nhanh hon, nhung da kep o INTEGRAL_MAX
 float Kd    = 0.01f;
@@ -223,8 +226,10 @@ int   breakawayPWM  = 40;
 #define BREAKAWAY_RPM   3.0f
 // Tich phan chi duoc gom toi +-INTEGRAL_MAX PWM (truoc: +-255 = ca dai PWM).
 // Gom lon trong luc banh ket thi luc banh thoat ra no van con day -> banh vot
-// qua toc do dat -> "cuoi qua lon", xe xoay lo goc.
-#define INTEGRAL_MAX    80.0f
+// qua toc do dat -> "cuoi qua lon", xe xoay lo goc. Nhung 80 thi tren san
+// PWM khong len noi muc can (ff + 80 ~ 160-190) -> banh cham han lenh. 200:
+// du bu tai tren san; vot toc da co xa 20%/chu ky khi banh nhanh hon dat.
+#define INTEGRAL_MAX    200.0f
 float lpfAlpha    = 0.2f;            // loc thong thap cho RPM do duoc
 float maxAccelRPMPerSec = 320.0f;    // ramp, chong giat va sut ap
 
