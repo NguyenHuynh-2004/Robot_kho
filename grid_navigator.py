@@ -15,16 +15,17 @@ import threading
 import sys
 import time
 import math
+import numpy as np
 
 from grid_board import Board, config_path, edge_key as board_edge_key
 
 class GridNavigator(Node):
-    def __init__(self, use_sim_time=True, grid_file=None):
+    def __init__(self, use_sim_time=True, grid_file=None, node_name='grid_navigator'):
         # use_sim_time truoc day bi dong cung = True. Tren xe that khong co
         # /clock nen node se treo vinh vien ma khong bao loi gi.
         #   Mo phong: python3 grid_navigator.py
         #   Xe that : python3 grid_navigator.py --real
-        super().__init__('grid_navigator', parameter_overrides=[
+        super().__init__(node_name, parameter_overrides=[
             rclpy.parameter.Parameter('use_sim_time', rclpy.Parameter.Type.BOOL, use_sim_time)
         ])
 
@@ -104,9 +105,11 @@ class GridNavigator(Node):
             
         self.blocked_nodes = [[False] * self.cols for _ in range(self.rows)]
         self.blocked_edges = set()
+        # Ten TUONG DOI: xe don (namespace goc) van la /local_costmap/costmap,
+        # nhieu xe (fleet_agent trong /agv1) thanh /agv1/local_costmap/costmap.
         self.costmap_sub = self.create_subscription(
             OccupancyGrid,
-            '/local_costmap/costmap',
+            'local_costmap/costmap',
             self.costmap_callback,
             10)
 
@@ -250,17 +253,13 @@ class GridNavigator(Node):
         grid_min_x, grid_max_x = min_x - pad, max_x + pad
         grid_min_y, grid_max_y = min_y - pad, max_y + pad
 
-        obstacles = []
-        for idx, val in enumerate(msg.data):
-            if val <= self.lethal_threshold:
-                continue
-            cx = idx % width
-            cy = idx // width
-            px = origin_x + (cx + 0.5) * resolution
-            py = origin_y + (cy + 0.5) * resolution
-            if grid_min_x <= px <= grid_max_x and grid_min_y <= py <= grid_max_y:
-                obstacles.append((px, py))
-        return obstacles
+        # numpy: duyet tung o bang Python (120x120 o, 2 lan/s) ton ~60% mot nhan
+        data = np.asarray(msg.data, dtype=np.int16)
+        idx = np.nonzero(data > self.lethal_threshold)[0]
+        px = origin_x + (idx % width + 0.5) * resolution
+        py = origin_y + (idx // width + 0.5) * resolution
+        keep = (px >= grid_min_x) & (px <= grid_max_x) & (py >= grid_min_y) & (py <= grid_max_y)
+        return list(zip(px[keep].tolist(), py[keep].tolist()))
 
     def costmap_callback(self, msg: OccupancyGrid):
         if not self.map_received:
@@ -541,10 +540,9 @@ class GridNavigator(Node):
     # truoc (bang xy_goal_tolerance cua Nav2: sai so dich 3 cm).
     SNAP_DIST = 0.03
 
-    # Xoay tai cho: xe coi la DA QUAY khi /odom do duoc |w| tu muc nay (rad/s,
-    # nhieu gyro luc dung yen ~0.01); so lan xoay bu toi da.
-    ROT_MOVING = 0.15
+    # Xoay tai cho: so lan xoay bu toi da; thoi gian ra lenh ngan nhat moi lan (s)
     ROT_TRIES = 5
+    ROT_MIN_CMD_S = 0.15
     # Xung dai nhat bi ma sat nuot ma van chap nhan (s)
     ROT_T0_MAX = 0.6
 
@@ -926,7 +924,7 @@ class GridNavigator(Node):
         err = self.normalize_angle(r['target'] - yaw)
         if r.get('err0') is None:
             # Bat dau mot lan xoay (lan dau hoac xoay bu)
-            r['err0'], r['yaw0'], r['wpeak'] = err, yaw, 0.0
+            r['err0'], r['yaw0'], r['wpeak'], r['t_turn'] = err, yaw, 0.0, now
             if abs(err) <= self.rot_pulse_max:
                 # Goc nho: XUNG vong ho. Lenh toi banh tre ~0.3 s nen vong kin
                 # khong dung chinh xac duoc goc nho (luc thay xe nhuc nhich da
@@ -954,14 +952,16 @@ class GridNavigator(Node):
                 # do THAT nen dung ca khi banh yeu khong theo kip lenh (lenh 1.3
                 # rad/s, xe chi quay 0.86) - tinh theo lenh thi dung som ~20 do.
                 pred = err - self.rot_coast * self.rot_w()
-            elif r['wpeak'] >= self.ROT_MOVING:
-                # Mo hinh cu: lenh trong rot_lag giay qua chac chan toi banh.
-                # Chi tru khi xe DA QUAY THAT (dang dung yen thi lenh ngan bi
-                # ma sat tinh nuot - tru vao thi dung som ma xe khong nhuc nhich).
-                pred = err - self.pending_rotation() - self.rot_w() * self.rot_tau
             else:
-                pred = err
-            if abs(pred) <= self.rot_tol or pred * err < 0:
+                # Mo hinh theo LENH (coast: 0): lenh trong rot_lag giay qua chac
+                # chan toi banh. Dung cho xe ao (khong ma sat). Xe that banh yeu,
+                # ma sat tinh nuot lenh ngan -> xoay bu dung im: dung coast > 0.
+                pred = err - self.pending_rotation() - self.rot_w() * self.rot_tau
+            # Ra lenh it nhat ROT_MIN_CMD_S: xoay bu 3-4 do chi ra lenh mot nhip
+            # 50 ms - velocity_smoother chua kip tang toc qua vung chet dong co,
+            # xe dung im, lan bu nao cung con nguyen goc lech.
+            held = (now - r['t_turn']).nanoseconds * 1e-9
+            if (abs(pred) <= self.rot_tol or pred * err < 0) and held >= self.ROT_MIN_CMD_S:
                 self.publish_w(0.0)
                 r['phase'], r['t'] = 'settle', now
                 return

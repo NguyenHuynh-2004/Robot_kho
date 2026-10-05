@@ -687,6 +687,72 @@ Hướng Đ/T/B/N lúc nhập đích cũng tính theo trục sa bàn đã xoay.
 `python3 tools/set_grid_center.py --dry-run` để xem tâm cũ lệch bao nhiêu; nếu
 lệch > 2 cm thì chạy lại không có `--dry-run`.
 
+## Hai xe trên sa bàn (hiện chỉ mô phỏng)
+
+```
+traffic_manager.py ──/fleet/agv1/cmd──▶ fleet_agent.py (/agv1) ──▶ Nav2 /agv1 ──▶ xe 1
+  lập đường, giữ chỗ,  ◀──/fleet/status──  chạy tới ô được phép,
+  gỡ kẹt               ──/fleet/agv2/cmd──▶ fleet_agent.py (/agv2) ──▶ Nav2 /agv2 ──▶ xe 2
+```
+
+- `traffic_manager.py`: nhận đích, lập đường cho từng xe, **giữ chỗ** (xe chỉ được đi
+  tới ô đã được cấp, xem trước 2 ô), phát hiện và gỡ kẹt.
+- `fleet_agent.py`: kế thừa `grid_navigator.py` (đoạn thẳng trên cạnh, bộ xoay), chỉ
+  chạy tới ô được phép; được thêm ô cùng hướng thì nối dài đoạn đang chạy (không
+  dừng ở mỗi ô). Bỏ vật cản trong 25 cm quanh xe khác (LiDAR thấy xe kia — việc của
+  traffic_manager); vật cản thật trên đường → dừng, báo `blocked`.
+
+**Quy tắc**
+1. Hai xe không cùng đích. Được nhận ô xe kia đang **đỗ** làm đích: xe đỗ né đi ngay.
+2. Đường ít cạnh nhất, ít rẽ (0.3 cạnh/lần rẽ); đi trên đường còn lại của xe kia
+   +2/ô, đi ngược chiều xe kia trên cùng cạnh +6/cạnh. Xe đang đỗ là vật cản cứng.
+3. Xe chiếm mọi ô cách nó < nửa ô + bán kính xe (giữa hai ô thì chiếm cả hai).
+4. Hai xe xin cùng một ô: **xe gần đích hơn** (ít ô còn lại) được trước; bằng nhau
+   thì xe 1.
+5. Chờ > 3 s vì bị xe kia chặn: xe kia **đỗ / mất liên lạc** → đi vòng tránh mọi ô
+   nó giữ, không được thì xe đỗ né sang ô trống; **chờ nhau** hoặc xe kia **đứng yên
+   hẳn** > 3 s → xe xa đích hơn nhường (đi vòng, không được thì né sang ô trống
+   rồi quay lại; không được nữa thì đổi vai; vẫn không được thì dừng cả hai, báo
+   lỗi). Xe kia **đang chạy / đang xoay** thì cứ chờ.
+6. Mất liên lạc: agent không nhận lệnh 1 s → tự dừng xe; traffic_manager không
+   nhận trạng thái 1 s → giữ nguyên các ô xe đó đang giữ, xe khác không vào.
+7. Vật cản thật trên đường / Nav2 thất bại → lập lại đường từ chỗ xe dừng (tối đa 5
+   lần mỗi 2 s, rồi bỏ lộ trình, báo cần người).
+
+**Chạy mô phỏng** (ROS_DOMAIN_ID 87, không đụng xe thật; xe ảo + Nav2 thật):
+```bash
+cd ~/robot_ws_3
+tools/fleet_sim.sh up                     # map_server, 2 xe ảo, 2 Nav2, 2 fleet_agent (~40 s)
+ROS_DOMAIN_ID=87 python3 traffic_manager.py agv1 agv2
+#   nhập:  1 5 5 d   (xe 1 tới hàng 5 cột 5, quay Đông)
+#          2 1 1     (xe 2 tới hàng 1 cột 1, giữ hướng)
+#          s         (dừng tất cả)     q (thoát)
+tools/fleet_sim.sh down
+```
+Vị trí đầu: `AGV1="3 1 0" AGV2="3 5 180" tools/fleet_sim.sh up` (hàng cột hướng_độ).
+Vật cản ảo: `ROS_DOMAIN_ID=87 ros2 topic pub --once /sim/obstacles std_msgs/msg/String "{data: 'x,y'}"`.
+RViz (domain 87): `/fleet/markers` — đường còn lại và ô đang giữ của từng xe.
+
+Mô phỏng dùng bản sao `grid_real.yaml` với `coast: 0` (mô hình xoay theo lệnh): xe ảo
+không có ma sát, số `coast: 0.36` đo trên xe thật làm xe ảo vọt góc.
+
+**Đã kiểm trên mô phỏng (2026-10-05)** — mọi kịch bản: hai xe không lúc nào gần nhau
+dưới 57 cm (tâm–tâm; xe Ø 18 cm), tới đích lệch 1.4–2.0 cm, lệch cạnh lúc chạy ≤ 2.5 cm.
+
+| Kịch bản | Diễn biến |
+|---|---|
+| Đổi chỗ trên hàng 3 | xe kia đang đỗ ở đích → né ngay; xe 2 tự đi vòng hàng 4 |
+| Cắt ngang ở (3,3) | xe 2 dừng ở (2,3) chờ xe 1 qua (3,3) rồi đi |
+| Đối đầu (`--no-avoid`) | kẹt ở (3,3)/(3,4) → xe xa đích hơn né sang (4,4), xe kia qua rồi đi tiếp |
+| Đích là chỗ xe kia đỗ | xe đỗ né sang ô bên, ở lại đó |
+| Ưu tiên gần đích | xe còn 2 ô vào (3,2) trước xe còn 3 ô; xe kia chờ, khi xe trước đỗ thì đi vòng |
+| Tắt traffic_manager | cả hai xe tự dừng sau ~2 s |
+| Tắt agent xe 2 giữa ô (3,3) | báo mất liên lạc 1 s; xe 1 đi vòng tránh mọi ô xe 2 giữ; bật lại agent → xe 2 chạy nốt |
+| Vật cản bất ngờ ở (3,4) | dừng < 1 s, lập đường vòng hàng 4, cách vật cản ≥ 58 cm |
+
+Chưa kiểm trên xe thật (mới có một xe). Khi có xe thứ hai: mỗi xe một ESP32
+`ROBOT_ID` riêng, một AMCL + Nav2 riêng trong namespace, chung bản đồ.
+
 ---
 
 ## Bảng tra sự cố
