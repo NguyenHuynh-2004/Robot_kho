@@ -159,7 +159,7 @@ code{font-family:var(--f-mono);font-size:.88em;background:var(--chip);padding:1p
   <path class="w wuart" d="M220 362 H432"/>
   <polygon class="fuart" points="440,362 430,357 430,367"/>
   <text class="lbl luart" x="330" y="354" text-anchor="middle">UART2 · 115200</text>
-  <!-- GPIO18 -> PWM -->
+  <!-- GPIO4 -> PWM -->
   <path class="w wuart" d="M440 387 H228"/>
   <polygon class="fuart" points="220,387 230,382 230,392"/>
   <text class="lbl luart" x="330" y="404" text-anchor="middle">PWM tốc độ quay</text>
@@ -195,7 +195,7 @@ code{font-family:var(--f-mono);font-size:.88em;background:var(--chip);padding:1p
   <!-- chân trái -->
   <text class="pin" x="448" y="208">VIN 5V</text>
   <text class="pin" x="448" y="366">GPIO16 RX2</text>
-  <text class="pin" x="448" y="391">GPIO18</text>
+  <text class="pin" x="448" y="391">GPIO4</text>
   <text class="pin" x="448" y="524">3V3</text>
   <text class="pin" x="448" y="579">GPIO21 SDA</text>
   <text class="pin" x="448" y="604">GPIO22 SCL</text>
@@ -207,10 +207,10 @@ code{font-family:var(--f-mono);font-size:.88em;background:var(--chip);padding:1p
   <text class="pin" x="692" y="284" text-anchor="end">GPIO33</text>
   <text class="pin" x="692" y="309" text-anchor="end">GPIO32</text>
   <text class="pin" x="692" y="438" text-anchor="end">GPIO23</text>
-  <text class="pin" x="692" y="463" text-anchor="end">GPIO34</text>
+  <text class="pin" x="692" y="463" text-anchor="end">GPIO18</text>
   <text class="pin" x="692" y="488" text-anchor="end">3V3</text>
-  <text class="pin" x="692" y="568" text-anchor="end">GPIO4</text>
-  <text class="pin" x="692" y="593" text-anchor="end">GPIO35</text>
+  <text class="pin" x="692" y="568" text-anchor="end">GPIO19</text>
+  <text class="pin" x="692" y="593" text-anchor="end">GPIO17</text>
   <text class="pin" x="692" y="618" text-anchor="end">3V3</text>
   <path class="g" d="M570 670 V682"/>
   <path class="g" d="M561 682 H579 M564 686 H576 M567 690 H573"/>
@@ -362,7 +362,7 @@ code{font-family:var(--f-mono);font-size:.88em;background:var(--chip);padding:1p
 
 <section aria-labelledby="h-pins">
   <h2 id="h-pins">Bảng chân ESP32</h2>
-  <p>14 chân tín hiệu, cộng nguồn. Firmware tránh GPIO 0, 2, 5, 12, 15 (chân quyết định chế độ khởi động) và 6–11 (nối với flash). GPIO 17 và 19 đang trống.</p>
+  <p>14 chân tín hiệu, cộng nguồn. Firmware tránh GPIO 0, 2, 5, 12, 15 (chân quyết định chế độ khởi động) và 6–11 (nối với flash). GPIO 13 đang trống (vào/ra), 36 và 39 chỉ vào.</p>
   <div class="tablewrap">
   <table>
     <thead><tr><th>ESP32</th><th>Nối tới</th><th>Chức năng</th><th>Ghi chú</th></tr></thead>
@@ -375,16 +375,16 @@ code{font-family:var(--f-mono);font-size:.88em;background:var(--chip);padding:1p
       <tr><td class="gp"><span class="dot" style="color:var(--wctl)"></span>GPIO33</td><td>IN3</td><td>chiều bánh phải</td><td></td></tr>
       <tr><td class="gp"><span class="dot" style="color:var(--wctl)"></span>GPIO32</td><td>IN4</td><td>chiều bánh phải</td><td></td></tr>
       <tr class="group"><td colspan="4">Encoder</td></tr>
-      <tr><td class="gp"><span class="dot" style="color:var(--wenc)"></span>GPIO23</td><td>Encoder trái A</td><td>đếm xung</td><td>dây vàng</td></tr>
-      <tr><td class="gp"><span class="dot" style="color:var(--wenc)"></span>GPIO34</td><td>Encoder trái B</td><td>đếm xung</td><td>chỉ vào, không có điện trở kéo lên nội; dây xanh lá</td></tr>
-      <tr><td class="gp"><span class="dot" style="color:var(--wenc)"></span>GPIO4</td><td>Encoder phải A</td><td>đếm xung</td><td>dây vàng</td></tr>
-      <tr><td class="gp"><span class="dot" style="color:var(--wenc)"></span>GPIO35</td><td>Encoder phải B</td><td>đếm xung</td><td>chỉ vào, không có điện trở kéo lên nội; dây xanh lá</td></tr>
+      <tr><td class="gp"><span class="dot" style="color:var(--wenc)"></span>GPIO23</td><td>Encoder trái A (A_T)</td><td>đếm xung</td><td>kéo lên nội; dây vàng</td></tr>
+      <tr><td class="gp"><span class="dot" style="color:var(--wenc)"></span>GPIO18</td><td>Encoder trái B (B_T)</td><td>đếm xung</td><td>kéo lên nội; dây xanh lá</td></tr>
+      <tr><td class="gp"><span class="dot" style="color:var(--wenc)"></span>GPIO19</td><td>Encoder phải A (A_P)</td><td>đếm xung</td><td>kéo lên nội; dây vàng</td></tr>
+      <tr><td class="gp"><span class="dot" style="color:var(--wenc)"></span>GPIO17</td><td>Encoder phải B (B_P)</td><td>đếm xung</td><td>kéo lên nội; UART2 không dùng chân TX nên 17 rảnh</td></tr>
       <tr class="group"><td colspan="4">BNO055</td></tr>
       <tr><td class="gp"><span class="dot" style="color:var(--wi2c)"></span>GPIO21</td><td>SDA</td><td>I2C dữ liệu</td><td>địa chỉ 0x29 (0x28 nếu chân ADR nối GND)</td></tr>
       <tr><td class="gp"><span class="dot" style="color:var(--wi2c)"></span>GPIO22</td><td>SCL</td><td>I2C xung nhịp</td><td></td></tr>
       <tr class="group"><td colspan="4">YDLIDAR X2</td></tr>
       <tr><td class="gp"><span class="dot" style="color:var(--wuart)"></span>GPIO16</td><td>Tx của LiDAR</td><td>UART2 RX</td><td>LiDAR chỉ phát, không nhận lệnh</td></tr>
-      <tr><td class="gp"><span class="dot" style="color:var(--wuart)"></span>GPIO18</td><td>PWM của LiDAR</td><td>tốc độ mô-tơ quét</td><td>10 kHz, 11 bit</td></tr>
+      <tr><td class="gp"><span class="dot" style="color:var(--wuart)"></span>GPIO4</td><td>PWM của LiDAR</td><td>tốc độ mô-tơ quét</td><td>10 kHz, 11 bit</td></tr>
       <tr class="group"><td colspan="4">Nguồn</td></tr>
       <tr><td class="gp"><span class="dot" style="color:var(--w5)"></span>VIN</td><td>OUT mạch hạ áp</td><td>5 V nuôi ESP32</td><td>không cắm USB cùng lúc</td></tr>
       <tr><td class="gp"><span class="dot" style="color:var(--w33)"></span>3V3</td><td>BNO055 VIN, VCC hai encoder</td><td>3,3 V</td><td>encoder cấp 5 V sẽ làm hỏng GPIO</td></tr>
@@ -444,7 +444,7 @@ code{font-family:var(--f-mono);font-size:.88em;background:var(--chip);padding:1p
         <dt>Tốc độ thực tế</dt><dd>chạy thẳng đạt 90% lệnh; xoay tại chỗ tối đa ≈ 1 rad/s<span class="src">đo</span></dd>
       </dl>
       <div class="note">
-        <span><b>Bắt buộc:</b> encoder lấy nguồn 3,3 V, không phải 5 V. GPIO34/35 không có điện trở kéo lên; encoder loại hở cực thu phải hàn thêm 10 kΩ lên 3,3 V.</span>
+        <span><b>Bắt buộc:</b> encoder lấy nguồn 3,3 V, không phải 5 V. Firmware bật điện trở kéo lên nội ở 4 chân encoder (23/18/19/17), dùng được cả encoder hở cực thu.</span>
         <span>Đổi dây ở đầu ra L298N thì phải đổi lại cả bốn cờ <code>INVERT_*</code> cùng lúc.</span>
       </div>
     </article>
@@ -468,7 +468,7 @@ code{font-family:var(--f-mono);font-size:.88em;background:var(--chip);padding:1p
       <h3>YDLIDAR X2<span class="code">LiDAR · 4 chân</span></h3>
       <p class="role">Quét 360° để AMCL so với bản đồ và để Nav2 thấy vật cản.</p>
       <dl class="spec">
-        <dt>Chân</dt><dd>VCC 5 V, GND, Tx → GPIO16, PWM ← GPIO18<span class="src">fw</span></dd>
+        <dt>Chân</dt><dd>VCC 5 V, GND, Tx → GPIO16, PWM ← GPIO4<span class="src">fw</span></dd>
         <dt>UART</dt><dd>UART2 của ESP32, 115200 baud, chỉ chiều LiDAR → ESP32<span class="src">fw</span></dd>
         <dt>PWM mô-tơ</dt><dd>10 kHz, 11 bit<span class="src">fw</span></dd>
         <dt>Tốc độ quét</dt><dd>7,6–9 vòng/s trên <code>/scan</code><span class="src">đo</span></dd>
@@ -476,7 +476,7 @@ code{font-family:var(--f-mono);font-size:.88em;background:var(--chip);padding:1p
         <dt>Vị trí lắp</dt><dd>URDF: tâm xe, cao 7,5 cm. Đo từ các lần xoay: lệch trục quay ≈ 1,1 cm về phía trước<span class="src">đo</span></dd>
       </dl>
       <div class="note">
-        <span><b>Lưu ý:</b> VCC lấy 5 V từ nguồn ngoài, không từ ESP32. Chân TX và EN của ESP32 không dùng; nếu đổi sang X4 thì phải gán chân EN (GPIO17 hoặc 19).</span>
+        <span><b>Lưu ý:</b> VCC lấy 5 V từ nguồn ngoài, không từ ESP32. Chân TX và EN của ESP32 không dùng; nếu đổi sang X4 thì phải gán chân EN (GPIO13).</span>
       </div>
     </article>
 

@@ -153,14 +153,15 @@ const int R_IN1_PIN = 33;   // banh PHAI
 const int R_IN2_PIN = 32;
 const int R_ENB_PIN = 14;   // PWM banh phai
 
-// --- Encoder ---
-// GPIO 34/35 chi vao (input-only) va KHONG co dien tro keo len noi bo.
-// Encoder Hall kieu push-pull chay tot; neu encoder cua ban la ho cuc thu
-// (open-collector) thi phai han them dien tro keo len 10k ra 3V3.
-const int ENC_L_A_PIN = 23;
-const int ENC_L_B_PIN = 34;
-const int ENC_R_A_PIN = 4;
-const int ENC_R_B_PIN = 35;
+// --- Encoder --- (theo mach in 2026-10-05: A_T, B_T, A_P, B_P)
+// Truoc la B trai GPIO34, A phai GPIO4, B phai GPIO35. 34/35 chi vao va KHONG
+// co dien tro keo len noi bo; 18/19/17 thi co, encoder ho cuc thu cung chay.
+// GPIO17 la TX mac dinh cua UART2 nhung LiDAR mo UART2 voi TX = -1 (core 3.x
+// chi gan chan mac dinh khi CA RX lan TX deu -1) nen 17 ranh cho encoder.
+const int ENC_L_A_PIN = 23;   // A_T
+const int ENC_L_B_PIN = 18;   // B_T
+const int ENC_R_A_PIN = 19;   // A_P
+const int ENC_R_B_PIN = 17;   // B_P
 
 // --- BNO055 (I2C) ---
 const int I2C_SDA_PIN = 21;
@@ -173,7 +174,7 @@ const int I2C_SCL_PIN = 22;
 // chan TX cua ESP32, cung khong can chan EN.
 //   -1 = khong cap phat chan nao (HardwareSerial::begin va callback deu hieu).
 const int8_t LIDAR_RX_PIN  = 16;   // ESP32 RX <- Tx cua LiDAR   (BAT BUOC)
-const int8_t LIDAR_PWM_PIN = 18;   // -> chan PWM cua LiDAR      (BAT BUOC)
+const int8_t LIDAR_PWM_PIN = 4;    // -> chan PWM cua LiDAR      (BAT BUOC; truoc la 18)
 const int8_t LIDAR_TX_PIN  = -1;   // LiDAR khong co chan Rx     -> bo trong
 const int8_t LIDAR_EN_PIN  = -1;   // driver X2/X2L khong dung   -> bo trong
 
@@ -1435,6 +1436,10 @@ void setup() {
   print_reset_reason();
 
   // --- Encoder ---
+  // Thu vien mac dinh KEO XUONG. Chan 18/19/17/23 co dien tro noi: keo LEN
+  // hop ca encoder push-pull lan ho cuc thu (keo xuong ~45k chia ap voi tro
+  // keo len tren mach encoder, muc cao chi con ~2.7 V).
+  ESP32Encoder::useInternalWeakPullResistors = puType::up;
   encL.attachHalfQuad(ENC_L_A_PIN, ENC_L_B_PIN);
   encR.attachHalfQuad(ENC_R_A_PIN, ENC_R_B_PIN);
   encL.setFilter(1023);

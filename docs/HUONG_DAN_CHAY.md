@@ -233,10 +233,9 @@ E (318) gpio: gpio_pulldown_en(123): GPIO number error (input-only pad has no in
 E (324) gpio: gpio_pullup_en(85):   GPIO number error (input-only pad has no internal PU)
 ```
 
-Thư viện ESP32Encoder cố bật điện trở kéo trên GPIO 34/35, mà hai chân đó chỉ
-vào được nên không có điện trở nội. Vô hại — nhưng đúng như cảnh báo ở mục
-Encoder bên dưới: **nếu encoder của bạn là loại hở cực thu thì kênh B bắt buộc
-phải có điện trở 10kΩ kéo lên ngoài**, không thì odometry loạn.
+Hai dòng này chỉ có ở firmware cũ (encoder trên GPIO 34/35 — chân chỉ-vào,
+không có điện trở nội). Từ mạch in 2026-10-05 encoder dùng 23/18/19/17, firmware
+bật điện trở **kéo lên** nội cho cả bốn chân nên không còn lỗi này.
 
 ## B2. Nối dây — 14 chân
 
@@ -259,22 +258,23 @@ Bánh trái → **OUT1/OUT2**, bánh phải → **OUT3/OUT4**.
 > ⚠️ **Tháo cả hai jumper ENA và ENB.** Còn jumper thì hai chân đó bị chốt
 > HIGH, PWM vô tác dụng, xe chỉ chạy full tốc hoặc dừng.
 
-### Encoder (2 kênh)
+### Encoder (2 kênh) — theo mạch in 2026-10-05
 
-| ESP32 | → Encoder | Dây |
-|---|---|---|
-| GPIO 23 | **A** bánh trái | vàng |
-| GPIO 34 | **B** bánh trái | xanh lá |
-| GPIO 4 | **A** bánh phải | vàng |
-| GPIO 35 | **B** bánh phải | xanh lá |
-| **3V3** | VCC cả hai | |
-| GND | GND cả hai | |
+| ESP32 | → Encoder | Nhãn mạch in | Dây |
+|---|---|---|---|
+| GPIO 23 | **A** bánh trái | A_T | vàng |
+| GPIO 18 | **B** bánh trái | B_T | xanh lá |
+| GPIO 19 | **A** bánh phải | A_P | vàng |
+| GPIO 17 | **B** bánh phải | B_P | xanh lá |
+| **3V3** | VCC cả hai | | |
+| GND | GND cả hai | | |
 
 > ⚠️ **Cấp encoder từ 3V3, KHÔNG phải 5V.** Encoder xuất tín hiệu ở mức bằng
 > điện áp nguồn của nó; 5V vượt ngưỡng 3.3V và làm chết cổng GPIO.
 
-GPIO 34/35 chỉ vào được và không có điện trở kéo lên nội bộ. Encoder Hall
-push-pull chạy tốt; nếu là loại hở cực thu thì hàn thêm 10kΩ lên 3V3.
+Firmware bật điện trở **kéo lên** nội cho bốn chân encoder: chạy với cả encoder
+push-pull lẫn hở cực thu. (Bản cũ dùng GPIO 34/35 — không có điện trở nội.)
+GPIO 17 là TX mặc định của UART2, nhưng LiDAR mở UART2 với TX = -1 nên chân rảnh.
 
 ### BNO055 (IMU)
 
@@ -295,14 +295,14 @@ push-pull chạy tốt; nếu là loại hở cực thu thì hàn thêm 10kΩ l�
 | **VCC** | 5V **từ nguồn ngoài**, không lấy từ ESP32 |
 | **GND** | GND chung |
 | **Tx** | **GPIO 16** |
-| **PWM** | **GPIO 18** |
+| **PWM** | **GPIO 4** |
 
-GPIO 17 và 19 **để trống** — LiDAR này chỉ phát một chiều, không nhận lệnh
+ESP32 không cần chân TX cho LiDAR — nó chỉ phát một chiều, không nhận lệnh
 (đã kiểm thư viện: `LDS_YDLIDAR_X2_X2L::start()` không ghi byte nào ra UART),
 và driver X2/X2L không dùng chân EN.
 
 > Nếu sau này đổi sang **YDLIDAR X4**, driver đó *có* dùng chân EN — phải gán
-> `LIDAR_EN_PIN` một GPIO thật (17 hoặc 19 đang rảnh).
+> `LIDAR_EN_PIN` một GPIO thật: **GPIO 13** là chân vào/ra duy nhất còn trống.
 
 ### Nguồn
 
@@ -774,7 +774,7 @@ Chưa kiểm trên xe thật (mới có một xe). Khi có xe thứ hai: mỗi x
 | Mọi topic chỉ ~1 Hz, cột `spin` ~980000 | `rclc_executor_spin_some` **chặn tới khi có dữ liệu đến**, không tôn trọng timeout → mọi thứ publish sau nó tụt xuống nhịp của `/cmd_vel` | firmware đã truyền timeout `0`; nếu tái diễn thì kiểm dòng `rclc_executor_set_timeout -> 0 (OK)` |
 | Nav2 báo `message too old` / `extrapolation`, stamp cách nhau đúng 1000 ms | đồng hồ trong `rmw_uros_epoch_nanos()` chỉ có độ phân giải **1 giây** | đã sửa: firmware neo epoch rồi tự chạy bằng `esp_timer`. Kiểm dòng boot `Dong ho: tick1 … sync -> 0, tick2 …` |
 | Stamp đúng nhịp nhưng cả cụm trễ ~1 giây | `sync_session` tính offset từ chính đồng hồ 1 giây đó nên **offset sai tới 1 giây** | đã sửa: chờ đúng cạnh tick rồi mới `sync_session` |
-| `E (318) gpio: gpio_pulldown_en(123)` lúc boot | ESP32Encoder bật điện trở kéo trên GPIO 34/35 — hai chân chỉ-vào, không có điện trở nội | bỏ qua. Nhưng encoder hở cực thu thì **phải** có 10kΩ kéo lên ngoài |
+| `E (318) gpio: gpio_pulldown_en(123)` lúc boot | Firmware cũ: ESP32Encoder bật điện trở kéo trên GPIO 34/35 — hai chân chỉ-vào, không có điện trở nội | nạp firmware mới (encoder 23/18/19/17, kéo lên nội) |
 | Vẽ bản đồ một lúc thì ảnh quét lệch khỏi tường, nhất là sau khi quay; `map→odom` yaw dao động qua lại (đo bằng `tools/check_slam_drift.py`) | stamp `/scan` gắn lúc **gửi** (cuối vòng quét) trong khi điểm thu rải suốt 0.116 s trước đó → lúc quay slam dùng tư thế trễ nửa vòng, 1.2 rad/s là lệch 4°, dấu đảo theo chiều quay | đã sửa trong firmware: stamp lùi về **giữa vòng**, `time_increment = 0`. Đo trước/sau, cùng 6.6 m lái: dao động yaw 13.8° → 3.2°, lần sửa lớn nhất 485 → 142 mm. Kiểm firmware mới: `time_increment` của `/scan` phải bằng 0 |
 | Trong RViz, trục đỏ của xe không hướng về phía vật mà xe đang quay mặt vào; ảnh quét và tường đen thì khớp nhau nhưng cùng lệch so với xe | `LIDAR_ANGLE_OFFSET_DEG` sai — LiDAR gắn lệch so với mũi xe. **Không** làm méo bản đồ (bản đồ vẫn nhất quán, chỉ bị xoay) nhưng **phải sửa trước khi chạy Nav2**: Nav2 sẽ thấy vật cản lệch đi đúng chừng đó độ | đặt một vật ngay trước mũi xe cách 0.4–1.0 m, chạy `python3 tools/check_lidar_offset.py`. Nó in ra cả hai cách sửa (URDF hoặc firmware), chỉ làm **một** |
 | LiDAR quét tới xa nhưng vùng trắng không lan ra, phần lớn bản đồ vẫn **xám (unknown)** | ô chỉ được tô khi `cellPassCnt > min_pass_through` (Karto `UpdateCell`), không thoả thì giữ nguyên xám. Mật độ tia loãng dần theo khoảng cách: 320 tia/360° → xa hơn **2.55 m** là hai tia liền nhau nhảy cóc qua ô 5 cm ở giữa, nên mỗi vòng quét chỉ cho ô ≤ 1 lượt | `min_pass_through` 2 (không nâng lên 3), và hạ `minimum_travel_distance`/`heading` xuống 0.2 để nhiều vị trí quan sát hơn. Cả hai đã chỉnh trong `config/slam_async.yaml` |
