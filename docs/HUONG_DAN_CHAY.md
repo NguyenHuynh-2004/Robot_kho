@@ -1,845 +1,660 @@
-# Hướng dẫn chạy AGV điều hướng lưới 5×5
+# Hướng Dẫn Khởi Chạy Dự Án AGV (robot_ws_3)
 
-Xe tự hành trong phòng 10×10m. Bạn nhập toạ độ lưới, xe tự tìm đường bằng BFS
-qua Nav2 và tự né vật cản động.
+Xe tự hành trên **sa bàn 5×5** (ô 60 cm). Bạn nhập hàng, cột và hướng đích; xe tự
+tìm đường **chỉ đi trên các cạnh**, xoay tại chỗ ở chỗ rẽ và tự né vật cản.
 
-Có **hai chế độ**:
+Tài liệu chia theo **kịch bản**. Mỗi kịch bản ghi rõ cần mở mấy **Terminal** và
+lệnh cho từng terminal — mở **lần lượt**, terminal trước khởi động xong mới mở
+terminal sau.
 
-| Chế độ | Dùng khi | Số terminal |
+| Kịch bản | Dùng khi | Số terminal |
 |---|---|---|
-| [A — Mô phỏng](#chế-độ-a--mô-phỏng-gazebo) | thử thuật toán, không cần phần cứng | 3 (+1 tuỳ chọn) |
-| [B — Xe thật](#chế-độ-b--xe-thật) | chạy trên xe ESP32 | 3–5 |
+| 1️⃣ Mô phỏng Gazebo | thử thuật toán, không cần xe | 3 (+1 RViz) |
+| 2️⃣ Nạp firmware xe thật | lần đầu / sau khi sửa firmware | Arduino IDE |
+| 3️⃣ Vẽ bản đồ phòng thật | phòng mới / đồ đạc thay đổi | 4 |
+| 4️⃣ Kiểm tra định vị | trước khi cho xe tự chạy | 4 |
+| 5️⃣ Chạy sa bàn trên xe thật | **dùng hằng ngày** | 4 |
+| 6️⃣ Hai xe (mô phỏng) | thử điều phối hai xe | 2 |
+
+> [!IMPORTANT]
+> **Mọi terminal** đều bắt đầu bằng hai dòng này (đã ghi sẵn trong từng khung lệnh
+> bên dưới để bạn chép cho tiện):
+> ```bash
+> cd ~/robot_ws_3
+> source install/setup.bash
+> ```
 
 ---
 
-## Bước 0 — Chuẩn bị một lần duy nhất
+## 🏗️ Bước Chuẩn Bị (chỉ làm MỘT lần cho mỗi máy)
 
-> **Chỉ làm MỘT lần cho mỗi máy.** Chạy lại sẽ thêm các dòng trùng vào
-> `~/.bashrc`. Kiểm tra đã làm chưa: `grep -c DISCOVERY ~/.bashrc` in ra `1`
-> là đã xong, bỏ qua bước này.
->
-> Chỉ dán phần **bên trong** khung lệnh, không dán dòng ` ```bash `.
+> [!WARNING]
+> Chạy lại bước này sẽ thêm dòng trùng vào `~/.bashrc`. Kiểm tra đã làm chưa:
+> `grep -c DISCOVERY ~/.bashrc` in ra `1` là đã xong — bỏ qua.
 
-Mở terminal WSL:
-
+Mở **1 terminal WSL**:
 ```bash
-# 1. Các dòng source bắt buộc
+# 1. Tự source ROS 2, micro-ROS agent và dự án ở mọi terminal mới
 echo 'source /opt/ros/jazzy/setup.bash'                >> ~/.bashrc
 echo 'source ~/microros_ws/install/setup.bash'         >> ~/.bashrc
 echo 'source ~/robot_ws_3/install/setup.bash'          >> ~/.bashrc
 
-# 2. Sửa lỗi discovery của WSL (BẮT BUỘC, xem giải thích bên dưới)
+# 2. Sửa lỗi discovery của WSL (BẮT BUỘC)
 echo 'export ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST'  >> ~/.bashrc
-
 source ~/.bashrc
-cd ~/robot_ws_3 && colcon build --symlink-install
-```
 
-> **`colcon build` luôn phải chạy trong `~/robot_ws_3`.** Chạy ở `~` thì nó quét
-> cả thư mục nhà, gặp các bản sao cũ (`robot_ws`, `robot_ws_2`,
-> `robot_ws_thuc_te`…) và báo `Duplicate package names not supported`.
+# 3. Build dự án
+cd ~/robot_ws_3
+colcon build --symlink-install
 
-**3. Sửa đồng hồ WSL (một lần, cần mật khẩu):**
-```bash
+# 4. Sửa đồng hồ WSL (cần mật khẩu) - dòng "Sau:" phải in tick=10000
 sudo bash ~/robot_ws_3/tools/fix_wsl_clock.sh
 ```
-Trên máy này dịch vụ `systemd-timesyncd` cãi nhau với Hyper-V, làm đồng hồ
-Ubuntu chạy chậm 8.3% rồi bị giật 2.4 s mỗi ~35 s: mọi dấu thời gian lệch tới
-±1.2 s và tay cầm bị ngắt từng cơn. Script tắt timesyncd (Hyper-V tự giữ giờ
-cho WSL) và đưa tốc độ đồng hồ về chuẩn. Kiểm tra: dòng "Sau:" in `tick=10000`.
 
-Sau bước này, mỗi terminal mới chỉ cần `cd ~/robot_ws_3`.
+> [!TIP]
+> **Khi nào cần build lại?** Sau khi sửa file trong `src/` (launch, cấu hình,
+> bản đồ mới). Các script `.py` ở thư mục gốc (`grid_navigator.py`,
+> `traffic_manager.py`…) **không cần build**.
+>
+> `colcon build` luôn chạy trong `~/robot_ws_3`. Chạy ở `~` thì nó quét cả các
+> bản sao cũ (`robot_ws`, `robot_ws_2`…) và báo `Duplicate package names`.
 
-### Vì sao cần 2 dòng đặc biệt đó
-
-**`ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST`** — kernel WSL để `eth0` ở trạng
-thái khiến multicast discovery mặc định thất bại. Không có dòng này, các node
-**vẫn chạy nhưng không nhìn thấy nhau**: Nav2 sẽ không thấy Gazebo, và không
-có thông báo lỗi nào. Đã kiểm chứng: talker publish bình thường mà
-`ros2 topic list` không thấy topic.
-
-**`source ~/microros_ws/install/setup.bash`** — `micro_ros_agent` **không có
-trong apt** (gói `ros-jazzy-micro-ros-agent` không tồn tại). Trên máy này nó
-đã được build sẵn ở `~/microros_ws`. Thiếu dòng này sẽ gặp:
-
-```
-[ERROR] [launch]: package 'micro_ros_agent' not found
-```
+Vì sao cần mấy dòng đó: xem [Phụ lục D](#d-vì-sao-cần-các-dòng-trong-bashrc).
 
 ---
 
-# CHẾ ĐỘ A — Mô phỏng (Gazebo)
+## 1️⃣ Kịch Bản 1: Mô Phỏng Gazebo — Lưới 5×5 (Cần 3 Terminals)
 
-Mở lần lượt, **terminal trước khởi động xong mới mở terminal sau**.
+Thử thuật toán tìm đường và né vật cản mà không cần xe thật. Lưới mô phỏng ô 2 m
+trong phòng 10×10 m.
 
-### Terminal 1 — Gazebo
-
+### Terminal 1: Bật Gazebo
 ```bash
+cd ~/robot_ws_3
+source install/setup.bash
 ros2 launch my_bot_bringup gazebo.launch.py
 ```
+Chờ cửa sổ Gazebo hiện căn phòng 4 tường xám và xe hình trụ màu cam.
 
-Chờ tới khi cửa sổ Gazebo hiện căn phòng 4 tường xám và xe hình trụ màu cam.
+> [!IMPORTANT]
+> Bấm **▶ Play** ở góc dưới-trái nếu mô phỏng đang dừng. Không bấm thì `/clock`
+> không chạy và Terminal 2 đứng im. Không cần giao diện: thêm `headless:=true`.
 
-> Bấm **▶ Play** ở góc dưới-trái nếu mô phỏng đang tạm dừng. Không bấm thì
-> `/clock` không chạy và Terminal 2 sẽ đứng im.
-
-Không cần giao diện thì thêm `headless:=true`.
-
-### Terminal 2 — Nav2
-
+### Terminal 2: Bật Nav2
 ```bash
+cd ~/robot_ws_3
+source install/setup.bash
 ros2 launch my_bot_bringup navigation.launch.py
 ```
+Chờ log ngừng trôi. Xe tự định vị ở `(0, 0)`, **không cần** bấm "2D Pose Estimate".
 
-Chờ log ngừng trôi và thấy `Creating bond timer...` cho `amcl`,
-`controller_server`, `planner_server`, `bt_navigator`.
-
-Kiểm tra xe đã tự định vị:
-
+### Terminal 3: Nhập Đích
 ```bash
-ros2 run tf2_ros tf2_echo map base_footprint
+cd ~/robot_ws_3
+source install/setup.bash
+python3 grid_navigator.py
 ```
+Dòng đầu phải in `Che do: MO PHONG (use_sim_time=true)`. Nhập **hàng** `1`–`5` ↵,
+**cột** `1`–`5` ↵, rồi **hướng tại đích** (`D`/`T`/`B`/`N`, Enter = giữ hướng).
+Gõ `q` để thoát.
 
-Phải in `Translation: [0.000, 0.000, 0.000]` liên tục. **Không cần** bấm
-"2D Pose Estimate" — tham số `set_initial_pose` trong `navigation.yaml` lo việc đó.
-
-### Terminal 3 — Điều khiển
-
+### Terminal 4 (tuỳ chọn): RViz
 ```bash
-cd ~/robot_ws_3 && python3 grid_navigator.py
+cd ~/robot_ws_3
+source install/setup.bash
+rviz2 -d /opt/ros/jazzy/share/nav2_bringup/rviz/nav2_default_view.rviz --ros-args -p use_sim_time:=true
 ```
+Để thấy lưới: **Add** → tab **By topic** → **`/grid_visualization`** → **MarkerArray** → OK.
 
-Dòng đầu phải in `Che do: MO PHONG (use_sim_time=true)`.
-
-Nhập **hàng** `1`–`5` ↵ rồi **cột** `1`–`5` ↵ (hàng 1 = dưới cùng, cột 1 = bên
-trái — xem [Sa bàn 5×5](#sa-bàn-55)). Gõ `q` để thoát.
-
-### Terminal 4 (tuỳ chọn) — RViz
-
-```bash
-rviz2 -d /opt/ros/jazzy/share/nav2_bringup/rviz/nav2_default_view.rviz \
-  --ros-args -p use_sim_time:=true
-```
-
-Để thấy lưới 5×5: **`Add`** → tab **`By topic`** → **`/grid_visualization`**
-→ **`MarkerArray`** → OK.
-
-### Thử né vật cản
-
-Trong cửa sổ Gazebo, bấm biểu tượng **hình hộp** trên thanh công cụ rồi bấm
-xuống sàn để thả hộp **chắn ngang đường xe đang đi**. Terminal 3 sẽ in:
-
-```
-[WARN] Phát hiện vật cản trên đường đi! Đang tiến hành dừng xe khẩn cấp...
-[INFO] Đã dừng xe thành công. Đang tính toán đường vòng...
-[INFO] Bắt đầu Replan từ (2, 3) đến (2, 0)
-[INFO] Lộ trình (8 bước) đã tạo!
-```
-
-Xe có bán kính 0.6m, node cách nhau 2m — đặt hộp **đúng giữa hai node** để
-thấy cơ chế chặn cạnh.
+> [!TIP]
+> **Thử né vật cản:** trong Gazebo bấm biểu tượng **hình hộp** rồi bấm xuống sàn
+> để thả hộp chắn ngang đường xe. Terminal 3 in
+> `Phát hiện vật cản trên đường đi! ... Đang tính toán đường vòng...` rồi xe đi
+> đường khác. Đặt hộp đúng giữa hai điểm lưới để thấy cạnh bị chặn.
 
 ---
 
-# CHẾ ĐỘ B — Xe thật
+## 2️⃣ Kịch Bản 2: Chuẩn Bị Xe Thật — Nạp Firmware
 
-## B0. Ai làm gì
+Làm lần đầu và mỗi khi firmware thay đổi. Dùng **Arduino IDE** trên Windows.
 
-ESP32 **chỉ làm những việc buộc phải ở gần phần cứng**, mọi tính toán ước lượng
-nằm trên laptop:
+**Bước 1 — Mở sketch:** `D:\CTU\Ardunio ide\code\Xe_lidar\Xe_lidar.ino` (bản sao của
+`firmware/esp32_agv_base/esp32_agv_base.ino`).
 
-| ESP32 | Laptop |
-|---|---|
-| đọc UART LiDAR → `/scan` | `wheel_odometry.py` → `/odom` + TF |
-| đọc encoder → `/joint_states` (**góc tích luỹ**, rad) | `robot_state_publisher` → TF thân xe |
-| đọc BNO055 → `/imu/data` | slam_toolbox / Nav2 |
-| PID động cơ 50 Hz, nhận `/cmd_vel` | |
+**Bước 2 — Chọn partition:** **Tools → Partition Scheme → Huge APP (3MB No OTA/1MB SPIFFS)**.
 
-> **ESP32 gửi giá trị TÍCH LUỸ, không gửi số gia.** Đây là điều kiện để kiến
-> trúc này đúng. Đường truyền này đã đo được có đuôi trễ tới 32 ms và mất 7
-> khoảng > 200 ms trong 12 giây. Với số gia thì mỗi gói rơi là mất hẳn quãng
-> đường đó vĩnh viễn; với giá trị tích luỹ thì gói sau mang cả tổng. Đã kiểm:
-> **bỏ 4/5 số gói, quãng đường vẫn đúng 2.000 m**.
-
-Hệ quả thực tế: **`wheel_radius` không còn trong firmware nữa.** Hiệu chỉnh bán
-kính lăn giờ là sửa tham số launch rồi khởi động lại node — hết phải nạp chip:
-
-```bash
-ros2 launch my_bot_bringup bringup_real.launch.py wheel_radius:=0.0315
-```
-
-Nguồn góc quay chọn bằng `yaw_source`:
-
-| giá trị | nghĩa |
-|---|---|
-| `imu_quaternion` *(mặc định)* | góc tuyệt đối của BNO055, **không trôi** |
-| `imu_gyro` | tích phân gyro — giống firmware cũ, để so sánh |
-| `wheels` | suy từ chênh lệch hai bánh, dự phòng khi IMU hỏng |
-
-Muốn quay lại kiểu cũ (ESP32 tự tính và phát `/odom`): đổi `ODOM_ON_ESP32`
-thành `1` trong firmware rồi nạp lại.
-
-## B1. Nạp firmware
-
-Mở `firmware/esp32_agv_base/esp32_agv_base.ino` trong Arduino IDE.
-
-**Tools → Partition Scheme → Huge APP (3MB No OTA/1MB SPIFFS)** ← bắt buộc.
-Partition mặc định chỉ còn 19% dư, thêm chút nữa là tràn flash.
-
-**Wi-Fi nằm trong `wifi_config.h`, không nằm trong `.ino` và không nằm trong
-git** — mật khẩu không bao giờ lên GitHub. Lần đầu trên mỗi máy: chép
-`firmware/esp32_agv_base/wifi_config.example.h` thành `wifi_config.h` **vào
-cùng thư mục sketch với file `.ino`** (thư mục Arduino IDE đang mở), rồi điền:
-
+**Bước 3 — Wi-Fi (chỉ lần đầu mỗi máy):** chép `wifi_config.example.h` thành
+`wifi_config.h` **cùng thư mục với file `.ino`**, rồi điền:
 ```cpp
-#define WIFI_SSID   "..."             // wifi của bạn
+#define WIFI_SSID   "..."             // Wi-Fi của bạn
 #define WIFI_PASS   "..."
-#define AGENT_IP    "192.168.1.21"    // IP laptop; xem bằng: hostname -I
+#define AGENT_IP    "192.168.1.21"    // IP laptop - xem bằng: hostname -I
 ```
+> [!NOTE]
+> `wifi_config.h` **không nằm trong git** — mật khẩu không bao giờ lên GitHub.
+> Lần nạp sau chỉ cần chép đè file `.ino`, để nguyên `wifi_config.h`.
 
-Thiếu file này thì biên dịch dừng với lỗi `Thieu wifi_config.h ...`. Các lần
-nạp sau chỉ cần chép đè file `.ino`; `wifi_config.h` để nguyên.
+**Bước 4 — Nạp:** bấm Upload. Khi IDE hiện `Connecting....` thì **giữ nút BOOT**
+trên ESP32 tới khi thanh tiến trình chạy.
 
-> Bán kính bánh và hệ số encoder đã hiệu chỉnh xong và bán kính lăn nằm ở phía
-> laptop (`wheel_radius` trong `bringup_real.launch.py`), không cần sửa ở đây.
+> [!WARNING]
+> Không giữ BOOT sẽ báo `Wrong boot mode detected (0x13)`.
 
-### Bấm nút BOOT khi nạp
-
-Bo CH340 này **không tự vào chế độ nạp**. Khi Arduino IDE hiện
-`Connecting....`, **giữ nút BOOT** cho tới khi thanh tiến trình chạy. Không giữ
-thì báo:
-
+**Bước 5 — Kiểm tra:** mở **Serial Monitor 115200**, nhấn EN. Phải thấy:
 ```
-A fatal error occurred: Failed to connect to ESP32:
-Wrong boot mode detected (0x13)! The chip needs to be in download mode.
-```
-
-### Nạp xong phải thấy 5 dòng này
-
-Mở **Serial Monitor 115200**, nhấn nút EN để khởi động lại, rồi soi:
-
-```
->>> Reset: CAP NGUON                                  ← nếu là SUT AP thì lỗi nguồn
+>>> Reset: CAP NGUON            <- nếu là SUT AP (brownout) thì lỗi nguồn
 Wi-Fi OK, IP xe: 192.168.1.150
-Da thay agent!                                        ← chưa có nghĩa là agent chưa chạy
-Dong ho: tick1 549 ms, sync -> 0, tick2 990 ms        ← sync phải = 0
+Da thay agent!                  <- chưa thấy = agent (Terminal 1 các kịch bản sau) chưa chạy
+Dong ho: tick1 ... sync -> 0 ...
 LiDAR start(): OK
 ```
 
-Riêng 4 dòng lỗi này là **bình thường, bỏ qua**:
+> [!IMPORTANT]
+> **Khởi động lại xe = tắt hẳn nguồn vài giây rồi bật**, để xe đứng yên 2 giây đầu
+> (BNO055 đo độ lệch gyro). Chỉ bấm nút reset ESP32 có lúc làm BNO055 trả toàn số 0.
 
-```
-E (318) gpio: gpio_pulldown_en(123): GPIO number error (input-only pad has no internal PD)
-E (324) gpio: gpio_pullup_en(85):   GPIO number error (input-only pad has no internal PU)
-```
+Sơ đồ nối dây và bảng chân: [Phụ lục A](#a-nối-dây) và [`so_do_day_agv.html`](so_do_day_agv.html).
+Kiểm tra phần cứng lần đầu: [Phụ lục B](#b-kiểm-tra-phần-cứng-lần-đầu).
 
-Hai dòng này chỉ có ở firmware cũ (encoder trên GPIO 34/35 — chân chỉ-vào,
-không có điện trở nội). Từ mạch in 2026-10-05 encoder dùng 23/18/19/17, firmware
-bật điện trở **kéo lên** nội cho cả bốn chân nên không còn lỗi này.
+---
 
-## B2. Nối dây — 14 chân
+## 3️⃣ Kịch Bản 3: Vẽ Bản Đồ Phòng Thật — SLAM (Cần 4 Terminals)
 
-Sơ đồ đầy đủ (mở bằng trình duyệt): [docs/so_do_day_agv.html](so_do_day_agv.html).
+Làm trước lần chạy sa bàn đầu tiên, hoặc khi đồ đạc trong phòng thay đổi nhiều.
 
-### L298N (động cơ)
+> [!IMPORTANT]
+> **Gốc bản đồ = chỗ xe đứng lúc bật SLAM.** Đặt xe ở chỗ dễ nhớ và nhớ hướng đầu xe.
 
-| ESP32 | → L298N |
-|---|---|
-| GPIO 25 | **ENA** (PWM bánh trái) |
-| GPIO 27 | **IN1** |
-| GPIO 26 | **IN2** |
-| GPIO 14 | **ENB** (PWM bánh phải) |
-| GPIO 33 | **IN3** |
-| GPIO 32 | **IN4** |
-| GND | **GND** |
-
-Bánh trái → **OUT1/OUT2**, bánh phải → **OUT3/OUT4**.
-
-> ⚠️ **Tháo cả hai jumper ENA và ENB.** Còn jumper thì hai chân đó bị chốt
-> HIGH, PWM vô tác dụng, xe chỉ chạy full tốc hoặc dừng.
-
-### Encoder (2 kênh) — theo mạch in 2026-10-05
-
-| ESP32 | → Encoder | Nhãn mạch in | Dây |
-|---|---|---|---|
-| GPIO 23 | **A** bánh trái | A_T | vàng |
-| GPIO 18 | **B** bánh trái | B_T | xanh lá |
-| GPIO 19 | **A** bánh phải | A_P | vàng |
-| GPIO 17 | **B** bánh phải | B_P | xanh lá |
-| **3V3** | VCC cả hai | | |
-| GND | GND cả hai | | |
-
-> ⚠️ **Cấp encoder từ 3V3, KHÔNG phải 5V.** Encoder xuất tín hiệu ở mức bằng
-> điện áp nguồn của nó; 5V vượt ngưỡng 3.3V và làm chết cổng GPIO.
-
-Firmware bật điện trở **kéo lên** nội cho bốn chân encoder: chạy với cả encoder
-push-pull lẫn hở cực thu. (Bản cũ dùng GPIO 34/35 — không có điện trở nội.)
-GPIO 17 là TX mặc định của UART2, nhưng LiDAR mở UART2 với TX = -1 nên chân rảnh.
-
-### BNO055 (IMU)
-
-| ESP32 | → BNO055 |
-|---|---|
-| GPIO 21 | **SDA** |
-| GPIO 22 | **SCL** |
-| 3V3 | **VIN** |
-| GND | **GND** |
-
-Địa chỉ I2C mặc định trong firmware là `0x29`. Nếu Serial báo
-`khong thay BNO055`, đổi `BNO055_ADDR` thành `0x28`.
-
-### YDLIDAR X2/X2L — 4 chân
-
-| LiDAR | → ESP32 |
-|---|---|
-| **VCC** | 5V **từ nguồn ngoài**, không lấy từ ESP32 |
-| **GND** | GND chung |
-| **Tx** | **GPIO 16** |
-| **PWM** | **GPIO 4** |
-
-ESP32 không cần chân TX cho LiDAR — nó chỉ phát một chiều, không nhận lệnh
-(đã kiểm thư viện: `LDS_YDLIDAR_X2_X2L::start()` không ghi byte nào ra UART),
-và driver X2/X2L không dùng chân EN.
-
-> Nếu sau này đổi sang **YDLIDAR X4**, driver đó *có* dùng chân EN — phải gán
-> `LIDAR_EN_PIN` một GPIO thật: **GPIO 13** là chân vào/ra duy nhất còn trống.
-
-### Nguồn
-
-```
-Pin 7–12V ──┬── L298N +12V ──── động cơ
-            │
-            └── mạch hạ áp 5V ──┬── ESP32 (chân 5V/VIN)
-               (buck / BEC)     └── LiDAR 5V
-
-TẤT CẢ GND nối chung về MỘT điểm
-```
-
-Ba điều bắt buộc:
-
-1. **Không nuôi ESP32 từ chân +5V của L298N.** Bộ ổn áp trên bo đó yếu và
-   nhiễu; động cơ khởi động là ESP32 reset.
-2. **Tụ 1000µF** sát chân nguồn động cơ của L298N.
-3. **Không cắm USB và nguồn ngoài cùng lúc** vào ESP32.
-
-Nếu Serial in `>>> Reset: SUT AP (brownout)` liên tục thì đúng là vấn đề
-nguồn, không phải lỗi code.
-
-## B3. Kiểm tra phần cứng — làm trước khi chạy Nav2
-
-Mở **Serial Monitor 115200** và làm lần lượt. Đừng nhảy bước.
-
-| # | Việc | Đúng khi |
-|---|---|---|
-| 1 | Nhấc xe lên, quay tay bánh trái đúng 10 vòng | `count` đổi ~12000. Quay tiến mà RPM âm → đặt `INVERT_ENC_L = true` |
-| 2 | Bơm lệnh tiến (xem lệnh dưới) | **cả hai bánh quay tiến**. Bánh nào lùi → đảo `INVERT_MOTOR_x` |
-| 3 | Xoay xe 90° trong ~1 giây | `gyroZ` ≈ **1.57** |
-| 4 | Đọc log | `scan 8.5 Hz` và vài trăm điểm/vòng |
-| 5 | Đọc dòng thứ hai (dòng chẩn đoán) | `pub/s: scan 8 odom 50 imu 50` |
-
-Lệnh cho bước 2 (xe **sẽ chạy** — kê bánh lên khỏi mặt đất trước):
-
+### Terminal 1: Cầu Nối ESP32
 ```bash
-ros2 topic pub -r 10 /cmd_vel geometry_msgs/msg/Twist "{linear: {x: 0.1}}"
-```
-
-Cả 5 bước đúng rồi mới hiệu chỉnh `WHEEL_RADIUS_M` / `WHEEL_SEPARATION_M`.
-
-### Đọc dòng chẩn đoán
-
-Mỗi giây firmware in **hai** dòng. Dòng thứ hai là để soi hiệu năng:
-
-```
-ros_task 605 vong/s | pub/s: scan 9 odom 50 imu 50 | max us: spin 1145, imu 6983,
-                              odom 3592, scan 1752, sync 6, ca_vong 10061
-```
-
-| Cột | Bình thường | Nghĩa khi lệch |
-|---|---|---|
-| `ros_task …/s` | 500–700 | thấp → vòng lặp bị chặn, soi cột `max us` nào lớn nhất |
-| `pub/s scan` | 8–9 | đây là nhịp quay LiDAR, không phải 50 |
-| `pub/s odom` / `imu` | 49–50 | thấp hơn → xem `ca_vong` |
-| `spin` | < 2000 | ~980000 → lỗi `spin_some` chặn, xem Bảng tra sự cố |
-| `imu` | 5000–9000 | lớn hơn → dây I2C dài/nhiễu |
-| `sync` | < 300 | ~600000 là `ping_agent` chặn — **chỉ xảy ra khi xe đứng yên**, xem bên dưới |
-| `ca_vong` | 8000–12000 | 750000 → có lệnh chặn trong vòng lặp |
-| `loi pub` (dòng 1) | 0 | > 0 → message vượt MTU hoặc hết bộ đệm |
-
-> **Về cột `sync`:** `rmw_uros_ping_agent` không tôn trọng timeout, đo được nó
-> chặn tới 1050 ms. Nhưng khi có `/cmd_vel` về thì điều đó tự chứng minh agent
-> còn sống, nên firmware **tắt ping** trong lúc đang được điều khiển. Vì vậy
-> đỉnh `sync ~600000` lúc xe đứng yên là **bình thường**; nếu nó vẫn xuất hiện
-> trong lúc Nav2 hoặc tay cầm đang lái thì mới là bất thường.
-
-## B4. Vẽ bản đồ phòng thật
-
-Làm trước lần chạy điều hướng đầu tiên. Có hai cách lái.
-
-### Cách 1 — Bàn phím (đơn giản nhất)
-
-**Terminal 1** — cầu nối ESP32:
-```bash
+cd ~/robot_ws_3
+source install/setup.bash
 ros2 launch my_bot_bringup bringup_real.launch.py
 ```
-Cấp nguồn ESP32. Log agent phải hiện `session established` và `client_key: 0x11111111`.
+Bật nguồn xe. Log agent phải hiện `session established`.
 
-**Terminal 2** — SLAM:
+### Terminal 2: SLAM
 ```bash
+cd ~/robot_ws_3
+source install/setup.bash
 ros2 launch my_bot_bringup slam.launch.py use_sim_time:=false
 ```
 
-**Terminal 3** — lái:
-```bash
-ros2 run teleop_twist_keyboard teleop_twist_keyboard
-```
-Giữ con trỏ trong terminal này: **`i`** tiến, **`,`** lùi, **`j`** rẽ trái,
-**`l`** rẽ phải, **`k`** dừng. **`z`/`x`** giảm/tăng tốc.
-
-**Terminal 4** — xem bản đồ:
-```bash
-rviz2 -d /opt/ros/jazzy/share/nav2_bringup/rviz/nav2_default_view.rviz
-```
-
-### Cách 2 — Tay cầm (bản đồ mịn hơn nhờ cần analog)
-
-Tay cầm USB **không hiện trong WSL**: kernel WSL không bật
-`CONFIG_INPUT_JOYSTICK` nên không có driver joystick nào, kể cả `xpad`. Vì vậy
-phải đọc tay cầm bên Windows rồi đẩy qua UDP.
-
-**Trên Windows** (PowerShell hoặc CMD, *không phải* WSL):
-```
-python \\wsl.localhost\Ubuntu\home\huynh\robot_ws_3\tools\windows_gamepad_bridge.py
-```
-Giữ cửa sổ này mở. Nó in `re=... tien=... LB=... RB=...` mỗi 2 giây.
-
-**Trong WSL**, thêm 2 terminal vào Cách 1 (thay Terminal 3):
-
-```bash
-# T3a: nhận tay cầm -> /joy
-cd ~/robot_ws_3 && python3 tools/joy_udp_bridge.py
-
-# T3b: /joy -> /cmd_vel
-ros2 launch my_bot_bringup joy_teleop.launch.py start_joy_node:=false
-```
-
-> `start_joy_node:=false` **bắt buộc** trên WSL — `joy_node` sẽ không bao giờ
-> tìm thấy tay cầm.
-
-Điều khiển: **giữ LB rồi đẩy cần trái**. Thả LB là xe dừng. Giữ thêm **RB** để
-chạy nhanh gấp đôi (0.25 → 0.5 m/s).
-
-### Lưu bản đồ
-
-Khi bản đồ trong RViz đã kín hết tường — **slam_toolbox phải còn đang chạy**,
-công cụ lưu đọc bản đồ từ topic `/map`:
-
+### Terminal 3: Lái Xe
+**Cách 1 — bàn phím** (giữ con trỏ trong terminal này):
 ```bash
 cd ~/robot_ws_3
+source install/setup.bash
+ros2 run teleop_twist_keyboard teleop_twist_keyboard
+```
+`i` tiến · `,` lùi · `j` trái · `l` phải · `k` dừng · `z`/`x` giảm/tăng tốc.
+
+**Cách 2 — tay cầm** (bản đồ mịn hơn). Tay cầm không hiện trong WSL, nên đọc bên
+Windows rồi đẩy qua UDP:
+
+1. **PowerShell trên Windows** (không phải WSL), giữ cửa sổ này mở:
+   ```
+   python \\wsl.localhost\Ubuntu\home\huynh\robot_ws_3\tools\windows_gamepad_bridge.py
+   ```
+2. **Terminal 3a** (WSL):
+   ```bash
+   cd ~/robot_ws_3
+   source install/setup.bash
+   python3 tools/joy_udp_bridge.py
+   ```
+3. **Terminal 3b** (WSL):
+   ```bash
+   cd ~/robot_ws_3
+   source install/setup.bash
+   ros2 launch my_bot_bringup joy_teleop.launch.py start_joy_node:=false
+   ```
+Điều khiển: **giữ LB rồi đẩy cần trái**; thả LB là xe dừng; giữ thêm **RB** để
+chạy nhanh gấp đôi.
+
+### Terminal 4: RViz Xem Bản Đồ
+```bash
+cd ~/robot_ws_3
+source install/setup.bash
+rviz2 -d /opt/ros/jazzy/share/nav2_bringup/rviz/nav2_default_view.rviz
+```
+Lái chậm đi khắp phòng, quay tại chỗ vài vòng ở các góc.
+
+### Lưu Bản Đồ (SLAM vẫn phải đang chạy)
+```bash
+cd ~/robot_ws_3
+source install/setup.bash
 ros2 run nav2_map_server map_saver_cli -f src/my_bot_bringup/config/real_room_map
 colcon build --symlink-install
 ```
 
-Ra hai file `real_room_map.pgm` (ảnh) và `real_room_map.yaml` (độ phân giải, gốc
-toạ độ). `colcon build` là bắt buộc — file mới phải được cài vào `install/` thì
-launch mới thấy.
+> [!WARNING]
+> Đừng lưu đè `my_room_map` — đó là bản đồ Gazebo của Kịch bản 1. Sau khi vẽ bản
+> đồ mới, **căn lại sa bàn** theo [mục Sa bàn](#-sa-bàn-55): góc tường
+> (`--yaw-walls`) và tâm (hàng 3, cột 3).
 
-> **Đừng lưu đè lên `my_room_map`.** Đó là bản đồ phòng Gazebo 10×10 m của
-> Chế độ A. `navigation.launch.py` tự chọn: `use_sim_time:=false` → nạp
-> `real_room_map`, mặc định → `my_room_map`. Muốn bản khác thì `map:=<đường dẫn>`.
+---
 
-> **Gốc bản đồ = chỗ xe đứng lúc bật slam_toolbox.** AMCL mặc định đặt xe ở
-> `(0, 0, 0°)` khi khởi động (`set_initial_pose` trong `navigation.yaml`), nên
-> lúc chạy Nav2 hãy đặt xe lại **đúng chỗ và đúng hướng** lúc bắt đầu vẽ. Không
-> thì dùng nút **2D Pose Estimate** trong RViz để chỉ cho nó.
+## 4️⃣ Kịch Bản 4: Kiểm Tra Định Vị Trên Bản Đồ — AMCL (Cần 4 Terminals)
 
-## B5. Định vị trên bản đồ đã lưu (AMCL)
+Kiểm tra LiDAR có bám đúng bản đồ **trước** khi cho xe tự chạy. Kịch bản này không có
+bộ điều khiển nào phát lệnh, nên lái tay thoải mái.
 
-Kiểm tra định vị **trước** khi để Nav2 tự lái. Bước này chỉ bật `map_server` +
-AMCL, không có bộ điều khiển nào phát `/cmd_vel`, nên lái tay thoải mái.
+> [!IMPORTANT]
+> **Tắt SLAM trước** (Ctrl-C Terminal 2 của Kịch bản 3). SLAM và AMCL cùng phát
+> `map → odom`; chạy chung thì xe nhảy qua lại trong RViz.
 
-> **Tắt slam_toolbox trước** (Ctrl-C ở terminal SLAM). Cả hai đều phát TF
-> `map → odom`; chạy chung thì hai nguồn giành nhau và xe nhảy qua lại trong RViz.
-
-**Terminal 1** — cầu nối ESP32 (đang chạy thì giữ nguyên):
+### Terminal 1: Cầu Nối ESP32
 ```bash
+cd ~/robot_ws_3
+source install/setup.bash
 ros2 launch my_bot_bringup bringup_real.launch.py
 ```
 
-**Terminal 2** — bản đồ + AMCL:
+### Terminal 2: Bản Đồ + AMCL
 ```bash
+cd ~/robot_ws_3
+source install/setup.bash
 ros2 launch my_bot_bringup localization.launch.py use_sim_time:=false
 ```
-Log phải có `Managed nodes are active`. Bản đồ nạp tự động là `real_room_map`.
-
-**Terminal 3** — tay cầm hoặc bàn phím, như B4.
-
-**Terminal 4** — RViz:
+Chờ `Managed nodes are active`, rồi **đặt vị trí ban đầu tự động** (xe đứng yên ở đâu
+cũng được):
 ```bash
+cd ~/robot_ws_3
+source install/setup.bash
+python3 tools/auto_initial_pose.py
+```
+
+### Terminal 3: Lái Tay
+Bàn phím hoặc tay cầm, như Kịch bản 3.
+
+### Terminal 4: RViz
+```bash
+cd ~/robot_ws_3
+source install/setup.bash
 rviz2 -d /opt/ros/jazzy/share/nav2_bringup/rviz/nav2_default_view.rviz
 ```
-Fixed Frame = `map`. Điểm quét (đỏ) phải nằm **trùng tường đen** của bản đồ.
-Đám mũi tên xanh quanh xe (*Amcl Particle Swarm*) là các giả thuyết vị trí của
-AMCL: càng gom chặt thì nó càng chắc.
+Fixed Frame = `map`. **Điểm quét đỏ phải trùng tường đen.** Lệch thì bấm
+**2D Pose Estimate**, bấm vào chỗ xe thật rồi kéo theo hướng đầu xe.
 
-### Vị trí ban đầu
-
-**Cách nhanh nhất — tự tìm**, xe đứng yên ở đâu cũng được:
+### Đo Độ Khớp (tuỳ chọn, Terminal 5)
 ```bash
-cd ~/robot_ws_3 && python3 tools/auto_initial_pose.py
+cd ~/robot_ws_3
+source install/setup.bash
+python3 tools/check_scan_fit.py --duration 90
 ```
-Nó thử đặt ảnh quét lên mọi chỗ trên bản đồ theo mọi hướng, chọn chỗ khớp tường
-nhất rồi báo cho AMCL. Đo trên xe thật: 88% tia trúng tường, sau đó ảnh quét
-lệch tường trung vị **2.4 cm**. Nếu hai chỗ khác nhau khớp gần bằng nhau (phòng
-gần đối xứng) nó **từ chối đoán** và bảo bạn dùng 2D Pose Estimate.
+Lái chậm khắp phòng. **Đạt:** lệch trung vị < 5 cm. Bảng đọc kết quả và cách đo kỹ
+hơn: [Phụ lục C](#c-đo-định-vị-kỹ).
 
-Không chạy lệnh trên thì AMCL tự đặt xe ở `(0, 0, 0°)` của bản đồ
-(`set_initial_pose` trong `navigation.yaml`) — tức chỗ xe đứng lúc bắt đầu vẽ
-bản đồ.
+> [!TIP]
+> AMCL chỉ sửa vị trí khi xe đã chạy ≥ 0.1 m hoặc quay ≥ 6°. Đứng yên thì đám mũi
+> tên xanh không co lại — không phải lỗi. Cho xe quay tại chỗ một vòng để nó chốt.
 
-Nếu điểm quét lệch khỏi tường: bấm **2D Pose Estimate** trên thanh công cụ
-RViz, **bấm vào chỗ xe đang đứng thật trên bản đồ rồi kéo** theo hướng đầu xe,
-thả chuột. Chỉ cần gần đúng (±30 cm, ±20°) — AMCL tự tinh chỉnh khi xe chạy.
+Xong thì **Ctrl-C Terminal 2** trước khi sang Kịch bản 5.
 
-> **AMCL chỉ sửa vị trí khi xe đã chạy ≥ 0.1 m hoặc quay ≥ 6°**
-> (`update_min_d` / `update_min_a`). Đứng yên thì đám hạt không co lại — đó
-> không phải lỗi. Cho xe quay tại chỗ một vòng là cách nhanh nhất để nó chốt.
+---
 
-### Đo xem định vị có tốt không
+## 5️⃣ Kịch Bản 5: Chạy Sa Bàn 5×5 Trên Xe Thật (Cần 4 Terminals)
 
-**Terminal 5**, rồi lái xe chậm đi khắp phòng, thỉnh thoảng dừng vài giây:
+Kịch bản dùng hằng ngày.
+
+### Terminal 1: Cầu Nối ESP32
 ```bash
-cd ~/robot_ws_3 && python3 tools/check_scan_fit.py --duration 90
-```
-Mỗi dòng in độ lệch giữa điểm quét và tường bản đồ, kèm độ bất định AMCL tự báo
-(`amcl ±x cm ±y độ`).
-
-| Kết quả | Nghĩa là |
-|---|---|
-| lệch trung vị < 0.05 m, amcl ± vài cm / vài độ | Định vị tốt — sang B6 |
-| lệch nhỏ lúc đứng, lớn lúc chạy | Trễ giữa hai lần AMCL sửa; vẫn dùng được |
-| amcl ± nhỏ nhưng lệch > 0.15 m | AMCL **tự tin mà sai chỗ** — đặt lại bằng 2D Pose Estimate |
-| amcl ± lớn mãi không giảm | Không khớp được tường — vị trí ban đầu sai quá xa, hoặc phòng đã thay đổi nhiều so với lúc vẽ |
-
-**Đo kỹ — từng ảnh quét, khi xe đang chạy.** `check_scan_fit.py` lấy mẫu 2 giây
-một lần. Muốn biết chính xác lúc nào lệch và lệch bao nhiêu thì ghi lại rồi phân
-tích sau:
-```bash
-# trong lúc lái (Ctrl-C khi xong)
-ros2 bag record -o ~/bags/thu1 /scan /joint_states /imu/data /tf /tf_static /odom /amcl_pose
-# sau đó
-python3 tools/eval_bag_localization.py ~/bags/thu1 src/my_bot_bringup/config/real_room_map.yaml
-```
-Nó tìm vị trí THẬT của xe ở từng ảnh quét (chỗ ảnh quét khớp tường nhất) rồi so
-với vị trí AMCL đưa ra, tách theo đứng yên / chạy thẳng / quay tại chỗ. **Đạt:**
-sai vị trí lúc chạy trung vị < 5 cm, p90 < 10 cm.
-
-Kết quả đo được trên xe này (cùng một lần lái 185 s, phát lại qua từng phiên bản):
-
-| | sai vị trí lúc chạy (trung vị / p90 / max) |
-|---|---|
-| ban đầu | 6.4 / 18.4 / 22 cm |
-| sửa odometry mất quãng đường qua lỗ hổng Wi-Fi | 4.2 / 8.5 / 14.6 cm |
-| + siết mô hình cảm biến AMCL | **3.6 / 6.1 / 10.4 cm** |
-
-Sai hướng tối đa ~3° suốt cả lần lái. Chỗ lệch nhiều nhất còn lại là lúc **quay
-nhanh tại chỗ** (> 1.4 rad/s): một vòng quét mất 0.115 s, xe đã quay ~10° trong
-lúc đó nên ảnh quét bị nhoè.
-
-Định vị đạt rồi thì **Ctrl-C Terminal 2** trước khi sang B6:
-`navigation.launch.py` tự bật AMCL và map_server của riêng nó.
-
-## B6. Chạy điều hướng
-
-**Terminal 1** — cầu nối ESP32:
-```bash
+cd ~/robot_ws_3
+source install/setup.bash
 ros2 launch my_bot_bringup bringup_real.launch.py
 ```
+Bật nguồn xe, chờ log agent có `session established`.
 
-Kiểm tra dữ liệu lên đủ:
+### Terminal 2: Nav2 (gồm sẵn bản đồ + AMCL)
 ```bash
 cd ~/robot_ws_3
-python3 tools/check_qos.py          # QoS có khớp không
-python3 tools/check_tf.py           # cây TF có frame "odom" không
-python3 tools/check_esp32_rates.py  # nhịp và độ trễ
-```
-
-`check_tf.py` **phải** in `odom -> lidar_link  OK`. Không có frame `odom` thì
-mọi thứ phía sau vô nghĩa: slam_toolbox sẽ loại sạch scan và không bao giờ
-sinh ra bản đồ, còn RViz báo `Frame [map] does not exist`.
-
-Mong đợi: `/scan` ~8.7 Hz, `/odom` `/imu/data` `/tf` ~50 Hz, và `lech stamp`
-trung vị trong khoảng **−150 → +150 ms**.
-
-> **Đừng đo bằng node tự viết subscribe cả 4 topic một lúc.** Subscriber Python
-> đọc không kịp 200 msg/s, message dồn hàng đợi, và nó báo sai *cả* nhịp *lẫn*
-> độ trễ — tôi đã bị chính lỗi này: đo ra 14 Hz / trễ 798 ms, trong khi thực tế
-> là 50 Hz / trễ −40 ms. Dấu hiệu nhận ra: khoảng giữa hai lần *nhận* ngắn hơn
-> chu kỳ phát (10.7 ms so với 20 ms) — tức đang đọc từ đống tồn.
-
-**Terminal 2** — Nav2 (gồm sẵn map_server + AMCL):
-```bash
+source install/setup.bash
 ros2 launch my_bot_bringup navigation.launch.py use_sim_time:=false
 ```
-> **Tắt `localization.launch.py` (B5) và `slam.launch.py` trước.** Chạy chung
-> là hai AMCL / hai nguồn `map → odom` tranh nhau.
-
 Chờ log có `Managed nodes are active`, rồi **đặt vị trí ban đầu** (xe đứng yên):
 ```bash
-cd ~/robot_ws_3 && python3 tools/auto_initial_pose.py
+cd ~/robot_ws_3
+source install/setup.bash
+python3 tools/auto_initial_pose.py
 ```
 
-**Terminal 3** — RViz (Fixed Frame `map`; thêm `/grid_visualization` →
-`MarkerArray` để thấy sa bàn):
-```bash
-rviz2 -d /opt/ros/jazzy/share/nav2_bringup/rviz/nav2_default_view.rviz
-```
-Điểm quét đỏ phải trùng tường trước khi cho xe chạy.
+> [!WARNING]
+> Tắt `localization.launch.py` (Kịch bản 4) và `slam.launch.py` trước — chạy chung
+> là hai AMCL tranh nhau. Và **đừng quên `use_sim_time:=false`**: thiếu nó node
+> chờ `/clock` mãi mà không báo lỗi gì.
 
-**Terminal 4** — điều khiển:
-```bash
-cd ~/robot_ws_3 && python3 grid_navigator.py --real
-```
-Nhập lần lượt: **hàng** (1–5), **cột** (1–5), rồi **hướng tại đích**: `D` Đông = sang
-phải (cột tăng), `T` Tây = trái, `B` Bắc = lên (hàng tăng), `N` Nam = xuống, Enter =
-giữ hướng cạnh cuối. Xe tới đích (sai số ≤ 3 cm) rồi xoay về hướng đó (≤ 3°,
-`done_deg` trong grid_real.yaml). Đây là sai số cho phép **tại đích**; lúc bám cạnh
-xe phải nằm sát vạch.
-
-**Xoay tại chỗ:** vòng kín theo **gyro** (/imu/data). Dừng lệnh khi góc còn lại
-≤ `coast` × ω_đo (`coast: 0.36` s, đo trên xe: sau lệnh 0 xe còn quay thêm 0.36 s × ω).
-Không dùng ω của /odom (giật 0 / 128°/s khi gyro thật 55°/s) và không dự đoán theo
-lệnh (bánh không theo kịp: lệnh 1.3 rad/s, xe chỉ quay ~1 rad/s). Còn lệch > 3° thì
-xoay bù (tối đa 5 lần); vẫn chưa được thì log cảnh báo `CHƯA ĐẠT`. Log
-`Xoay xong ... (1 lần xoay bù: +91°→+3.3° (ω max 56°/s), ...)` cho biết từng lần.
-Xe thật 2026-10-03: 9/9 lần xoay ≤ 2.8°, 4–6 s mỗi lần.
-
-**Tìm đường:** đường ít cạnh nhất; nếu nhiều đường dài bằng nhau thì chọn đường **ít
-chỗ rẽ nhất** (mỗi chỗ rẽ = một lần xoay ~5 s).
-
-**Dòng đầu Terminal 4** luôn hiện, kể cả lúc đang chờ nhập: góc IMU (quaternion
-BNO055), vị trí và hướng xe trên bản đồ (≈ Đông/Tây/Nam/Bắc), điểm lưới gần nhất.
-Không muốn dòng này: thêm `--no-status`.
-
-Dòng đầu phải in `Che do: XE THAT (use_sim_time=false)`, rồi
-`Đã đối chiếu sa bàn với bản đồ: 24/25 điểm`. Không có `/map` thì nó dừng và
-báo phải chạy localization/navigation trước — không tự đoán lưới nữa.
-
-**Tay cầm:** đừng bấm LB khi Nav2 đang lái — tay cầm và Nav2 cùng phát
-`/cmd_vel`, hai lệnh xen nhau làm xe giật. **Dừng khẩn cấp:** Ctrl-C Terminal 2
-(Nav2 ngừng phát `/cmd_vel`, ESP32 tự dừng động cơ sau 0.5 s) hoặc tắt công tắc
-nguồn. Lần đầu: chọn điểm gần (vd từ hàng 3 cột 3 sang hàng 3 cột 4, 60 cm).
-
-### Thuật toán đang dùng
-
-| Tầng | Thuật toán | Cấu hình |
-|---|---|---|
-| Sa bàn (`grid_navigator.py`) | **BFS** trên đồ thị 5×5 nối 4 hướng — ít ô nhất, né điểm/cạnh bị chặn; tuyến được cắt thành **đoạn thẳng nằm trên cạnh** (các cạnh liền nhau cùng hướng gộp thành một đoạn) và giao thẳng cho controller qua action `follow_path`; gặp vật cản trên đường thì BFS lại | `grid_real.yaml` |
-| Bám quỹ đạo (Nav2 `controller_server`) | **Regulated Pure Pursuit**: đầu mỗi đoạn, đầu xe lệch > 11° thì **xoay tại chỗ** (1.0 rad/s) cho thẳng hàng, rồi chạy thẳng 0.25 m/s bám điểm cách 0.2 m phía trước trên đoạn; dừng trong 5 cm quanh điểm lưới | `FollowPath` |
-| Lập đường (Nav2 `planner_server`) | **A\*** (NavFn) — vẫn có trong Nav2 nhưng **sa bàn không dùng** (A\* tự tìm đường cong cắt qua ô); chỉ chạy khi bấm "Nav2 Goal" trong RViz | `GridBased` |
-| An toàn | `velocity_smoother` (giới hạn gia tốc, tính từ lệnh trước nên không kẹt ở vùng chết động cơ) → `collision_monitor` (giảm/dừng nếu sẽ va trong 1.2 s) | `velocity_smoother`, `collision_monitor` |
-
-Đã thử với xe ảo động học (có vùng chết động cơ) + đúng `navigation.yaml`, bản đồ và sa bàn thật: hai tuyến (3,3)→(5,5) và (5,5)→(1,1) đều tới nơi; lúc chạy xe lệch khỏi đường kẻ sa bàn trung vị 0 cm, tối đa 3.1 cm; dừng cách điểm 3.4 cm. Xe thật còn thêm sai số định vị AMCL (~3–6 cm).
-| Bánh xe (ESP32) | **PID** tốc độ từng bánh, 50 Hz | firmware |
-
----
-
-## Sa bàn 5×5
-
-Đánh số **từ 1**: **hàng 1 = dưới cùng** (y nhỏ nhất), **cột 1 = bên trái** (x
-nhỏ nhất). Sa bàn **cố định trên bản đồ**, đọc từ file cấu hình — xe đứng đâu
-cũng không kéo sa bàn theo.
-
-| | file | ô | (hàng 3, cột 3) | phạm vi |
-|---|---|---|---|---|
-| Xe thật | `config/grid_real.yaml` | 60 cm | (−0.545, +0.035) | x −1.75…+0.65, y −1.17…+1.23 |
-| Mô phỏng | `config/grid_sim.yaml` | 2 m | (0, 0) | x −4…+4, y −4…+4 |
-
-Ảnh: [`docs/sa_ban_5x5_preview.png`](sa_ban_5x5_preview.png) (xe thật),
-[`docs/sa_ban_5x5_preview_mo_phong.png`](sa_ban_5x5_preview_mo_phong.png).
-
-**Điểm/cạnh sát vật cản tự bị bỏ** khi `grid_navigator.py` nhận `/map`: điểm cách
-tường, đồ vật hoặc vùng chưa biết < 25 cm, cạnh < 20 cm. Xe thật hiện bỏ **điểm
-(hàng 1, cột 5)** — cách cụm chân bàn/ghế 14 cm — và 2 cạnh nối nó; BFS đi vòng.
-Vật cản MỚI (người, thùng) chặn thêm điểm/cạnh lúc chạy qua local costmap.
-
-Trong RViz (`Add` → `By topic` → `/grid_visualization` → `MarkerArray`): điểm
-xanh đi được, chấm đỏ bị bỏ, nhãn `hàng,cột` cạnh mỗi điểm.
-
-**Dời sa bàn** sang chỗ xe đang đứng (cần AMCL đang chạy và đã định vị):
-```bash
-python3 tools/set_grid_center.py            # ghi grid_real.yaml + vẽ lại ảnh
-python3 tools/set_grid_center.py --x -0.5 --y 0.0   # hoặc nhập tay
-python3 tools/preview_grid.py               # chỉ vẽ lại ảnh
-```
-
-**Góc sa bàn (`yaw_deg` trong grid_real.yaml).** Bản đồ SLAM có hướng tuỳ ý (theo
-lúc bắt đầu vẽ), nên tường và vạch gạch thật lệch vài độ so với trục x/y bản đồ —
-bản đồ hiện tại lệch **−5.0°**. Nếu sa bàn vẽ thẳng trục bản đồ thì trên RViz xe
-bám cạnh đúng nhưng ngoài sàn xe lệch khỏi vạch (5 cm ở cách tâm 0.6 m, 10 cm ở
-1.2 m). Đo lại góc khi vẽ bản đồ mới:
-```bash
-python3 tools/set_grid_center.py --yaw-walls --keep-center   # chỉ đo góc tường
-python3 tools/set_grid_center.py --yaw-walls                 # góc + tâm theo xe
-```
-Hướng Đ/T/B/N lúc nhập đích cũng tính theo trục sa bàn đã xoay.
-
-**Đặt tâm cho khớp vạch:** đặt tâm xe đúng giao điểm vạch (hàng 3, cột 3), rồi chạy
-`python3 tools/set_grid_center.py --dry-run` để xem tâm cũ lệch bao nhiêu; nếu
-lệch > 2 cm thì chạy lại không có `--dry-run`.
-
-## Hai xe trên sa bàn (hiện chỉ mô phỏng)
-
-```
-traffic_manager.py ──/fleet/agv1/cmd──▶ fleet_agent.py (/agv1) ──▶ Nav2 /agv1 ──▶ xe 1
-  lập đường, giữ chỗ,  ◀──/fleet/status──  chạy tới ô được phép,
-  gỡ kẹt               ──/fleet/agv2/cmd──▶ fleet_agent.py (/agv2) ──▶ Nav2 /agv2 ──▶ xe 2
-```
-
-- `traffic_manager.py`: nhận đích, lập đường cho từng xe, **giữ chỗ** (xe chỉ được đi
-  tới ô đã được cấp, xem trước 2 ô), phát hiện và gỡ kẹt.
-- `fleet_agent.py`: kế thừa `grid_navigator.py` (đoạn thẳng trên cạnh, bộ xoay), chỉ
-  chạy tới ô được phép; được thêm ô cùng hướng thì nối dài đoạn đang chạy (không
-  dừng ở mỗi ô). Bỏ vật cản trong 25 cm quanh xe khác (LiDAR thấy xe kia — việc của
-  traffic_manager); vật cản thật trên đường → dừng, báo `blocked`.
-
-**Quy tắc**
-1. Hai xe không cùng đích. Được nhận ô xe kia đang **đỗ** làm đích: xe đỗ né đi ngay.
-2. Đường ít cạnh nhất, ít rẽ (0.3 cạnh/lần rẽ); đi trên đường còn lại của xe kia
-   +2/ô, đi ngược chiều xe kia trên cùng cạnh +6/cạnh. Xe đang đỗ là vật cản cứng.
-3. Xe chiếm mọi ô cách nó < nửa ô + bán kính xe (giữa hai ô thì chiếm cả hai).
-4. Hai xe xin cùng một ô: **xe gần đích hơn** (ít ô còn lại) được trước; bằng nhau
-   thì xe 1.
-5. Chờ > 3 s vì bị xe kia chặn: xe kia **đỗ / mất liên lạc** → đi vòng tránh mọi ô
-   nó giữ, không được thì xe đỗ né sang ô trống; **chờ nhau** hoặc xe kia **đứng yên
-   hẳn** > 3 s → xe xa đích hơn nhường (đi vòng, không được thì né sang ô trống
-   rồi quay lại; không được nữa thì đổi vai; vẫn không được thì dừng cả hai, báo
-   lỗi). Xe kia **đang chạy / đang xoay** thì cứ chờ.
-6. Mất liên lạc: agent không nhận lệnh 1 s → tự dừng xe; traffic_manager không
-   nhận trạng thái 1 s → giữ nguyên các ô xe đó đang giữ, xe khác không vào.
-7. Vật cản thật trên đường / Nav2 thất bại → lập lại đường từ chỗ xe dừng (tối đa 5
-   lần mỗi 2 s, rồi bỏ lộ trình, báo cần người).
-
-**Chạy mô phỏng** (ROS_DOMAIN_ID 87, không đụng xe thật; xe ảo + Nav2 thật):
+### Terminal 3: RViz
 ```bash
 cd ~/robot_ws_3
-tools/fleet_sim.sh up                     # map_server, 2 xe ảo, 2 Nav2, 2 fleet_agent (~40 s)
-ROS_DOMAIN_ID=87 python3 traffic_manager.py agv1 agv2
-#   nhập:  1 5 5 d   (xe 1 tới hàng 5 cột 5, quay Đông)
-#          2 1 1     (xe 2 tới hàng 1 cột 1, giữ hướng)
-#          s         (dừng tất cả)     q (thoát)
-tools/fleet_sim.sh down
+source install/setup.bash
+rviz2 -d /opt/ros/jazzy/share/nav2_bringup/rviz/nav2_default_view.rviz
 ```
-Vị trí đầu: `AGV1="3 1 0" AGV2="3 5 180" tools/fleet_sim.sh up` (hàng cột hướng_độ).
-Vật cản ảo: `ROS_DOMAIN_ID=87 ros2 topic pub --once /sim/obstacles std_msgs/msg/String "{data: 'x,y'}"`.
-RViz (domain 87): `/fleet/markers` — đường còn lại và ô đang giữ của từng xe.
+Thêm **`/grid_visualization`** → **MarkerArray** để thấy sa bàn. Điểm quét đỏ phải
+trùng tường trước khi cho xe chạy.
 
-Mô phỏng dùng bản sao `grid_real.yaml` với `coast: 0` (mô hình xoay theo lệnh): xe ảo
-không có ma sát, số `coast: 0.36` đo trên xe thật làm xe ảo vọt góc.
+### Terminal 4: Nhập Đích
+```bash
+cd ~/robot_ws_3
+source install/setup.bash
+python3 grid_navigator.py --real
+```
+Dòng đầu phải in `Che do: XE THAT` và `Đã đối chiếu sa bàn với bản đồ: 24/25 điểm`.
 
-**Đã kiểm trên mô phỏng (2026-10-05)** — mọi kịch bản: hai xe không lúc nào gần nhau
-dưới 57 cm (tâm–tâm; xe Ø 18 cm), tới đích lệch 1.4–2.0 cm, lệch cạnh lúc chạy ≤ 2.5 cm.
+Nhập lần lượt:
 
-| Kịch bản | Diễn biến |
-|---|---|
-| Đổi chỗ trên hàng 3 | xe kia đang đỗ ở đích → né ngay; xe 2 tự đi vòng hàng 4 |
-| Cắt ngang ở (3,3) | xe 2 dừng ở (2,3) chờ xe 1 qua (3,3) rồi đi |
-| Đối đầu (`--no-avoid`) | kẹt ở (3,3)/(3,4) → xe xa đích hơn né sang (4,4), xe kia qua rồi đi tiếp |
-| Đích là chỗ xe kia đỗ | xe đỗ né sang ô bên, ở lại đó |
-| Ưu tiên gần đích | xe còn 2 ô vào (3,2) trước xe còn 3 ô; xe kia chờ, khi xe trước đỗ thì đi vòng |
-| Tắt traffic_manager | cả hai xe tự dừng sau ~2 s |
-| Tắt agent xe 2 giữa ô (3,3) | báo mất liên lạc 1 s; xe 1 đi vòng tránh mọi ô xe 2 giữ; bật lại agent → xe 2 chạy nốt |
-| Vật cản bất ngờ ở (3,4) | dừng < 1 s, lập đường vòng hàng 4, cách vật cản ≥ 58 cm |
+| Hỏi | Nhập | Ví dụ |
+|---|---|---|
+| Hàng | `1`–`5` (1 = dưới cùng) | `3` |
+| Cột | `1`–`5` (1 = bên trái) | `5` |
+| Hướng tại đích | `D` Đông (phải) · `T` Tây (trái) · `B` Bắc (lên) · `N` Nam (xuống) · Enter = giữ hướng | `d` |
 
-Chưa kiểm trên xe thật (mới có một xe). Khi có xe thứ hai: mỗi xe một ESP32
-`ROBOT_ID` riêng, một AMCL + Nav2 riêng trong namespace, chung bản đồ.
+Xe tới đích (sai số ≤ 3 cm) rồi xoay về hướng đã chọn (≤ 3°). Gõ `q` để thoát.
+
+> [!TIP]
+> **Dòng đầu Terminal 4** luôn hiện, kể cả lúc chờ nhập: góc IMU, vị trí, hướng xe
+> (≈ Đông/Tây/Nam/Bắc) và điểm lưới gần nhất. Không muốn: thêm `--no-status`.
+>
+> Lần đầu hãy chọn điểm gần (vd hàng 3 cột 3 → hàng 3 cột 4, 60 cm).
+
+> [!CAUTION]
+> **Dừng khẩn cấp:** Ctrl-C Terminal 2 (Nav2 ngừng phát lệnh, ESP32 tự dừng động
+> cơ sau 0.5 s) hoặc tắt công tắc nguồn. Đừng bấm LB tay cầm khi Nav2 đang lái —
+> hai lệnh xen nhau làm xe giật.
+
+Thuật toán đang dùng (tìm đường, bám cạnh, xoay): [Phụ lục E](#e-thuật-toán-đang-dùng).
 
 ---
 
-## Bảng tra sự cố
+## 6️⃣ Kịch Bản 6: Hai Xe Trên Sa Bàn — Mô Phỏng (Cần 2 Terminals)
+
+Thử bộ điều phối hai xe: giữ chỗ, ưu tiên **xe gần đích hơn**, tự gỡ kẹt. Chạy trên
+`ROS_DOMAIN_ID=87` nên **không đụng tới xe thật**. Hai xe ảo nhưng Nav2 là Nav2 thật.
+
+### Terminal 1: Bật Mô Phỏng (bản đồ, 2 xe ảo, 2 Nav2)
+```bash
+cd ~/robot_ws_3
+source install/setup.bash
+tools/fleet_sim.sh up
+```
+Chờ khoảng 40 giây tới khi in `Nav2 agv1 ... san sang` và `Nav2 agv2 ... san sang`.
+Vị trí đầu mặc định: xe 1 ở (hàng 3, cột 1), xe 2 ở (hàng 3, cột 5). Muốn khác:
+```bash
+AGV1="3 1 0" AGV2="3 5 180" tools/fleet_sim.sh up     # hàng cột hướng_độ
+```
+
+### Terminal 2: Bộ Điều Phối
+```bash
+cd ~/robot_ws_3
+source install/setup.bash
+ROS_DOMAIN_ID=87 python3 traffic_manager.py agv1 agv2
+```
+
+| Nhập | Nghĩa |
+|---|---|
+| `1 5 5 d` | xe 1 tới hàng 5 cột 5, quay Đông |
+| `2 1 1` | xe 2 tới hàng 1 cột 1, giữ hướng |
+| `s` | dừng tất cả |
+| `q` | thoát |
+
+### Tắt Mô Phỏng
+```bash
+cd ~/robot_ws_3
+tools/fleet_sim.sh down
+```
+
+> [!TIP]
+> - **Thả vật cản ảo** ở (x, y) mét:
+>   `ROS_DOMAIN_ID=87 ros2 topic pub --once /sim/obstacles std_msgs/msg/String "{data: 'x,y'}"`
+>   (gửi `''` để bỏ).
+> - **RViz** (cũng `ROS_DOMAIN_ID=87`): topic `/fleet/markers` — đường còn lại và ô
+>   đang giữ của từng xe.
+
+Quy tắc điều phối và kết quả kiểm thử: [Phụ lục F](#f-quy-tắc-điều-phối-hai-xe).
+
+---
+
+## 🧭 Sa Bàn 5×5
+
+Đánh số **từ 1**: **hàng 1 = dưới cùng**, **cột 1 = bên trái**. Sa bàn **cố định trên
+bản đồ**, đọc từ file cấu hình — xe đứng đâu cũng không kéo sa bàn theo.
+
+| | File | Ô | (hàng 3, cột 3) |
+|---|---|---|---|
+| Xe thật | `src/my_bot_bringup/config/grid_real.yaml` | 60 cm | (−0.545, +0.035) |
+| Mô phỏng | `src/my_bot_bringup/config/grid_sim.yaml` | 2 m | (0, 0) |
+
+Ảnh xem trước: [`sa_ban_5x5_preview.png`](sa_ban_5x5_preview.png) (xe thật),
+[`sa_ban_5x5_preview_mo_phong.png`](sa_ban_5x5_preview_mo_phong.png).
+
+**Điểm/cạnh sát vật cản tự bị bỏ:** điểm cách tường/đồ vật < 25 cm, cạnh < 20 cm. Xe
+thật hiện bỏ **(hàng 1, cột 5)** — sát chân bàn ghế; xe tự đi vòng. Vật cản mới
+(người, thùng) chặn thêm điểm/cạnh lúc đang chạy.
+
+### Căn Sa Bàn Cho Khớp Vạch Gạch (sau khi vẽ bản đồ mới)
+Cần Kịch bản 4 hoặc 5 đang chạy và đã định vị.
+
+```bash
+cd ~/robot_ws_3
+source install/setup.bash
+
+# 1. Góc: bản đồ SLAM có hướng tuỳ ý, đo góc tường để lưới song song vạch gạch
+python3 tools/set_grid_center.py --yaw-walls --keep-center
+
+# 2. Tâm: đặt TÂM XE đúng giao điểm vạch (hàng 3, cột 3), xem lệch bao nhiêu
+python3 tools/set_grid_center.py --dry-run
+#    lệch > 2 cm thì ghi lại tâm:
+python3 tools/set_grid_center.py
+
+# Hoặc đo nhiều giao điểm (lái xe tới từng giao điểm, nhập "hàng cột"):
+python3 tools/calib_grid_points.py            # chỉ xem
+python3 tools/calib_grid_points.py --write    # ghi vào grid_real.yaml
+```
+Chạy lại `grid_navigator.py --real` sau khi đổi. Vẽ lại ảnh xem trước:
+`python3 tools/preview_grid.py`.
+
+---
+
+## 🛠️ Bảng Tra Sự Cố
 
 | Triệu chứng | Nguyên nhân | Cách sửa |
 |---|---|---|
+| **Xe thật: mọi thứ treo, không lỗi gì** | sót `use_sim_time:=false` ở một terminal | thêm vào; node đó đang chờ `/clock` mãi |
 | `package 'micro_ros_agent' not found` | chưa source workspace agent | `source ~/microros_ws/install/setup.bash` |
 | Các node không thấy nhau, `ros2 topic list` thiếu topic | thiếu biến discovery | `export ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST` |
-| Nav2 đứng im lúc khởi động | `/clock` không chạy | bấm **Play** trong Gazebo |
-| Terminal bringup báo `IMU khong gui goi hop le`; xe quay mà RViz không quay, AMCL lạc ngay | BNO055 trả về toàn số 0 (đã gặp sau khi chỉ bấm reset ESP32 — nút đó không reset BNO055) | **Tắt hẳn nguồn xe** vài giây rồi bật lại, để xe đứng yên lúc khởi động. Vẫn bị thì kiểm tra 4 dây I2C của BNO055. Trong lúc đó odometry tự lấy góc từ bánh xe |
-| Ảnh quét trượt khỏi tường 10–25 cm theo hướng xe chạy, ngay lúc xe vừa chạy/vừa dừng, rồi giữ nguyên tới lần quay sau | Dữ liệu ESP32 im đúng **1.0 s** mỗi khi Wi-Fi rơi một gói: `/joint_states` để RELIABLE nên micro-ROS chờ ACK tới 1000 ms. `wheel_odometry` cũ còn **bỏ** quãng đường của lỗ hổng > 1 s | Đã sửa ở odometry: dùng giá trị tích luỹ qua lỗ hổng, nên lỗ hổng 1 s không còn làm mất quãng đường. **Đừng** đổi `/joint_states` sang best-effort để bỏ lỗ hổng: đã thử, lệnh tay cầm tới bánh xe trễ trung vị 2.9 s, tối đa 6.2 s (RELIABLE: 87 ms). Kiểm tra: `tools/eval_bag_localization.py` |
-| Nhập toạ độ xong xe không chạy | Nav2 chưa xong | `tf2_echo map base_footprint` báo `Invalid frame ID "map"` → đợi thêm |
-| **Xe thật: mọi thứ treo, không lỗi gì** | sót `use_sim_time:=false` ở một terminal | node đó đợi `/clock` vĩnh viễn và **không in lỗi** |
-| ESP32 reset liên tục | sụt áp | Serial báo `SUT AP (brownout)` → chưa tách nguồn động cơ |
-| Xe chỉ full tốc hoặc dừng | jumper ENA/ENB còn nguyên | tháo ra |
-| Tay cầm không tác dụng | `joy_node` đang chạy | phải thêm `start_joy_node:=false` |
-| `ros2 topic echo` báo không có publisher dù topic tồn tại | lỗi discovery của **CLI** `ros2` trong WSL | dùng `tools/check_esp32_rates.py` |
-| `Connecting....` rồi `Wrong boot mode detected (0x13)` | bo CH340 không tự vào chế độ nạp | **giữ nút BOOT** lúc đang `Connecting....` |
-| Mọi topic chỉ ~1 Hz, cột `spin` ~980000 | `rclc_executor_spin_some` **chặn tới khi có dữ liệu đến**, không tôn trọng timeout → mọi thứ publish sau nó tụt xuống nhịp của `/cmd_vel` | firmware đã truyền timeout `0`; nếu tái diễn thì kiểm dòng `rclc_executor_set_timeout -> 0 (OK)` |
-| Nav2 báo `message too old` / `extrapolation`, stamp cách nhau đúng 1000 ms | đồng hồ trong `rmw_uros_epoch_nanos()` chỉ có độ phân giải **1 giây** | đã sửa: firmware neo epoch rồi tự chạy bằng `esp_timer`. Kiểm dòng boot `Dong ho: tick1 … sync -> 0, tick2 …` |
-| Stamp đúng nhịp nhưng cả cụm trễ ~1 giây | `sync_session` tính offset từ chính đồng hồ 1 giây đó nên **offset sai tới 1 giây** | đã sửa: chờ đúng cạnh tick rồi mới `sync_session` |
-| `E (318) gpio: gpio_pulldown_en(123)` lúc boot | Firmware cũ: ESP32Encoder bật điện trở kéo trên GPIO 34/35 — hai chân chỉ-vào, không có điện trở nội | nạp firmware mới (encoder 23/18/19/17, kéo lên nội) |
-| Vẽ bản đồ một lúc thì ảnh quét lệch khỏi tường, nhất là sau khi quay; `map→odom` yaw dao động qua lại (đo bằng `tools/check_slam_drift.py`) | stamp `/scan` gắn lúc **gửi** (cuối vòng quét) trong khi điểm thu rải suốt 0.116 s trước đó → lúc quay slam dùng tư thế trễ nửa vòng, 1.2 rad/s là lệch 4°, dấu đảo theo chiều quay | đã sửa trong firmware: stamp lùi về **giữa vòng**, `time_increment = 0`. Đo trước/sau, cùng 6.6 m lái: dao động yaw 13.8° → 3.2°, lần sửa lớn nhất 485 → 142 mm. Kiểm firmware mới: `time_increment` của `/scan` phải bằng 0 |
-| Trong RViz, trục đỏ của xe không hướng về phía vật mà xe đang quay mặt vào; ảnh quét và tường đen thì khớp nhau nhưng cùng lệch so với xe | `LIDAR_ANGLE_OFFSET_DEG` sai — LiDAR gắn lệch so với mũi xe. **Không** làm méo bản đồ (bản đồ vẫn nhất quán, chỉ bị xoay) nhưng **phải sửa trước khi chạy Nav2**: Nav2 sẽ thấy vật cản lệch đi đúng chừng đó độ | đặt một vật ngay trước mũi xe cách 0.4–1.0 m, chạy `python3 tools/check_lidar_offset.py`. Nó in ra cả hai cách sửa (URDF hoặc firmware), chỉ làm **một** |
-| LiDAR quét tới xa nhưng vùng trắng không lan ra, phần lớn bản đồ vẫn **xám (unknown)** | ô chỉ được tô khi `cellPassCnt > min_pass_through` (Karto `UpdateCell`), không thoả thì giữ nguyên xám. Mật độ tia loãng dần theo khoảng cách: 320 tia/360° → xa hơn **2.55 m** là hai tia liền nhau nhảy cóc qua ô 5 cm ở giữa, nên mỗi vòng quét chỉ cho ô ≤ 1 lượt | `min_pass_through` 2 (không nâng lên 3), và hạ `minimum_travel_distance`/`heading` xuống 0.2 để nhiều vị trí quan sát hơn. Cả hai đã chỉnh trong `config/slam_async.yaml` |
-| Bản đồ ra từng mảng trắng rời rạc, rìa tua hình nan quạt, **gần như không có tường đen** | điểm trúng tường bị rải ra quá nhiều ô nên không ô nào đủ tỉ lệ trúng/đi-qua → vấn đề ở **ước lượng vị trí**, không phải ở ngưỡng. Nghi phạm số một là `LIDAR_ANGLE_FLIP` sai (ảnh quét lật gương) | `python3 tools/check_lidar_angle.py`, cho xe quay tại chỗ. Lưu ý: sai `LIDAR_ANGLE_OFFSET_DEG` **không** gây ra cảnh này — lệch góc cố định chỉ làm bản đồ bị xoay chứ vẫn sắc nét |
-| Đẩy cần lên xe chạy lùi, đẩy trái xe rẽ phải | đảo **cả hai** động cơ cho đúng triệu chứng này: `v>0` thành lùi, `w>0` thành rẽ phải | chạy `python3 tools/check_direction.py` để biết lỗi ở tay cầm hay ở động cơ, rồi làm theo kết luận nó in ra. Nếu là động cơ thì phải đảo **cả bốn** cờ `INVERT_MOTOR_*` và `INVERT_ENC_*`, chỉ đảo động cơ sẽ bị ESTOP |
-| Bản đồ đầy chấm đen nhỏ rải rác khắp vùng trống | LiDAR có ~6% tia rác (đo bằng `tools/check_scan_noise.py`), **và** `occupancy_threshold` mặc định `0.1` khuếch đại nó: chỉ cần 1 tia trúng trên 9 lần đi qua sạch là ô đó thành vật cản vĩnh viễn | đã sửa trong `config/slam_async.yaml`: `occupancy_threshold` 0.3, `min_pass_through` 3, `min_laser_range` 0.12, `max_laser_range` 8.0 |
-| RViz không hiện hình xe | display **RobotModel bị tắt** trong `nav2_default_view.rviz` (ô tick trống, chữ đen thay vì xanh, mục con bị xám) | tích vào ô đó. Muốn giữ thì **File → Save Config As** vào `src/my_bot_bringup/rviz/` — cấu hình gốc nằm trong `/opt/ros/jazzy/` nên không lưu được |
-| RViz: `Frame [map] does not exist` + `No map received`, log đầy `Message Filter dropping message: frame 'lidar_link' … queue is full` | **lệch QoS trên `/tf`**: firmware phát best-effort còn `tf2_ros::TransformListener` luôn subscribe reliable → tf2 không nhận gì → frame `odom` không tồn tại → slam_toolbox loại sạch scan | đã sửa: `/tf` và `/odom` đổi sang `rclc_publisher_init_default` (reliable). Kiểm bằng `python3 tools/check_qos.py` |
-| Cột `sync` có đỉnh ~600000 | `ping_agent` chặn | bình thường **khi xe đứng yên**; firmware tắt ping khi có `/cmd_vel` |
+| Nav2 mô phỏng đứng im | `/clock` không chạy | bấm **Play** trong Gazebo |
+| Nhập đích xong xe không chạy | Nav2 chưa xong | `ros2 run tf2_ros tf2_echo map base_footprint` báo `Invalid frame ID "map"` → đợi thêm |
+| ESP32 không kết nối agent sau khi bật lại | ESP32 cần thêm thời gian, hoặc sai `AGENT_IP` | chờ 30 s; kiểm `hostname -I` khớp `AGENT_IP` |
+| ESP32 reset liên tục, Serial báo `SUT AP (brownout)` | sụt áp | tách nguồn động cơ khỏi nguồn ESP32, tụ 1000 µF |
+| Bringup báo `IMU khong gui goi hop le`; xe quay mà RViz không quay | BNO055 trả toàn số 0 (sau khi chỉ bấm reset ESP32) | **tắt hẳn nguồn xe** rồi bật lại, để xe đứng yên lúc khởi động; vẫn bị thì kiểm 4 dây I2C |
+| Xe chỉ chạy hết tốc hoặc dừng | jumper ENA/ENB trên L298N còn nguyên | tháo ra |
+| `Connecting....` rồi `Wrong boot mode detected (0x13)` | bo không tự vào chế độ nạp | **giữ nút BOOT** lúc `Connecting....` |
+| Tay cầm không tác dụng | `joy_node` đang chạy | thêm `start_joy_node:=false` |
+| Đẩy cần lên xe chạy lùi, đẩy trái xe rẽ phải | đảo chiều động cơ | `python3 tools/check_direction.py`, làm theo kết luận; đảo động cơ thì đảo **cả bốn** cờ `INVERT_MOTOR_*`/`INVERT_ENC_*` |
+| Xe quay chậm hơn lệnh, xoay lệch > 3° | motor yếu trên sàn | firmware đã tăng Kf 3.0, tích phân ≤ 200; kiểm pin (3S đầy 12.6 V) |
+| Trên RViz xe bám cạnh nhưng ngoài sàn lệch vạch | sa bàn chưa khớp vạch thật | [căn sa bàn](#căn-sa-bàn-cho-khớp-vạch-gạch-sau-khi-vẽ-bản-đồ-mới) |
+| RViz không hiện hình xe | display RobotModel bị tắt | tích vào ô đó; lưu cấu hình vào `src/my_bot_bringup/rviz/` |
+| RViz: `Frame [map] does not exist` | thiếu frame `odom` / lệch QoS `/tf` | `python3 tools/check_tf.py` phải in `odom -> lidar_link OK`; `python3 tools/check_qos.py` |
+| `ros2 topic echo` báo không có publisher dù topic tồn tại | lỗi discovery của CLI `ros2` trong WSL | dùng `python3 tools/check_esp32_rates.py` |
+| Bản đồ SLAM lệch khỏi tường sau khi quay | (đã sửa trong firmware: stamp `/scan` giữa vòng quét) | `time_increment` của `/scan` phải bằng 0 |
+| Trục đỏ của xe không hướng về phía trước thật | LiDAR gắn lệch góc | đặt vật trước mũi xe 0.4–1 m, `python3 tools/check_lidar_offset.py` |
+| Bản đồ ra từng mảng rời, gần như không có tường | ảnh quét lật gương | `python3 tools/check_lidar_angle.py`, cho xe quay tại chỗ |
+| Bản đồ đầy chấm đen nhỏ | tia rác của LiDAR | đã chỉnh `config/slam_async.yaml` (`occupancy_threshold` 0.3…) |
+| Phần lớn bản đồ vẫn xám | tia thưa ở xa | đã chỉnh `slam_async.yaml`; lái chậm, dừng nhiều chỗ |
+| Hai xe (mô phỏng): Nav2 một xe không lên | lifecycle mất trả lời khi khởi động | `fleet_sim.sh` tự bật lại tối đa 3 lần; vẫn lỗi thì `down` rồi `up` |
+| Hai xe (mô phỏng): Nav2 liên tục báo thất bại | còn sót agent cũ chạy song song | `tools/fleet_sim.sh down` (tắt mọi tiến trình mô phỏng) rồi `up` |
 
-> Lỗi hay gặp nhất ở Chế độ B là **quên `use_sim_time:=false`**. Node đó sẽ
-> chờ `/clock` mãi mãi mà không in bất cứ thông báo nào.
+Chi tiết các lỗi firmware đã gặp (stamp, `spin_some`, đồng hồ 1 giây…): [Phụ lục G](#g-các-lỗi-firmware-đã-sửa).
 
 ---
 
-## Phạm vi đã kiểm chứng
+# 📚 Phụ Lục
 
-**Chế độ A** — đã chạy thật nhiều lần. Lần cuối: xe đi từ (2,2) tới (2,0), gặp
-vật cản thả giữa đường, dừng khẩn cấp, replan **1 lần**, đi vòng và tới đích
-tại (-3.98, 0.24).
+## A. Nối Dây
 
-**Chế độ B** — ESP32 đã kết nối thật và phát đủ 4 topic với dữ liệu hợp lệ:
+Sơ đồ đầy đủ mở bằng trình duyệt: [`so_do_day_agv.html`](so_do_day_agv.html). Chân
+theo **mạch in 2026-10-05**.
 
-| Topic | Frame | Dữ liệu |
+| ESP32 | Nối tới | Ghi chú |
 |---|---|---|
-| `/scan` | `lidar_link` | 320 tia, ~230 tia hợp lệ, 0.18–7.89m, lidar quay 8.7 Hz |
-| `/odom` | `odom`→`base_footprint` | x/y/yaw/v/w đúng định dạng |
-| `/imu/data` | `imu_link` | gyro ≈ 0 khi đứng yên, \|accel\| = 10.12 m/s² (trọng lực) |
-| `/tf` | `odom`→`base_footprint` | đúng |
+| GPIO 25 | L298N **ENA** | PWM bánh trái |
+| GPIO 27 / 26 | L298N **IN1 / IN2** | chiều bánh trái |
+| GPIO 14 | L298N **ENB** | PWM bánh phải |
+| GPIO 33 / 32 | L298N **IN3 / IN4** | chiều bánh phải |
+| GPIO 23 / 18 | Encoder trái **A / B** (A_T, B_T) | kéo lên nội |
+| GPIO 19 / 17 | Encoder phải **A / B** (A_P, B_P) | kéo lên nội |
+| GPIO 21 / 22 | BNO055 **SDA / SCL** | địa chỉ `0x29` (`0x28` nếu ADR nối GND) |
+| GPIO 16 | LiDAR **Tx** | UART2, 115200 |
+| GPIO 4 | LiDAR **PWM** | tốc độ mô-tơ quét |
+| 3V3 | VCC encoder, BNO055 VIN | **không** dùng 5 V cho encoder |
+| VIN (5V) | ra của mạch hạ áp | không cắm USB cùng lúc |
 
-### Ba lỗi đã tìm ra và sửa trên phần cứng thật
+Bánh trái → **OUT1/OUT2**, bánh phải → **OUT3/OUT4**. LiDAR VCC lấy 5 V từ mạch hạ áp.
+GPIO 13 còn trống (dùng cho chân EN nếu đổi sang LiDAR X4).
 
-| | trước | sau |
+> [!WARNING]
+> - **Tháo cả hai jumper ENA và ENB** trên L298N, không thì PWM vô tác dụng.
+> - **Encoder cấp 3V3, KHÔNG phải 5V** — 5V làm chết GPIO.
+> - Không nuôi ESP32 từ chân +5V của L298N. Tụ 1000 µF sát cọc 12 V. Mọi GND về một điểm.
+
+**Nguồn:** pin Li-ion 3S (đầy 12.6 V) → L298N +12V (động cơ) và → mạch hạ áp 5 V →
+ESP32 VIN + LiDAR.
+
+## B. Kiểm Tra Phần Cứng Lần Đầu
+
+Mở Serial Monitor 115200, làm lần lượt:
+
+| # | Việc | Đúng khi |
 |---|---|---|
-| nhịp phát `/odom` `/imu` `/tf` | 1 Hz | **50 Hz** |
-| nhịp phát `/scan` | 1 Hz | **8.7 Hz** |
-| độ phân giải stamp | 1000 ms | **20 ms** |
-| stamp lệch đồng hồ máy | +1158 ms | **−40 ms** (trung vị) |
-| `ca_vong` lâu nhất | 751 000 µs | 8 000–12 000 µs |
+| 1 | Nhấc xe, quay tay bánh trái đúng 10 vòng | `count` đổi ~21500. Quay tiến mà RPM âm → đảo `INVERT_ENC_L` |
+| 2 | Bơm lệnh tiến (lệnh dưới, **kê bánh lên trước**) | cả hai bánh quay tiến; bánh nào lùi → đảo `INVERT_MOTOR_x` |
+| 3 | Xoay xe 90° trong ~1 giây | `gyroZ` ≈ 1.57 |
+| 4 | Đọc log | `scan 8.5 Hz`, vài trăm điểm/vòng |
+| 5 | Dòng chẩn đoán | `pub/s: scan 8 odom 50 imu 50` |
 
-1. **`rclc_executor_spin_some` chặn tới khi có dữ liệu đến**, không tôn trọng
-   timeout. Đo được `spin` = 965–990 ms trong một vòng ~1000 ms. Mọi thứ publish
-   nằm sau nó nên toàn bộ topic tụt xuống nhịp của `/cmd_vel`. Truyền timeout
-   `0` thì `spin` xuống 500–2000 µs.
-2. **`rmw_uros_epoch_nanos()` chỉ có độ phân giải 1 giây.** Chứng minh bằng cách
-   in stamp thô: trường `nanosec` đứng yên hàng chục giây, chỉ `sec` tăng, và
-   chỉ đổi đúng lúc `sync_session()` chạy. 50 message trong một giây mang y hệt
-   một mốc thời gian. Sửa: neo epoch một lần rồi tự chạy bằng `esp_timer`.
-3. **Chính cái offset của `sync_session` cũng sai tới 1 giây**, vì nó tính
-   `((t2-t1)+(t3-t4))/2` với `t1`/`t4` đọc từ đúng đồng hồ 1 giây đó. Sửa: chờ
-   đúng khoảnh khắc đồng hồ thô vừa nhảy (lúc đó nó đúng) rồi mới `sync_session`.
+```bash
+cd ~/robot_ws_3
+source install/setup.bash
+ros2 topic pub -r 10 /cmd_vel geometry_msgs/msg/Twist "{linear: {x: 0.1}}"
+```
 
-### Chưa kiểm chứng
+Kiểm dữ liệu lên đủ (Kịch bản 5, Terminal 1 đang chạy):
+```bash
+python3 tools/check_qos.py          # QoS có khớp không
+python3 tools/check_tf.py           # phải in odom -> lidar_link OK
+python3 tools/check_esp32_rates.py  # /scan ~8.7 Hz, /odom /imu/data ~50 Hz
+```
 
-- **Nav2 tự lái xe thật (B6)** — chưa chạy lần nào. Lái tay qua `/cmd_vel` và
-  vẽ bản đồ bằng slam_toolbox (B4) thì đã chạy được trên xe thật.
-- **`grid_navigator.py --real` với Nav2 trên xe thật** — sa bàn 5×5 ô 60 cm đã
-  làm và chạy thử không có xe (nạp bản đồ, bỏ đúng điểm, BFS, từ chối điểm bị
-  chặn), nhưng chưa cho Nav2 lái xe theo nó lần nào.
-- **Việc tắt ping khi đang được điều khiển.** Firmware chỉ chạy
-  `ping_agent`/`sync_session` khi mất `/cmd_vel` quá hạn. Lúc xe đứng yên thì
-  điều kiện đó luôn đúng nên vẫn thấy `sync ~600000` mỗi 5 giây — đúng như
-  thiết kế. Nhưng **chưa có ai xác nhận nó im lúc đang lái**: cần chạy B4 hoặc
-  B6 rồi soi cột `sync`.
-- Vẫn còn **14 khoảng trống > 200 ms trong 20 giây** (lớn nhất 866 ms) lúc xe
-  đứng yên. Khoảng 4 cái là các lần ping nói trên; số còn lại chưa quy được cho
-  ai — có thể vẫn là công cụ đo hoặc WSL.
-- Giao diện Gazebo/RViz (chạy không màn hình).
+**Dòng chẩn đoán firmware** (dòng thứ hai mỗi giây):
+
+| Cột | Bình thường | Lệch thì |
+|---|---|---|
+| `ros_task …/s` | 500–700 | thấp → vòng lặp bị chặn |
+| `pub/s scan` / `odom` / `imu` | 8–9 / 50 / 50 | thấp → xem `ca_vong` |
+| `spin` | < 2000 | ~980000 → `spin_some` chặn |
+| `imu` | 5000–9000 | lớn → dây I2C dài/nhiễu |
+| `sync` | < 300 | ~600000 **bình thường khi xe đứng yên** (ping agent) |
+| `ca_vong` | 8000–12000 | 750000 → lệnh chặn trong vòng lặp |
+| `loi pub` | 0 | > 0 → vượt MTU / hết bộ đệm |
+
+## C. Đo Định Vị Kỹ
+
+| Kết quả `check_scan_fit.py` | Nghĩa |
+|---|---|
+| lệch trung vị < 0.05 m, amcl ± vài cm | tốt |
+| lệch nhỏ lúc đứng, lớn lúc chạy | trễ giữa hai lần AMCL sửa; dùng được |
+| amcl ± nhỏ nhưng lệch > 0.15 m | AMCL tự tin mà sai — đặt lại vị trí |
+| amcl ± lớn mãi | vị trí ban đầu sai quá xa / phòng đổi nhiều |
+
+Đo từng ảnh quét khi xe chạy:
+```bash
+ros2 bag record -o ~/bags/thu1 /scan /joint_states /imu/data /tf /tf_static /odom /amcl_pose   # Ctrl-C khi xong
+python3 tools/eval_bag_localization.py ~/bags/thu1 src/my_bot_bringup/config/real_room_map.yaml
+```
+**Đạt:** sai vị trí lúc chạy trung vị < 5 cm, p90 < 10 cm. Xe này đo được
+**3.6 / 6.1 / 10.4 cm** (trung vị / p90 / max), sai hướng tối đa ~3°.
+
+## D. Vì Sao Cần Các Dòng Trong `~/.bashrc`
+
+- **`ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST`** — mạng WSL làm discovery mặc định thất
+  bại: các node **vẫn chạy nhưng không thấy nhau**, không có lỗi nào.
+- **`source ~/microros_ws/install/setup.bash`** — `micro_ros_agent` không có trong apt,
+  đã build sẵn ở `~/microros_ws`. Thiếu dòng này: `package 'micro_ros_agent' not found`.
+- **`fix_wsl_clock.sh`** — `systemd-timesyncd` cãi nhau với Hyper-V làm đồng hồ Ubuntu
+  chậm 8.3% rồi giật 2.4 s mỗi ~35 s; tay cầm bị ngắt từng cơn.
+
+## E. Thuật Toán Đang Dùng
+
+| Tầng | Thuật toán | Cấu hình |
+|---|---|---|
+| Tìm đường (`grid_navigator.py`) | Dijkstra trên lưới 5×5 nối 4 hướng: **ít cạnh nhất**, bằng nhau thì **ít chỗ rẽ nhất**; né điểm/cạnh bị chặn. Tuyến cắt thành **đoạn thẳng trên cạnh** (cạnh liền nhau cùng hướng gộp một đoạn), giao thẳng cho controller qua action `follow_path` | `grid_real.yaml` |
+| Xoay tại chỗ (`grid_navigator.py`) | vòng kín theo **gyro** `/imu/data`; dừng lệnh khi góc còn lại ≤ `coast` × ω (0.36 s, đo trên xe); giữ lệnh ≥ 0.15 s; lệch > 3° thì xoay bù (tối đa 5 lần), vẫn chưa được thì báo `CHƯA ĐẠT` | `rotate:` trong `grid_real.yaml` |
+| Bám đoạn thẳng (Nav2) | **Regulated Pure Pursuit** 0.15 m/s, nhìn trước 0.2 m; dừng trong 2 cm quanh điểm lưới | `FollowPath`, `navigation.yaml` |
+| An toàn | `velocity_smoother` (giới hạn gia tốc) → `collision_monitor` (giảm/dừng nếu sẽ va trong 1.2 s) | `navigation.yaml` |
+| Bánh xe (ESP32) | PID tốc độ từng bánh 50 Hz, feedforward Kf 3.0 | firmware |
+
+Xe thật (2026-10-03): 9/9 lần xoay ≤ 2.8°, 4–6 s mỗi lần; tới đích lệch 0.4–1.6 cm;
+lúc chạy lệch cạnh trung bình ≤ 0.6 cm (theo AMCL).
+
+**Ai làm gì:** ESP32 đọc LiDAR → `/scan`, encoder → `/joint_states` (**góc tích luỹ**,
+mất gói không mất quãng đường), BNO055 → `/imu/data`, chạy PID và nhận `/cmd_vel`.
+Laptop: `wheel_odometry.py` → `/odom` + TF, AMCL, Nav2, sa bàn. Bán kính lăn bánh chỉnh
+ở laptop, không cần nạp chip:
+```bash
+ros2 launch my_bot_bringup bringup_real.launch.py wheel_radius:=0.0328
+```
+Nguồn góc quay `yaw_source`: `imu_quaternion` (mặc định) · `imu_gyro` · `wheels`.
+
+## F. Quy Tắc Điều Phối Hai Xe
+
+```
+traffic_manager.py ──/fleet/agv1/cmd──▶ fleet_agent.py (/agv1) ──▶ Nav2 /agv1 ──▶ xe 1
+  lập đường, giữ chỗ,  ◀──/fleet/status──  chạy tới ô được phép
+  gỡ kẹt               ──/fleet/agv2/cmd──▶ fleet_agent.py (/agv2) ──▶ Nav2 /agv2 ──▶ xe 2
+```
+
+1. Hai xe không cùng đích. Được nhận ô xe kia đang **đỗ** làm đích: xe đỗ né đi ngay.
+2. Đường ít cạnh, ít rẽ; đi trên đường còn lại của xe kia bị cộng chi phí (+2/ô), đi
+   ngược chiều xe kia trên cùng cạnh +6. Xe đang đỗ là vật cản cứng.
+3. Xe chiếm mọi ô cách nó < nửa ô + bán kính xe; chỉ được đi tới ô đã **giữ chỗ**
+   (xem trước 2 ô).
+4. Hai xe xin cùng một ô: **xe gần đích hơn** được trước; bằng nhau thì xe 1.
+5. Chờ > 3 s vì bị chặn: xe kia **đỗ / mất liên lạc** → đi vòng, không được thì xe đỗ
+   né sang ô trống; **chờ nhau** hoặc xe kia **đứng yên hẳn** → xe xa đích hơn nhường
+   (đi vòng → né sang ô trống rồi quay lại → đổi vai → dừng cả hai, báo lỗi). Xe kia
+   đang chạy / đang xoay thì cứ chờ.
+6. Mất liên lạc: agent không nhận lệnh 1 s → tự dừng; bộ điều phối không nhận trạng thái
+   1 s → giữ nguyên các ô xe đó giữ.
+7. Vật cản thật / Nav2 thất bại → lập lại đường từ chỗ xe dừng (tối đa 5 lần).
+
+**Đã kiểm trên mô phỏng (2026-10-05):** hai xe không lúc nào gần nhau dưới 57 cm, tới
+đích lệch ≤ 2 cm, xoay ≤ 2.3°.
+
+| Kịch bản thử | Diễn biến |
+|---|---|
+| Đổi chỗ trên hàng 3 | xe đỗ ở đích né ngay; xe kia đi vòng hàng 4 |
+| Cắt ngang ở (3,3) | một xe dừng chờ xe kia qua rồi đi |
+| Đối đầu | kẹt → xe xa đích hơn né sang ô bên, xe kia qua rồi đi tiếp |
+| Đích là chỗ xe kia đỗ | xe đỗ né sang ô bên |
+| Ưu tiên gần đích | xe còn ít ô hơn vào trước |
+| Tắt bộ điều phối | hai xe tự dừng sau ~2 s |
+| Tắt agent một xe | báo mất liên lạc 1 s; xe kia đi vòng; bật lại thì chạy nốt |
+| Vật cản bất ngờ | dừng < 1 s, đi vòng |
+
+Mô phỏng dùng bản sao `grid_real.yaml` với `coast: 0` (xe ảo không ma sát). **Chưa
+chạy trên hai xe thật** — khi có xe thứ hai: mỗi xe một ESP32 `ROBOT_ID` riêng, AMCL +
+Nav2 riêng trong namespace, chung bản đồ.
+
+## G. Các Lỗi Firmware Đã Sửa
+
+| Lỗi | Triệu chứng | Đã sửa |
+|---|---|---|
+| `rclc_executor_spin_some` chặn tới khi có dữ liệu | mọi topic ~1 Hz | truyền timeout `0` |
+| `rmw_uros_epoch_nanos()` chỉ phân giải 1 giây | stamp nhảy đúng 1000 ms, Nav2 báo `message too old` | neo epoch một lần rồi chạy bằng `esp_timer` |
+| `sync_session` lệch tới 1 giây | cả cụm stamp trễ ~1 s | chờ đúng cạnh tick rồi mới sync |
+| stamp `/scan` gắn lúc gửi | bản đồ lệch sau khi quay | stamp lùi về giữa vòng quét, `time_increment = 0` |
+| `/tf` best-effort | `Frame [map] does not exist` | `/tf`, `/odom` đổi sang reliable |
+| Wi-Fi rơi gói → im 1 s | ảnh quét trượt 10–25 cm | odometry dùng giá trị tích luỹ qua lỗ hổng (giữ `/joint_states` RELIABLE: best-effort làm lệnh trễ 2.9 s) |
+| PID kẹp tích phân 80, Kf đo không tải | bánh chỉ đạt 55–66% lệnh trên sàn | Kf 3.0, tích phân ≤ 200 |
+
+**Còn mở:** cột `sync` khi đang lái chưa xác nhận im lặng; còn vài khoảng trống > 200 ms
+lúc xe đứng yên chưa rõ nguyên nhân.
