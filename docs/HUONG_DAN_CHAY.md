@@ -9,7 +9,7 @@ Mở các terminal **lần lượt** — terminal trước khởi động xong m
 |---|---|---|
 | 1️⃣ Vẽ và lưu bản đồ bằng tay cầm | phòng mới / đồ đạc thay đổi | 5 + 1 PowerShell |
 | 2️⃣ Chạy một xe thật trên sa bàn | **dùng hằng ngày** | 4 |
-| 3️⃣ Chạy hai xe (mô phỏng) | thử điều phối hai xe | 3 |
+| 3️⃣ Chạy hai xe (mô phỏng) | thử điều phối hai xe | 4 |
 
 > [!IMPORTANT]
 > **Mọi terminal** đều bắt đầu bằng hai dòng này (đã ghi sẵn trong từng khung lệnh
@@ -177,7 +177,7 @@ Xe tới đích (sai số ≤ 3 cm) rồi xoay về hướng đã chọn (≤ 3�
 
 ---
 
-## 3️⃣ Kịch Bản 3: Chạy Hai Xe — Mô Phỏng (Cần 3 Terminals)
+## 3️⃣ Kịch Bản 3: Chạy Hai Xe — Mô Phỏng (Cần 4 Terminals)
 
 Thử bộ điều phối hai xe: giữ chỗ, ưu tiên **xe gần đích hơn**, tự gỡ kẹt. Chạy trên
 `ROS_DOMAIN_ID=87` nên **không đụng tới xe thật**. Hai xe ảo nhưng Nav2 là Nav2 thật.
@@ -234,10 +234,25 @@ liên lạc hiện mờ kèm chữ `MAT LIEN LAC`.
 > `/agv2/tf`) mà một cửa sổ RViz chỉ đọc được một cây, nên sẽ không thấy xe nào.
 > Bộ điều phối tự vẽ mọi thứ trên khung `map` (topic `/fleet/markers`).
 
+### Terminal 4: Gazebo (xem 3D)
+```bash
+cd ~/robot_ws_3
+source install/setup.bash
+ROS_DOMAIN_ID=87 python3 tools/fleet_gazebo.py
+```
+Cửa sổ Gazebo hiện **tường phòng** (dựng từ bản đồ), **vạch sa bàn** (nút đỏ), **hai xe**
+(xe 1 xanh dương, xe 2 cam, mũi trắng = đầu xe) và **vật cản ảo** (trụ đỏ). Xe trong
+Gazebo chạy theo hai xe ảo của Terminal 1. Kéo chuột trái để xoay, chuột phải hoặc
+con lăn để phóng to. Ctrl-C để tắt.
+
+> [!NOTE]
+> Gazebo ở đây **chỉ để xem**: không tính vật lý, không lái xe. Tắt Terminal 4 thì
+> mô phỏng vẫn chạy bình thường. Mở được trước hay sau khi giao đích đều được.
+
 ### Tắt Mô Phỏng
 ```bash
 cd ~/robot_ws_3
-tools/fleet_sim.sh down
+tools/fleet_sim.sh down          # tắt cả Gazebo của Terminal 4
 ```
 
 > [!TIP]

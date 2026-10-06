@@ -30,7 +30,13 @@ down() {
   pkill -9 -f "fleet_nav\.launch\.py" 2>/dev/null
 }
 
-if [ "${1:-}" = down ]; then down; echo "da tat"; exit 0; fi
+if [ "${1:-}" = down ]; then
+  down
+  # Cua so Gazebo (tools/fleet_gazebo.py) - chi tat khi "down", "up" lai thi giu
+  pkill -INT -f "^python3 (\S*/)?tools/fleet_gazebo\.py" 2>/dev/null && sleep 3
+  pkill -9 -f "gz sim.*fleet_world\.sdf|parameter_bridge /world/fleet/" 2>/dev/null
+  echo "da tat"; exit 0
+fi
 down
 rm -rf $L; mkdir -p $L
 
