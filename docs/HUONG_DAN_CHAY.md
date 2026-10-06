@@ -234,20 +234,40 @@ liên lạc hiện mờ kèm chữ `MAT LIEN LAC`.
 > `/agv2/tf`) mà một cửa sổ RViz chỉ đọc được một cây, nên sẽ không thấy xe nào.
 > Bộ điều phối tự vẽ mọi thứ trên khung `map` (topic `/fleet/markers`).
 
-### Terminal 4: Gazebo (xem 3D)
+### Terminal 4: Gazebo (xem 3D + đặt vật cản)
 ```bash
 cd ~/robot_ws_3
 source install/setup.bash
 ROS_DOMAIN_ID=87 python3 tools/fleet_gazebo.py
 ```
 Cửa sổ Gazebo hiện **tường phòng** (dựng từ bản đồ), **vạch sa bàn** (nút đỏ), **hai xe**
-(xe 1 xanh dương, xe 2 cam, mũi trắng = đầu xe) và **vật cản ảo** (trụ đỏ). Xe trong
-Gazebo chạy theo hai xe ảo của Terminal 1. Kéo chuột trái để xoay, chuột phải hoặc
-con lăn để phóng to. Ctrl-C để tắt.
+(xe 1 xanh dương, xe 2 cam, mũi trắng = đầu xe) và **6 trụ đỏ** (vật cản) xếp hàng chờ
+dưới sa bàn. Xe trong Gazebo chạy theo hai xe ảo của Terminal 1. Ctrl-C để tắt.
+
+| Muốn | Làm |
+|---|---|
+| Dời khung nhìn | giữ chuột trái, kéo |
+| Xoay khung nhìn | giữ con lăn (hoặc Shift + chuột trái), kéo |
+| Phóng to / thu nhỏ | lăn con lăn |
+
+**Đặt vật cản bằng chuột:**
+
+1. Bấm phím **`T`** (hoặc biểu tượng mũi tên chữ thập ở góc trên bên trái) → chế độ dời vật.
+2. Bấm vào **một trụ đỏ** → hiện 3 mũi tên.
+3. Kéo **mũi tên đỏ** (dọc trục x, sang phải/trái) và **mũi tên xanh lá** (trục y, lên/xuống)
+   để đưa trụ vào sa bàn. **Đừng kéo mũi tên xanh dương** (lên cao).
+4. Thả chuột. Terminal 4 in vị trí, ví dụ
+   `Vat can tren sa ban (1): (-0.55, +0.34) gan nut hang 4 cot 3 (30 cm)`, và LiDAR hai xe
+   ảo thấy trụ ngay. Xe đang chạy gặp trụ thì tự đổi đường như vật cản thật.
+5. Bấm **`Esc`** để thôi chế độ dời vật. **Bỏ vật cản** = kéo trụ ra khỏi sa bàn (về hàng chờ).
 
 > [!NOTE]
-> Gazebo ở đây **chỉ để xem**: không tính vật lý, không lái xe. Tắt Terminal 4 thì
-> mô phỏng vẫn chạy bình thường. Mở được trước hay sau khi giao đích đều được.
+> - Gazebo không tính vật lý, không lái xe: **xe** vẫn do Terminal 1 điều khiển, Gazebo
+>   chỉ vẽ lại. Còn **vật cản** thì lấy từ Gazebo: trụ nào nằm trong sa bàn (tính
+>   rộng thêm 25 cm ra ngoài nút biên) là vật cản, trụ ở ngoài thì không.
+> - Mở Gazebo sẽ **xóa vật cản cũ** đặt bằng lệnh trước đó. Lệnh `ros2 topic pub ...
+>   /sim/obstacles` (ở dưới) vẫn dùng được: trụ đỏ tự nhảy tới chỗ đã gửi.
+> - Tắt Terminal 4 thì mô phỏng vẫn chạy bình thường, vật cản đang có vẫn giữ.
 
 ### Tắt Mô Phỏng
 ```bash
@@ -256,9 +276,9 @@ tools/fleet_sim.sh down          # tắt cả Gazebo của Terminal 4
 ```
 
 > [!TIP]
-> - **Thả vật cản ảo** ở (x, y) mét:
+> - **Thả vật cản ảo bằng lệnh** (không cần Gazebo) ở (x, y) mét, nhiều vật cách nhau `;`:
 >   `ROS_DOMAIN_ID=87 ros2 topic pub --once /sim/obstacles std_msgs/msg/String "{data: 'x,y'}"`
->   (gửi `''` để bỏ).
+>   (gửi `''` để bỏ). Ví dụ giữa nút hàng 3 cột 3 và hàng 4 cột 3: `'-0.545,0.335'`.
 
 Quy tắc điều phối và kết quả kiểm thử:
 [SA_BAN_VA_TAI_LIEU.md — Phụ lục F](SA_BAN_VA_TAI_LIEU.md#f-quy-tắc-điều-phối-hai-xe).
