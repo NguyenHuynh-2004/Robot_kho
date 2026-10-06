@@ -26,8 +26,13 @@ Quy tac:
     loi. Xe bao vat can / Nav2 that bai: lap lai duong tu cho no dung.
 
     python3 traffic_manager.py agv1 agv2 [--grid FILE] [--no-avoid]
-Nhap: "1 5 5 d" = xe 1 toi hang 5 cot 5 roi quay Dong; "2 1 1" (giu huong);
-      "s" dung tat ca; "q" thoat. Hoac gui chuoi do vao topic /fleet/goal.
+Chay trong terminal: hoi lan luot xe 1 roi xe 2 (hang, cot, huong tai dich -
+giong grid_navigator.py --real); nhap DU ca hai moi giao lenh, ca hai cung
+xuat phat; cho ca hai toi noi roi hoi luot tiep. 'q' thoat.
+Khong phai terminal (script/test): moi dong mot lenh "1 5 5 d" (xe 1 toi
+hang 5 cot 5 roi quay Dong), "s" dung tat ca, "q" thoat. Topic /fleet/goal
+nhan cung dang do, va "pair 1 3 5 d ; 2 3 1 t" (giao cung luc, mot dich sai
+thi khong xe nao chay).
 --no-avoid: bo chi phi tranh duong xe kia (de thu go ket).
 """
 import heapq
@@ -49,7 +54,7 @@ from std_msgs.msg import ColorRGBA, String
 from visualization_msgs.msg import Marker, MarkerArray
 
 from grid_board import Board, config_path, edge_key
-from grid_navigator import HEADING_NAMES, parse_heading
+from grid_navigator import HEADING_NAMES, heading_name, parse_heading
 
 TICK = 0.2                  # s
 LOOKAHEAD = 2               # o giu truoc
@@ -103,7 +108,10 @@ class TrafficManager(Node):
         self.occ_r = self.board.spacing / 2 + self.board.robot_radius
         self.static_nodes, self.static_edges = set(), set()
         self.map_ok = False
-        self.next_route_id = 1
+        # So hieu lo trinh bat dau theo gio: chay lai traffic_manager ma dem tu 1
+        # thi trung so voi lo trinh cu agent con giu (vd #1 da 'done') -> agent
+        # tuong la lo trinh cu, bao xong ngay, xe khong chay.
+        self.next_route_id = int(time.time() * 10) % 1_000_000_000
         self.cmd_pubs = {n: self.create_publisher(String, f'/fleet/{n}/cmd', 10) for n in names}
         self.goal_pub = self.create_publisher(String, '/fleet/goal', 10)
         self.marker_pub = self.create_publisher(MarkerArray, '/fleet/markers', 10)
@@ -292,47 +300,72 @@ class TrafficManager(Node):
             rb.stale = False
             self.log(f'[{rb.name}] co lai lien lac')
 
-    def cb_goal(self, msg):
-        line = msg.data.strip()
-        if not line:
-            return
-        tok = line.split()
-        if tok[0] in ('s', 'S', 'stop'):
-            for rb in self.robots.values():
-                rb.goal = None
-                self.clear_route(rb, 'lenh dung tat ca')
-            return
+    def parse_goal(self, text):
+        """'1 5 5 d' / 'agv1 5 5' -> (xe, (r, c) tu 0, huong rad hoac None).
+        Sai thi ValueError kem ly do."""
+        tok = text.split()
+        if len(tok) < 3:
+            raise ValueError(f'"{text}" thieu so. Dang: "1 5 5 d"')
         name = tok[0]
         if name.isdigit() and 1 <= int(name) <= len(self.order):
             name = self.order[int(name) - 1]
         rb = self.robots.get(name)
-        try:
-            r, c = int(tok[1]) - 1, int(tok[2]) - 1
-            heading = None
-            if len(tok) > 3:
-                _, heading = parse_heading(tok[3], self.board.yaw)
-        except (IndexError, ValueError) as e:
-            self.log(f'Lenh "{line}" sai ({e}). Dang: "1 5 5 d"', 'error')
-            return
         if rb is None:
-            self.log(f'Khong co xe "{tok[0]}"', 'error')
-            return
-        goal = (r, c)
+            raise ValueError(f'khong co xe "{tok[0]}"')
+        r, c = int(tok[1]) - 1, int(tok[2]) - 1
+        heading = parse_heading(tok[3], self.board.yaw)[1] if len(tok) > 3 else None
+        return rb, (r, c), heading
+
+    def goal_error(self, rb, goal, taken=()):
+        """Ly do khong nhan dich nay (None = duoc). taken: dich da nhan cho xe
+        khac trong cung luot nhap."""
+        r, c = goal
         if not (0 <= r < self.board.rows and 0 <= c < self.board.cols):
-            self.log(f'[{rb.name}] o {self.lbl(goal)} ngoai sa ban', 'error')
-            return
+            return f'ô {self.lbl(goal)} nằm ngoài sa bàn {self.board.rows}x{self.board.cols}'
         if goal in self.static_nodes:
-            self.log(f'[{rb.name}] o {self.lbl(goal)} sat vat can, khong toi duoc', 'error')
-            return
+            return f'ô {self.lbl(goal)} sát vật cản, không tới được'
+        if goal in taken:
+            return f'ô {self.lbl(goal)} đã là đích của xe kia'
         for o in self.others(rb):
             # O xe kia DANG DO thi duoc: khi can, xe do ne sang o trong va o
             # lai do (vd hai xe doi cho). Chi cam trung dich / cho xe kia se ve.
-            taken = {o.goal} if o.goal else set()
+            busy = {o.goal} if o.goal else set()
             if o.resume:
-                taken.add(o.resume[0])
-            if goal in taken:
-                self.log(f'[{rb.name}] o {self.lbl(goal)} la dich cua {o.name}', 'error')
+                busy.add(o.resume[0])
+            if goal in busy:
+                return f'ô {self.lbl(goal)} là đích của {o.name}'
+        return None
+
+    def cb_goal(self, msg):
+        line = msg.data.strip()
+        if not line:
+            return
+        if line.split()[0] in ('s', 'S', 'stop'):
+            for rb in self.robots.values():
+                rb.goal = None
+                self.clear_route(rb, 'lenh dung tat ca')
+            return
+        # "pair 1 3 5 d ; 2 3 1 t": giao CUNG LUC cho moi xe - mot dich sai thi
+        # khong xe nao chay. Khong co "pair" = mot xe.
+        pair = line.lower().startswith('pair')
+        parts = line[4:].split(';') if pair else [line]
+        items, taken = [], set()
+        for part in parts:
+            try:
+                rb, goal, heading = self.parse_goal(part.strip())
+            except ValueError as e:
+                self.log(f'Lenh sai: {e}', 'error')
                 return
+            err = self.goal_error(rb, goal, taken)
+            if err:
+                self.log(f'[{rb.name}] {err}' + (' - khong xe nao chay' if pair else ''), 'error')
+                return
+            taken.add(goal)
+            items.append((rb, goal, heading))
+        for rb, goal, heading in items:
+            self.set_goal(rb, goal, heading)
+
+    def set_goal(self, rb, goal, heading):
         rb.goal, rb.goal_heading = goal, heading
         rb.resume = None
         rb.fail_count = 0
@@ -688,17 +721,120 @@ class TrafficManager(Node):
         self.marker_pub.publish(arr)
 
 
+def send(node, text):
+    msg = String()
+    msg.data = text
+    node.goal_pub.publish(msg)
+
+
 def stdin_loop(node):
+    """Khong phai terminal (script, test): moi dong mot lenh '1 5 5 d'."""
     print('Nhap: "1 5 5 d" (xe 1 toi hang 5 cot 5, quay Dong), "s" dung tat ca, "q" thoat.')
     for line in sys.stdin:
         line = line.strip()
         if line in ('q', 'quit', 'exit'):
             break
         if line:
-            msg = String()
-            msg.data = line
-            node.goal_pub.publish(msg)
+            send(node, line)
     rclpy.try_shutdown()
+
+
+class Quit(Exception):
+    pass
+
+
+def ask(prompt):
+    """input() co 'q' = thoat. Het dau vao (Ctrl-D) cung la thoat."""
+    try:
+        s = input(prompt).strip()
+    except EOFError:
+        raise Quit()
+    if s.lower() in ('q', 'quit', 'exit'):
+        raise Quit()
+    return s
+
+
+def ask_goal(node, idx, rb, taken):
+    """Hoi hang, cot, huong cho mot xe (giong grid_navigator.py --real).
+    Tra ve chuoi lenh '1 3 5 d'."""
+    b = node.board
+    while True:
+        try:
+            r = int(ask(f'Xe {idx} - Hàng đích (1-{b.rows}): '))
+            c = int(ask(f'Xe {idx} - Cột đích (1-{b.cols}): '))
+        except ValueError:
+            print('Lỗi: nhập số nguyên.')
+            continue
+        err = node.goal_error(rb, (r - 1, c - 1), taken)
+        if err:
+            print(f'Lỗi: {err}. Nhập lại cho xe {idx}.')
+            continue
+        while True:
+            h = ask('Hướng tại đích - Đ(ông)=phải, T(ây)=trái, B(ắc)=lên, '
+                    'N(am)=xuống, Enter=giữ hướng đi: ')
+            try:
+                key, _ = parse_heading(h, b.yaw)
+                break
+            except ValueError as e:
+                print(f'Lỗi: {e}. Nhập D, T, B, N hoặc Enter.')
+        taken.add((r - 1, c - 1))
+        return f'{idx} {r} {c}' + (f' {key}' if key else ''), (r, c, key)
+
+
+def interactive_loop(node):
+    """Terminal: hoi lan luot xe 1 roi xe 2 (hang, cot, huong); nhap DU ca hai
+    moi giao lenh, CUNG LUC; cho ca hai toi noi roi hoi luot tiep."""
+    b = node.board
+    print(f'\n=== ĐIỀU PHỐI {len(node.order)} XE TRÊN SA BÀN {b.rows}x{b.cols} ===')
+    print('Hàng 1 = dưới cùng, cột 1 = bên trái. Gõ q để thoát, Ctrl-C để dừng khẩn.')
+    shown = False
+    while not (node.map_ok and all(rb.x is not None for rb in node.robots.values())):
+        if not shown:
+            print('Đang chờ bản đồ và vị trí các xe...')
+            shown = True
+        time.sleep(0.5)
+    try:
+        while True:
+            print(f'\n--- NHẬP ĐÍCH CHO CẢ {len(node.order)} XE (phải nhập đủ mới chạy) ---')
+            cmds, summary, taken, targets = [], [], set(), {}
+            for idx, name in enumerate(node.order, start=1):
+                rb = node.robots[name]
+                r, c = node.node_of(rb)
+                hname, _ = heading_name(rb.yaw, b.yaw) if rb.yaw is not None else ('?', 0)
+                print(f'\n[Xe {idx} - {name}] đang ở gần (hàng {r + 1}, cột {c + 1}), hướng {hname}')
+                cmd, (gr, gc, key) = ask_goal(node, idx, rb, taken)
+                cmds.append(cmd)
+                targets[name] = (gr - 1, gc - 1)
+                summary.append(f'Xe {idx}: (hàng {gr}, cột {gc})'
+                               + (f' quay {HEADING_NAMES[key]}' if key else ''))
+            print('\n-> ' + ' | '.join(summary))
+            send(node, 'pair ' + ' ; '.join(cmds))
+            print('-> CẢ HAI XE XUẤT PHÁT. Đang chờ tới nơi... (Ctrl-C để dừng khẩn)')
+            wait_all_done(node, targets)
+    except Quit:
+        pass
+    rclpy.try_shutdown()
+
+
+def wait_all_done(node, goals):
+    """Cho moi xe het lo trinh (toi noi, hoac bi dung vi khong co duong).
+    goals: ten xe -> (r, c) tu 0 vua nhap."""
+    t0 = time.time()
+    while True:
+        time.sleep(0.5)
+        if time.time() - t0 < 1.5:       # cho traffic_manager nhan lenh
+            continue
+        if all(rb.route is None and not rb.pending and rb.mode == 'idle'
+               for rb in node.robots.values()):
+            break
+    for idx, (n, rb) in enumerate(node.robots.items(), start=1):
+        g = goals.get(n)
+        if g is None:
+            continue
+        if node.dist(rb, g) < 0.10:
+            print(f'   Xe {idx} ĐÃ TỚI (hàng {g[0] + 1}, cột {g[1] + 1}).')
+        else:
+            print(f'   Xe {idx} DỪNG trước khi tới (hàng {g[0] + 1}, cột {g[1] + 1}) - xem log phía trên.')
 
 
 def main():
@@ -707,7 +843,8 @@ def main():
     grid_file = argv[argv.index('--grid') + 1] if '--grid' in argv else None
     names = [a for a in argv if not a.startswith('--') and a != grid_file] or ['agv1', 'agv2']
     node = TrafficManager(names, grid_file, avoid='--no-avoid' not in argv)
-    threading.Thread(target=stdin_loop, args=(node,), daemon=True).start()
+    loop = interactive_loop if sys.stdin.isatty() else stdin_loop
+    threading.Thread(target=loop, args=(node,), daemon=True).start()
     try:
         rclpy.spin(node)
     except (KeyboardInterrupt, ExternalShutdownException):

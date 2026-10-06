@@ -201,12 +201,23 @@ source install/setup.bash
 ROS_DOMAIN_ID=87 python3 traffic_manager.py agv1 agv2
 ```
 
-| Nhập | Nghĩa |
-|---|---|
-| `1 5 5 d` | xe 1 tới hàng 5 cột 5, quay Đông |
-| `2 1 1` | xe 2 tới hàng 1 cột 1, giữ hướng |
-| `s` | dừng tất cả |
-| `q` | thoát |
+Terminal hỏi lần lượt **xe 1 rồi xe 2**, giống Kịch bản 2:
+
+| Hỏi | Nhập | Ví dụ |
+|---|---|---|
+| Xe 1 - Hàng đích | `1`–`5` (1 = dưới cùng) | `3` |
+| Xe 1 - Cột đích | `1`–`5` (1 = bên trái) | `5` |
+| Hướng tại đích | `D` Đông · `T` Tây · `B` Bắc · `N` Nam · Enter = giữ hướng | `d` |
+| Xe 2 - Hàng / Cột / Hướng | như trên | `3`, `1`, `t` |
+
+Phải **nhập đủ cả hai xe** thì hai xe mới **cùng xuất phát**. Nhập sai (ngoài sa bàn,
+ô sát vật cản, trùng đích với xe kia) thì báo lỗi và hỏi lại xe đó. Khi cả hai xe tới
+nơi, terminal in `Xe 1 ĐÃ TỚI ...`, `Xe 2 ĐÃ TỚI ...` rồi hỏi lượt tiếp. Gõ `q` để thoát,
+Ctrl-C để dừng khẩn.
+
+> [!NOTE]
+> Đích của xe này được là ô xe kia **đang đỗ** (vd hai xe đổi chỗ): xe đang đỗ sẽ tự
+> né sang ô bên cạnh.
 
 ### Terminal 3: RViz
 ```bash
