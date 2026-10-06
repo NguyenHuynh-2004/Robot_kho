@@ -604,11 +604,65 @@ class TrafficManager(Node):
         self.assign_route(rb, path, heading, 'go')
 
     # ------------------------------------------------------------------ RViz
+    def _mk(self, ns, mid, mtype, stamp):
+        m = Marker()
+        m.header.frame_id, m.header.stamp = 'map', stamp
+        m.ns, m.id, m.type, m.action = ns, mid, mtype, Marker.ADD
+        m.pose.orientation.w = 1.0
+        return m
+
     def publish_markers(self):
+        """Mot topic /fleet/markers cho RViz: luoi sa ban, hai xe (than + huong
+        dau + ten), duong con lai va o dang giu cua tung xe. Moi thu o khung
+        'map' - RViz khong can TF cua xe (moi xe mot cay TF rieng /agvN/tf, mot
+        cua so RViz chi doc duoc mot cay)."""
         arr = MarkerArray()
         stamp = self.get_clock().now().to_msg()
+        # Luoi: canh xanh nhat, diem xanh; diem / canh bi chan mau do
+        bn, be = self.blocked_sets()
+        edges = self._mk('grid_edges', 0, Marker.LINE_LIST, stamp)
+        edges.scale.x = 0.015
+        edges.color = ColorRGBA(r=0.35, g=0.6, b=0.9, a=0.8)
+        bad_e = self._mk('grid_edges_blocked', 0, Marker.LINE_LIST, stamp)
+        bad_e.scale.x = 0.02
+        bad_e.color = ColorRGBA(r=0.9, g=0.2, b=0.2, a=0.9)
+        for a, b in self.board.edges():
+            tgt = bad_e if edge_key(a, b) in be or a in bn or b in bn else edges
+            for nd in (a, b):
+                x, y = self.xy(nd)
+                tgt.points.append(Point(x=float(x), y=float(y), z=0.005))
+        nodes = self._mk('grid_nodes', 0, Marker.SPHERE_LIST, stamp)
+        nodes.scale.x = nodes.scale.y = nodes.scale.z = 0.06
+        for nd in self.board.nodes():
+            x, y = self.xy(nd)
+            nodes.points.append(Point(x=float(x), y=float(y), z=0.01))
+            nodes.colors.append(ColorRGBA(r=0.9, g=0.2, b=0.2, a=1.0) if nd in bn
+                                else ColorRGBA(r=0.15, g=0.4, b=0.85, a=1.0))
+        arr.markers += [edges, nodes]
+        if bad_e.points:
+            arr.markers.append(bad_e)
         for i, (n, rb) in enumerate(self.robots.items()):
             col = COLORS[i % len(COLORS)]
+            # Xe: than tron 18 cm, mui ten huong dau, ten xe
+            if rb.x is not None:
+                body = self._mk(f'robot_{n}', 0, Marker.CYLINDER, stamp)
+                body.pose.position.x, body.pose.position.y, body.pose.position.z = rb.x, rb.y, 0.05
+                body.scale.x = body.scale.y = 0.18
+                body.scale.z = 0.10
+                a = 0.4 if rb.stale else 0.95
+                body.color = ColorRGBA(r=col[0], g=col[1], b=col[2], a=a)
+                head = self._mk(f'robot_{n}', 1, Marker.ARROW, stamp)
+                head.points = [Point(x=rb.x, y=rb.y, z=0.11),
+                               Point(x=rb.x + 0.2 * math.cos(rb.yaw),
+                                     y=rb.y + 0.2 * math.sin(rb.yaw), z=0.11)]
+                head.scale.x, head.scale.y, head.scale.z = 0.03, 0.06, 0.06
+                head.color = ColorRGBA(r=0.1, g=0.1, b=0.1, a=0.9)
+                label = self._mk(f'robot_{n}', 2, Marker.TEXT_VIEW_FACING, stamp)
+                label.pose.position.x, label.pose.position.y, label.pose.position.z = rb.x, rb.y, 0.30
+                label.scale.z = 0.12
+                label.color = ColorRGBA(r=col[0], g=col[1], b=col[2], a=1.0)
+                label.text = n + (' (MAT LIEN LAC)' if rb.stale else '')
+                arr.markers += [body, head, label]
             m = Marker()
             m.header.frame_id, m.header.stamp = 'map', stamp
             m.ns, m.id = f'route_{n}', 0

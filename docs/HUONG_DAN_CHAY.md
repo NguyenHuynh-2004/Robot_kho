@@ -9,7 +9,7 @@ Mở các terminal **lần lượt** — terminal trước khởi động xong m
 |---|---|---|
 | 1️⃣ Vẽ và lưu bản đồ bằng tay cầm | phòng mới / đồ đạc thay đổi | 5 + 1 PowerShell |
 | 2️⃣ Chạy một xe thật trên sa bàn | **dùng hằng ngày** | 4 |
-| 3️⃣ Chạy hai xe (mô phỏng) | thử điều phối hai xe | 2 |
+| 3️⃣ Chạy hai xe (mô phỏng) | thử điều phối hai xe | 3 |
 
 > [!IMPORTANT]
 > **Mọi terminal** đều bắt đầu bằng hai dòng này (đã ghi sẵn trong từng khung lệnh
@@ -177,7 +177,7 @@ Xe tới đích (sai số ≤ 3 cm) rồi xoay về hướng đã chọn (≤ 3�
 
 ---
 
-## 3️⃣ Kịch Bản 3: Chạy Hai Xe — Mô Phỏng (Cần 2 Terminals)
+## 3️⃣ Kịch Bản 3: Chạy Hai Xe — Mô Phỏng (Cần 3 Terminals)
 
 Thử bộ điều phối hai xe: giữ chỗ, ưu tiên **xe gần đích hơn**, tự gỡ kẹt. Chạy trên
 `ROS_DOMAIN_ID=87` nên **không đụng tới xe thật**. Hai xe ảo nhưng Nav2 là Nav2 thật.
@@ -208,6 +208,21 @@ ROS_DOMAIN_ID=87 python3 traffic_manager.py agv1 agv2
 | `s` | dừng tất cả |
 | `q` | thoát |
 
+### Terminal 3: RViz
+```bash
+cd ~/robot_ws_3
+source install/setup.bash
+ROS_DOMAIN_ID=87 rviz2 -d tools/fleet.rviz
+```
+Thấy bản đồ, lưới sa bàn (điểm đỏ = bị chặn), **hai xe** (xe 1 xanh dương, xe 2 cam,
+mũi tên đen = hướng đầu xe), **đường còn lại** và **ô đang giữ** của từng xe. Xe mất
+liên lạc hiện mờ kèm chữ `MAT LIEN LAC`.
+
+> [!NOTE]
+> Không dùng file RViz của Kịch bản 2 ở đây: mỗi xe có cây TF riêng (`/agv1/tf`,
+> `/agv2/tf`) mà một cửa sổ RViz chỉ đọc được một cây, nên sẽ không thấy xe nào.
+> Bộ điều phối tự vẽ mọi thứ trên khung `map` (topic `/fleet/markers`).
+
 ### Tắt Mô Phỏng
 ```bash
 cd ~/robot_ws_3
@@ -218,8 +233,6 @@ tools/fleet_sim.sh down
 > - **Thả vật cản ảo** ở (x, y) mét:
 >   `ROS_DOMAIN_ID=87 ros2 topic pub --once /sim/obstacles std_msgs/msg/String "{data: 'x,y'}"`
 >   (gửi `''` để bỏ).
-> - **RViz** (cũng `ROS_DOMAIN_ID=87`): topic `/fleet/markers` — đường còn lại và ô
->   đang giữ của từng xe.
 
 Quy tắc điều phối và kết quả kiểm thử:
 [SA_BAN_VA_TAI_LIEU.md — Phụ lục F](SA_BAN_VA_TAI_LIEU.md#f-quy-tắc-điều-phối-hai-xe).
