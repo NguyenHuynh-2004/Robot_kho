@@ -105,7 +105,9 @@ theo **mạch in 2026-10-05**.
 | 3V3 | VCC encoder, BNO055 VIN | **không** dùng 5 V cho encoder |
 | VIN (5V) | ra của mạch hạ áp | không cắm USB cùng lúc |
 
-Bánh trái → **OUT1/OUT2**, bánh phải → **OUT3/OUT4**. LiDAR VCC lấy 5 V từ mạch hạ áp.
+Bánh trái → **OUT1/OUT2**, bánh phải → **OUT3/OUT4**. (**Xe 2** đang nối chéo: kênh
+27/26/25 chạy bánh phải, 33/32/14 chạy bánh trái — firmware `#define XE 2` đã đổi chân
+cho khớp, không cần đổi dây. Xe 1 dùng chân encoder 23/34/4/35, PWM LiDAR 18.) LiDAR VCC lấy 5 V từ mạch hạ áp.
 GPIO 13 còn trống (dùng cho chân EN nếu đổi sang LiDAR X4).
 
 > [!WARNING]
