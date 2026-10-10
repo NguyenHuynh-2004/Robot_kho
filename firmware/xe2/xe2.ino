@@ -164,19 +164,28 @@
 //         LOW  LOW  0     tha troi
 // PHAI THAO jumper ENA/ENB tren module thi chan PWM moi co tac dung.
 // (Mach cu truoc 2026-10-05: trai 27/26/25, phai 33/32/14.)
-// MACH IN MOI (ca 2 xe): day dong co TRAI/PHAI noi CHEO so voi mach cu - kenh 27/26/25 chay banh
-// PHAI, kenh 33/32/14 chay banh TRAI (encoder thi dung ben). Do 2026-10-10,
-// ke banh: lenh TIEN -> ca hai encoder bao LUI -> ESTOP "quay nguoc chieu";
-// lenh QUAY thi van dung chieu (doi cho + nguoc cuc triet tieu nhau). Doi cho
-// hai nhom chan, GIU NGUYEN INVERT_MOTOR_x.
+// Day dong co RIENG tung xe (cung mach in nhung cam day khac nhau). Ca hai do
+// bang thu ke banh 2026-10-10: noi SAI thi lenh TIEN -> ca hai encoder bao LUI
+// -> ESTOP "Banh quay nguoc chieu"; lenh QUAY van dung chieu (doi cho + nguoc
+// cuc triet tieu nhau). Sua bang doi nhom chan, GIU NGUYEN INVERT_MOTOR_x.
+#if XE == 2
+// XE 2: noi CHEO - kenh 27/26/25 chay banh PHAI, 33/32/14 chay banh TRAI.
 const int L_IN1_PIN = 33;   // banh TRAI
 const int L_IN2_PIN = 32;
 const int L_ENA_PIN = 14;   // PWM banh trai
 const int R_IN1_PIN = 27;   // banh PHAI
 const int R_IN2_PIN = 26;
 const int R_ENB_PIN = 25;   // PWM banh phai
-// XE 1 chuyen sang mach in moi 2026-10-10: gia dinh noi cheo giong xe 2 (cung
-// thiet ke) - XAC NHAN bang thu ke banh (tien/lui/trai/phai dung chieu).
+#else
+// XE 1: noi THANG (nhu mach cu) - 27/26/25 banh TRAI, 33/32/14 banh PHAI.
+// Ban noi cheo (nhu xe 2) thu tren xe 1: TIEN -> ca hai encoder LUI -> ESTOP.
+const int L_IN1_PIN = 27;   // banh TRAI
+const int L_IN2_PIN = 26;
+const int L_ENA_PIN = 25;   // PWM banh trai
+const int R_IN1_PIN = 33;   // banh PHAI
+const int R_IN2_PIN = 32;
+const int R_ENB_PIN = 14;   // PWM banh phai
+#endif
 
 // --- Encoder ---
 // (Mach cu: 23/34/4/35, 34/35 chi vao, khong keo len.)
