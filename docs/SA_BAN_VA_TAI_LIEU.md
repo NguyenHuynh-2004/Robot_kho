@@ -376,7 +376,9 @@ Làm lần đầu và mỗi khi firmware thay đổi. Dùng **Arduino IDE** trê
 | `2` | xe 2 — mạch in 2026-10-05 | encoder 23/18/19/17, PWM LiDAR 4, kéo lên, LiDAR bù 180°, khoảng cách **×1.062** (LiDAR xe này đo thiếu ~6%) |
 
 Nạp nhầm số xe: encoder không đếm (sai chân) hoặc AMCL không khớp được bản đồ.
-Sau khi nạp, `ros2 node list` phải thấy `/esp32_agv_base_<số xe>`.
+Sau khi nạp, `ros2 node list` phải thấy `/agv<số xe>/esp32_agv_base_<số xe>`: mọi topic
+của xe nằm trong `/agv<số xe>/` (micro-ROS gắn ID xe), nên chạy một xe thì
+`bringup_real.launch.py xe:=<số xe>`, hai xe thì `tools/fleet_real.sh up` (Kịch bản 4).
 
 **Bước 4 — Nạp:** bấm Upload. Khi IDE hiện `Connecting....` thì **giữ nút BOOT**
 trên ESP32 tới khi thanh tiến trình chạy.

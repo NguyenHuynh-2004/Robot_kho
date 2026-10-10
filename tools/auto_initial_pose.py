@@ -47,8 +47,12 @@ def yaw_of(q):
 
 
 class Loc(Node):
-    def __init__(self):
-        super().__init__('auto_initial_pose')
+    def __init__(self, ns=''):
+        # ns (vd 'agv2'): xe trong che do 2 xe - topic /agv2/scan, /agv2/initialpose,
+        # cay TF rieng /agv2/tf. Ban do /map dung chung.
+        remap = ['--ros-args', '-r', f'/tf:=/{ns}/tf', '-r', f'/tf_static:=/{ns}/tf_static'] if ns else None
+        super().__init__('auto_initial_pose', cli_args=remap)
+        pre = f'/{ns}' if ns else ''
         self.buf = tf2_ros.Buffer(cache_time=Duration(seconds=10))
         tf2_ros.TransformListener(self.buf, self)
         self.grid = None
@@ -59,20 +63,21 @@ class Loc(Node):
                        durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
                        history=QoSHistoryPolicy.KEEP_LAST, depth=1))
         self.create_subscription(
-            LaserScan, '/scan', lambda m: setattr(self, 'scan', m),
+            LaserScan, f'{pre}/scan', lambda m: setattr(self, 'scan', m),
             QoSProfile(reliability=QoSReliabilityPolicy.BEST_EFFORT,
                        history=QoSHistoryPolicy.KEEP_LAST, depth=2))
-        self.pub = self.create_publisher(PoseWithCovarianceStamped, '/initialpose', 1)
+        self.pub = self.create_publisher(PoseWithCovarianceStamped, f'{pre}/initialpose', 1)
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--dry-run', action='store_true',
                     help='chi in ket qua, khong gui cho AMCL')
+    ap.add_argument('--ns', default='', help='agv1 | agv2 khi chay 2 xe (tools/fleet_real.sh)')
     a = ap.parse_args()
 
     rclpy.init()
-    n = Loc()
+    n = Loc(a.ns)
     ex = MultiThreadedExecutor()
     ex.add_node(n)
     threading.Thread(target=ex.spin, daemon=True).start()

@@ -1272,8 +1272,15 @@ static void init_microros() {
   while (rmw_uros_ping_agent(500, 1) != RMW_RET_OK) { Serial.print("."); delay(500); }
   Serial.println("\nDa thay agent!");
 
+  // ID XE trong micro-ROS: node /agv<XE>/esp32_agv_base_<XE>, client key
+  // 0x11111111*XE. Moi topic la ten TUONG DOI nen tu nam trong namespace:
+  // /agv<XE>/scan, /agv<XE>/cmd_vel... -> hai xe dung chung MOT agent ma khong
+  // dam nhau. Laptop: chay 1 xe thi bringup_real.launch.py xe:=<XE> chuyen
+  // /agv<XE>/* <-> /* (tools/ns_relay.py); chay 2 xe thi tools/fleet_real.sh.
   char node_name[32];
   snprintf(node_name, sizeof(node_name), "esp32_agv_base_%d", ROBOT_ID);
+  char node_ns[16];
+  snprintf(node_ns, sizeof(node_ns), "agv%d", ROBOT_ID);
 
   allocator = rcl_get_default_allocator();
   rcl_init_options_t init_options = rcl_get_zero_initialized_init_options();
@@ -1282,7 +1289,8 @@ static void init_microros() {
   rmw_uros_options_set_client_key(0x11111111 * ROBOT_ID, rmw_options);
 
   RCCHECK(rclc_support_init_with_options(&support, 0, NULL, &init_options, &allocator));
-  RCCHECK(rclc_node_init_default(&node, node_name, "", &support));
+  RCCHECK(rclc_node_init_default(&node, node_name, node_ns, &support));
+  Serial.printf("XE %d: node /%s/%s\n", ROBOT_ID, node_ns, node_name);
 
   // QoS PHAI khop ben nhan, khong thi ROS 2 KHONG chuyen mot message nao va
   // cung khong bao loi o cho de thay. Da dinh dung bay nay tren xe that: ca 4
@@ -1559,7 +1567,8 @@ void setup() {
   xTaskCreatePinnedToCore(ros_task,   "ROS_Task", 16384, NULL, 1, NULL, 0);
   // Core 1 con lai danh tron cho loop() -> lidar.loop()
 
-  Serial.println("San sang. /cmd_vel -> banh xe | /scan /odom /tf /imu/data -> Nav2");
+  Serial.printf("San sang (XE %d). /agv%d/cmd_vel -> banh xe | /agv%d/scan /joint_states /imu/data -> laptop\n",
+                ROBOT_ID, ROBOT_ID, ROBOT_ID);
 }
 
 // ============================================================================

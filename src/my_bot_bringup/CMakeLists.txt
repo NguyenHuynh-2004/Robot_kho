@@ -34,6 +34,7 @@ install(DIRECTORY
 # goi duoc bang Node(package=..., executable=...).
 install(PROGRAMS
   scripts/wheel_odometry.py
+  scripts/ns_relay.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

@@ -10,6 +10,13 @@ Mở các terminal **lần lượt** — terminal trước khởi động xong m
 | 1️⃣ Vẽ và lưu bản đồ bằng tay cầm | phòng mới / đồ đạc thay đổi | 5 + 1 PowerShell |
 | 2️⃣ Chạy một xe thật trên sa bàn | **dùng hằng ngày** | 4 |
 | 3️⃣ Chạy hai xe (mô phỏng) | thử điều phối hai xe | 4 |
+| 4️⃣ Chạy hai xe thật | điều phối hai xe trên sa bàn thật | 3 |
+
+> [!IMPORTANT]
+> **Mỗi xe có số riêng (`XE 1`, `XE 2`)**, nạp vào firmware bằng `#define XE`
+> ([Nạp firmware, bước 3b](SA_BAN_VA_TAI_LIEU.md#h3-nạp-firmware-xe-thật)). Mọi topic của xe
+> nằm trong `/agv1/...` hoặc `/agv2/...`, nên chạy một xe phải ghi rõ **`xe:=1`** hoặc
+> **`xe:=2`** ở lệnh cầu nối ESP32.
 
 > [!IMPORTANT]
 > **Mọi terminal** đều bắt đầu bằng hai dòng này (đã ghi sẵn trong từng khung lệnh
@@ -41,7 +48,7 @@ Làm trước lần chạy sa bàn đầu tiên, hoặc khi đồ đạc trong p
 ```bash
 cd ~/robot_ws_3
 source install/setup.bash
-ros2 launch my_bot_bringup bringup_real.launch.py
+ros2 launch my_bot_bringup bringup_real.launch.py xe:=2     # số xe đang dùng: 1 hoặc 2
 ```
 Bật nguồn xe. Log agent phải hiện `session established`.
 
@@ -114,9 +121,11 @@ Kịch bản dùng hằng ngày.
 ```bash
 cd ~/robot_ws_3
 source install/setup.bash
-ros2 launch my_bot_bringup bringup_real.launch.py
+ros2 launch my_bot_bringup bringup_real.launch.py xe:=2     # số xe đang dùng: 1 hoặc 2
 ```
-Bật nguồn xe, chờ log agent có `session established`.
+Bật nguồn xe, chờ log agent có `session established` và dòng
+`Chuyen tiep /agv2/{scan, imu/data, joint_states} -> goc` (topic của xe được chuyển
+về `/scan`, `/cmd_vel`... như cũ, các terminal sau giữ nguyên).
 
 ### Terminal 2: Nav2 (gồm sẵn bản đồ + định vị AMCL)
 ```bash
@@ -282,3 +291,77 @@ tools/fleet_sim.sh down          # tắt cả Gazebo của Terminal 4
 
 Quy tắc điều phối và kết quả kiểm thử:
 [SA_BAN_VA_TAI_LIEU.md — Phụ lục F](SA_BAN_VA_TAI_LIEU.md#f-quy-tắc-điều-phối-hai-xe).
+
+---
+
+## 4️⃣ Kịch Bản 4: Chạy Hai Xe Thật (Cần 3 Terminals)
+
+Giống Kịch bản 3 nhưng là **hai xe thật** trên sa bàn: mỗi xe có định vị AMCL và Nav2
+riêng, dùng chung bản đồ và một micro-ROS agent; bộ điều phối giữ chỗ, ưu tiên xe gần
+đích hơn, tự gỡ kẹt.
+
+> [!IMPORTANT]
+> **Chuẩn bị:**
+> - Xe 1 nạp firmware với `#define XE 1`, xe 2 với `#define XE 2` (bản có namespace
+>   `/agv1`, `/agv2`).
+> - **Tắt hết** các terminal của Kịch bản 1 và 2: cầu nối ESP32, Nav2, `grid_navigator`
+>   (chạy song song thì hai bản đồ, hai agent đè nhau).
+> - **Đặt xe:** xe 1 ở **(hàng 3, cột 1) mũi hướng Đông**, xe 2 ở **(hàng 3, cột 5) mũi
+>   hướng Tây**. Định vị bắt đầu từ đúng hai chỗ này.
+
+### Terminal 1: Bật Hai Xe (agent, bản đồ, định vị, 2 Nav2, 2 agent xe)
+Bật nguồn **cả hai xe** trước, rồi:
+```bash
+cd ~/robot_ws_3
+source install/setup.bash
+tools/fleet_real.sh up
+```
+Chờ khoảng 30 giây tới khi in `Cho xe agv1 (/agv1/scan) co`, `... agv2 ... co`, rồi
+`Nav2 agv1 ... san sang` và `Nav2 agv2 ... san sang`. Báo `KHONG THAY` thì xe đó chưa bật
+nguồn hoặc nạp nhầm số xe.
+
+Đặt xe ở chỗ khác:
+```bash
+AGV1="3 1 0" AGV2="3 5 180" tools/fleet_real.sh up     # hàng cột hướng_độ
+```
+Đặt lệch nhiều (vài chục cm hoặc vài chục độ) thì sửa định vị cho từng xe:
+```bash
+python3 tools/auto_initial_pose.py --ns agv1
+python3 tools/auto_initial_pose.py --ns agv2
+```
+
+### Terminal 2: Bộ Điều Phối
+```bash
+cd ~/robot_ws_3
+source install/setup.bash
+python3 traffic_manager.py agv1 agv2
+```
+Nhập giống hệt Kịch bản 3 (xe 1 rồi xe 2: hàng, cột, hướng; phải nhập đủ cả hai xe thì
+hai xe mới cùng xuất phát). Gõ `q` để thoát.
+
+### Terminal 3: RViz
+```bash
+cd ~/robot_ws_3
+source install/setup.bash
+rviz2 -d tools/fleet.rviz
+```
+Thấy bản đồ, lưới sa bàn, hai xe (xe 1 xanh dương, xe 2 cam), đường còn lại và ô đang giữ
+của từng xe.
+
+### Tắt
+```bash
+cd ~/robot_ws_3
+tools/fleet_real.sh down      # gửi lệnh dừng cho cả hai xe rồi tắt hết
+```
+
+> [!CAUTION]
+> **Dừng khẩn:** Ctrl-C Terminal 2 (mất lệnh điều phối quá 1 giây thì từng xe tự dừng),
+> hoặc `tools/fleet_real.sh down`, hoặc tắt công tắc nguồn xe.
+
+> [!NOTE]
+> - Bán kính bánh (`wheel_radius`) và hệ số xoay tại chỗ (`coast` trong `grid_real.yaml`)
+>   đang dùng số **đo trên xe 1** cho cả hai xe. Xe 2 xoay vượt hoặc thiếu góc rõ rệt thì
+>   cần đo lại riêng cho xe 2.
+> - Log từng phần ở `/tmp/fleet_real/` (`agent_agv1.log`, `nav_agv2.log`...).
+> - Thử không cần xe (ESP32 giả, LiDAR giả dò tường trên bản đồ): chạy hai
+>   `tools/fleet_fake_robot.py ... --esp32` rồi `AGENT=0 EMULATE=1 tools/fleet_real.sh up`.

@@ -386,6 +386,14 @@ class TrafficManager(Node):
         if path is None:
             path = self.plan(rb, start, rb.goal)     # vong khong duoc: di, toi do go ket
         if path is None:
+            # Vat can dong (vd costmap vua bat, chua loc xe kia) co the chan
+            # thoang qua: thu lai nhu on_trouble roi moi bo.
+            rb.fail_count += 1
+            if rb.fail_count <= MAX_FAIL:
+                rb.pending, rb.retry_at = True, time.time() + RETRY_S
+                self.log(f'[{rb.name}] chua co duong toi {self.lbl(rb.goal)}, thu lai sau '
+                         f'{RETRY_S:.0f} s ({rb.fail_count}/{MAX_FAIL})', 'warn')
+                return False
             self.clear_route(rb, f'khong co duong toi {self.lbl(rb.goal)}')
             rb.goal = None
             return False
@@ -411,7 +419,8 @@ class TrafficManager(Node):
                          'xe khac khong vao', 'error')
         self.occ = {n: self.occupied(rb) for n, rb in self.robots.items()}
         for rb in self.robots.values():
-            if rb.pending and rb.x is not None and self.map_ok and rb.goal is not None:
+            if (rb.pending and rb.x is not None and self.map_ok and rb.goal is not None
+                    and now >= rb.retry_at):
                 rb.pending = False
                 self.route_to_goal(rb)
 

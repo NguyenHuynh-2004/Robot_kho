@@ -7,6 +7,12 @@ la /controller_server, khong khop tham so agv1.controller_server -> nap bo dieu
 khien mac dinh, chet voi "No critics defined for FollowPath".
 
     ros2 launch tools/fleet_nav.launch.py namespace:=agv1 params_file:=...
+
+Nav2 cua moi xe chay GOP trong MOT tien trinh (container /<ns>/nav2_container,
+giong bringup_launch.py cua xe don). Truoc day moi node mot tien trinh: hai xe
+~26 tien trinh Nav2, cong agent/AMCL/odom... qua ~40 thanh vien DDS - voi
+ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST cac tien trinh bat SAU khong con duoc
+ai thay (do duoc: fleet_agent agv2 chay ma /fleet/status khong co no).
 """
 import os
 
@@ -15,7 +21,9 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, GroupAction, IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
-from launch_ros.actions import PushROSNamespace
+from launch_ros.actions import Node, PushROSNamespace
+from launch_ros.descriptions import ParameterFile
+from nav2_common.launch import RewrittenYaml
 
 
 def generate_launch_description():
@@ -27,9 +35,23 @@ def generate_launch_description():
         DeclareLaunchArgument('params_file'),
         GroupAction([
             PushROSNamespace(ns),
+            Node(name='nav2_container', package='rclcpp_components',
+                 executable='component_container_isolated',
+                 # File tham so (da gan namespace) cho CA tien trinh: costmap la node
+                 # CON tao trong controller/planner, chi nhan tham so qua file cua
+                 # tien trinh - thieu dong nay costmap chay mac dinh (khong /map,
+                 # nghe nham topic scan -> "out of bounds", "timed out").
+                 parameters=[ParameterFile(RewrittenYaml(source_file=params, root_key=ns,
+                                                         param_rewrites={}, convert_types=True),
+                                           allow_substs=True),
+                             {'autostart': True, 'use_sim_time': False}],
+                 remappings=[('/tf', 'tf'), ('/tf_static', 'tf_static')],
+                 output='screen'),
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(nav),
                 launch_arguments={'namespace': ns, 'params_file': params,
-                                  'use_sim_time': 'false', 'autostart': 'true'}.items()),
+                                  'use_sim_time': 'false', 'autostart': 'true',
+                                  'use_composition': 'True',
+                                  'container_name': 'nav2_container'}.items()),
         ]),
     ])

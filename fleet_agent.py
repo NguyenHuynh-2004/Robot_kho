@@ -22,7 +22,7 @@ import sys
 import time
 
 import rclpy
-from rclpy.executors import MultiThreadedExecutor
+from rclpy.executors import SingleThreadedExecutor
 from rclpy.utilities import remove_ros_args
 from action_msgs.msg import GoalStatus
 from nav2_msgs.action import FollowPath
@@ -378,7 +378,11 @@ def main():
     if not names:
         sys.exit('Thieu ten xe: python3 fleet_agent.py agv1 [--real] [--grid FILE] --ros-args ...')
     agent = FleetAgent(names[0], use_sim_time='--sim-time' in argv, grid_file=grid_file)
-    ex = MultiThreadedExecutor()
+    # MOT luong: moi callback von da chung mot nhom loai tru nhau (chay noi
+    # tiep). MultiThreadedExecutor voi imu/data + odom 50 Hz (xe that) thi luong
+    # ranh quay vong kiem tra lai lien tuc - do duoc 77-90% CPU, agent doi CPU,
+    # vi tri xe kia toi tre -> bao nut bi chan sai.
+    ex = SingleThreadedExecutor()
     ex.add_node(agent)
     try:
         ex.spin()

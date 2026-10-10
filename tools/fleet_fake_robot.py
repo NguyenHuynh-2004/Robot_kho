@@ -13,17 +13,28 @@
     python3 tools/fleet_fake_robot.py X Y YAW_DO --other /agv2/odom \\
         --ros-args -r __ns:=/agv1 -r /tf:=/agv1/tf -r /tf_static:=/agv1/tf_static
 Bien moi truong: FAKE_DELAY (s, tre lenh -> banh; xe that ~0.3).
+
+--esp32: GIA LAM ESP32 that (de thu tools/fleet_real.sh khong can xe): KHONG
+phat odom/TF, chi phat dung nhu firmware - joint_states (goc banh tich luy),
+imu/data (quaternion + gyro z), scan - con odometry/AMCL do laptop lam. Vi tri
+that phat o 'truth' (Odometry, he map) cho xe kia nhin thay. LiDAR gia con do
+TUONG tren ban do that (real_room_map) de AMCL cua laptop co cai ma khop:
+    python3 tools/fleet_fake_robot.py X Y YAW --esp32 --other /agv2/truth \
+        --ros-args -r __ns:=/agv1
 """
 import math
 import os
 import sys
+
+import numpy as np
+import yaml
 
 import rclpy
 from rclpy.node import Node
 from rclpy.utilities import remove_ros_args
 from geometry_msgs.msg import TransformStamped, Twist
 from nav_msgs.msg import Odometry
-from sensor_msgs.msg import LaserScan
+from sensor_msgs.msg import Imu, JointState, LaserScan
 from std_msgs.msg import String
 from tf2_ros import StaticTransformBroadcaster, TransformBroadcaster
 
@@ -36,9 +47,12 @@ N_RAYS = 360
 
 
 class FakeRobot(Node):
-    def __init__(self, x, y, yaw, others):
+    def __init__(self, x, y, yaw, others, esp32=False):
         super().__init__('fake_robot')
         self.x, self.y, self.th = x, y, yaw
+        self.esp32 = esp32
+        self.pl = self.pr = 0.0             # goc banh tich luy (rad), nhu encoder
+        self.th0 = yaw - 0.7                # BNO055: huong tuyet doi lech tuy y
         self.v = self.w = 0.0
         self.cmd, self.cmd_t = (0.0, 0.0), -1.0
         self.hist = []
@@ -49,7 +63,11 @@ class FakeRobot(Node):
         for topic in others:
             self.create_subscription(Odometry, topic,
                                      lambda m, t=topic: self.cb_other(t, m), 10)
-        self.odom_pub = self.create_publisher(Odometry, 'odom', 10)
+        self.odom_pub = self.create_publisher(Odometry, 'truth' if esp32 else 'odom', 10)
+        self.walls = load_map() if esp32 else None
+        if esp32:
+            self.js_pub = self.create_publisher(JointState, 'joint_states', 10)
+            self.imu_pub = self.create_publisher(Imu, 'imu/data', 10)
         self.scan_pub = self.create_publisher(LaserScan, 'scan', 10)
         self.tfb = TransformBroadcaster(self)
         st = StaticTransformBroadcaster(self)
@@ -61,7 +79,8 @@ class FakeRobot(Node):
         b.header.stamp, b.header.frame_id, b.child_frame_id = now, 'base_footprint', 'lidar_link'
         b.transform.translation.z = 0.075
         b.transform.rotation.w = 1.0
-        st.sendTransform([a, b])
+        if not esp32:                       # esp32: AMCL + URDF lo hai TF nay
+            st.sendTransform([a, b])
         self.create_timer(DT, self.step)
         self.create_timer(0.11, self.scan)
 
@@ -96,6 +115,9 @@ class FakeRobot(Node):
         self.th += self.w * DT
         self.x += self.v * math.cos(self.th) * DT
         self.y += self.v * math.sin(self.th) * DT
+        if self.esp32:
+            self.publish_esp32(now)
+            return
         tf = TransformStamped()
         tf.header.stamp, tf.header.frame_id, tf.child_frame_id = now.to_msg(), 'odom', 'base_footprint'
         tf.transform.translation.x, tf.transform.translation.y = self.x, self.y
@@ -108,6 +130,44 @@ class FakeRobot(Node):
         o.twist.twist.linear.x, o.twist.twist.angular.z = self.v, self.w
         self.odom_pub.publish(o)
 
+    def wall_ranges(self, s):
+        """Tia LiDAR cat tuong ban do (buoc 2 cm), inf neu khong cham."""
+        occ, res, ox, oy = self.walls
+        a = s.angle_min + np.arange(N_RAYS) * s.angle_increment + self.th
+        d = np.arange(s.range_min, s.range_max, 0.02)
+        xs = self.x + np.outer(np.cos(a), d)
+        ys = self.y + np.outer(np.sin(a), d)
+        i = ((xs - ox) / res).astype(int)
+        j = ((ys - oy) / res).astype(int)
+        inside = (i >= 0) & (i < occ.shape[1]) & (j >= 0) & (j < occ.shape[0])
+        hit = np.zeros_like(inside)
+        hit[inside] = occ[j[inside], i[inside]]
+        first = np.where(hit.any(axis=1), hit.argmax(axis=1), -1)
+        return [float(d[k]) if k >= 0 else float('inf') for k in first]
+
+    def publish_esp32(self, now):
+        R = 0.03281                          # = wheel_radius cua wheel_odometry
+        self.pl += (self.v - self.w * 0.1) * DT / R
+        self.pr += (self.v + self.w * 0.1) * DT / R
+        j = JointState()
+        j.header.stamp = now.to_msg()
+        j.name = ['left_wheel_joint', 'right_wheel_joint']
+        j.position = [self.pl, self.pr]
+        j.velocity = [(self.v - self.w * 0.1) / R, (self.v + self.w * 0.1) / R]
+        self.js_pub.publish(j)
+        m = Imu()
+        m.header.stamp, m.header.frame_id = now.to_msg(), 'imu_link'
+        h = self.th - self.th0
+        m.orientation.z, m.orientation.w = math.sin(h / 2), math.cos(h / 2)
+        m.angular_velocity.z = self.w
+        m.linear_acceleration.z = 9.81
+        self.imu_pub.publish(m)
+        o = Odometry()                       # vi tri THAT (he map) cho xe kia
+        o.header.stamp, o.header.frame_id = now.to_msg(), 'map'
+        o.pose.pose.position.x, o.pose.pose.position.y = self.x, self.y
+        o.pose.pose.orientation.z, o.pose.pose.orientation.w = math.sin(self.th / 2), math.cos(self.th / 2)
+        self.odom_pub.publish(o)
+
     def scan(self):
         s = LaserScan()
         s.header.stamp = self.get_clock().now().to_msg()
@@ -115,7 +175,7 @@ class FakeRobot(Node):
         s.angle_min, s.angle_increment = -math.pi, 2 * math.pi / N_RAYS
         s.angle_max = s.angle_min + (N_RAYS - 1) * s.angle_increment
         s.range_min, s.range_max = 0.12, 8.0
-        rng = [float('inf')] * N_RAYS
+        rng = self.wall_ranges(s) if self.walls is not None else [float('inf')] * N_RAYS
         circles = [(ox, oy, BODY_R) for ox, oy in self.other_pose.values()] + self.obstacles
         for ox, oy, rad in circles:
             dx, dy = ox - self.x, oy - self.y
@@ -137,6 +197,30 @@ class FakeRobot(Node):
         self.scan_pub.publish(s)
 
 
+def load_map():
+    """real_room_map -> mang o chiem (hang 0 = mep DUOI, giong OccupancyGrid)."""
+    cfg = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                       'src/my_bot_bringup/config/real_room_map.yaml')
+    m = yaml.safe_load(open(cfg))
+    data = open(os.path.join(os.path.dirname(cfg), m['image']), 'rb').read()
+    tok, k = [], 0
+    while len(tok) < 4:
+        while data[k:k + 1].isspace():
+            k += 1
+        if data[k:k + 1] == b'#':
+            while data[k:k + 1] not in (b'\n', b''):
+                k += 1
+            continue
+        e = k
+        while not data[e:e + 1].isspace():
+            e += 1
+        tok.append(data[k:e]); k = e
+    w, h = int(tok[1]), int(tok[2])
+    px = np.frombuffer(data[k + 1:k + 1 + w * h], dtype=np.uint8).reshape(h, w)
+    occ = px[::-1] < (1.0 - float(m['occupied_thresh'])) * 255
+    return occ, float(m['resolution']), float(m['origin'][0]), float(m['origin'][1])
+
+
 def main():
     rclpy.init(args=sys.argv)
     argv = remove_ros_args(sys.argv)[1:]
@@ -145,8 +229,10 @@ def main():
         i = argv.index('--other')
         others = argv[i + 1].split(',')
         argv = argv[:i] + argv[i + 2:]
+    esp32 = '--esp32' in argv
+    argv = [a for a in argv if a != '--esp32']
     x, y, yaw = float(argv[0]), float(argv[1]), math.radians(float(argv[2]))
-    node = FakeRobot(x, y, yaw, others)
+    node = FakeRobot(x, y, yaw, others, esp32)
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:

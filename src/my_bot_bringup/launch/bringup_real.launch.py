@@ -23,7 +23,8 @@ Neu may khac chua co agent, dung Docker cho nhanh:
 roi launch voi start_agent:=false
 
 Chay:
-    ros2 launch my_bot_bringup bringup_real.launch.py
+    ros2 launch my_bot_bringup bringup_real.launch.py xe:=2      # so xe da nap (#define XE)
+Hai xe cung luc: tools/fleet_real.sh (khong dung file nay).
 Roi cap nguon ESP32. Log agent phai hien "client_key" va danh sach topic.
 """
 
@@ -33,7 +34,7 @@ from ament_index_python.packages import (
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, LogInfo
 from launch.conditions import IfCondition
-from launch.substitutions import Command, LaunchConfiguration
+from launch.substitutions import Command, LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 
@@ -97,6 +98,11 @@ def generate_launch_description():
             'wheel_radius', default_value='0.03281',
             description='Ban kinh LAN cua banh sau (m). Hieu chinh bang '
                         'tools/check_odom_scale.py - KHONG phai nap lai chip'),
+        # Firmware dat topic cua xe vao /agv<XE>/ (de 2 xe dung chung agent).
+        # Chay 1 xe: chuyen tiep /agv<XE>/* <-> /* de moi thu con lai giu nguyen.
+        DeclareLaunchArgument(
+            'xe',
+            description='So xe dang chay (1 hoac 2) - phai khop #define XE da nap'),
         DeclareLaunchArgument(
             'yaw_source', default_value='imu_quaternion',
             description='imu_quaternion (khong troi, nen dung) | imu_gyro '
@@ -125,6 +131,15 @@ def generate_launch_description():
             LogInfo(msg='      start_agent:=false'),
             LogInfo(msg='=========================================================='),
         ]),
+
+        # 1b. /agv<XE>/scan, imu/data, joint_states -> goc; /cmd_vel -> /agv<XE>/cmd_vel
+        Node(
+            package='my_bot_bringup',
+            executable='ns_relay.py',
+            name='ns_relay',
+            output='screen',
+            arguments=[PythonExpression(["'agv' + '", LaunchConfiguration('xe'), "'"])],
+        ),
 
         # 2. TF tinh giua cac link, doc tu URDF
         Node(
