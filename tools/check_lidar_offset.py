@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """Do goc lech giua anh quet LiDAR va huong truoc cua xe.
 
-    cd ~/robot_ws_3 && python3 tools/check_lidar_offset.py
+    cd ~/robot_ws_3 && python3 tools/check_lidar_offset.py [--offset 180]
+
+--offset = LIDAR_ANGLE_OFFSET_DEG dang nap trong xe (moi xe mot so, xem khoi
+"#if XE == 1" trong firmware). Mac dinh 180.
 
 CACH LAM:
   1. De xe dung yen tren san.
@@ -24,6 +27,7 @@ VI SAO CAN:
 Thuan doc, khong publish gi."""
 import math
 import statistics
+import sys
 import time
 
 import numpy as np
@@ -33,7 +37,7 @@ from rclpy.qos import QoSHistoryPolicy, QoSProfile, QoSReliabilityPolicy
 from sensor_msgs.msg import LaserScan
 
 N_SCAN = 25
-FIRMWARE_OFFSET_NOW = 90.0      # LIDAR_ANGLE_OFFSET_DEG dang nam trong firmware
+FIRMWARE_OFFSET_NOW = 180.0     # LIDAR_ANGLE_OFFSET_DEG dang nap (doi bang --offset)
 
 
 class S(Node):
@@ -86,6 +90,9 @@ def nearest_bearing(ranges, amin, ainc, lo, hi):
 
 
 def main():
+    global FIRMWARE_OFFSET_NOW
+    if "--offset" in sys.argv:
+        FIRMWARE_OFFSET_NOW = float(sys.argv[sys.argv.index("--offset") + 1])
     rclpy.init()
     n = S()
     end = time.time() + 25
@@ -143,7 +150,7 @@ def main():
         print(f"      roi colcon build. Day la cho DUNG de mo ta huong gan")
         print(f"      cam bien, va thay duoc ngay trong TF.")
         print()
-        print(f"  (b) Trong firmware - phai nap lai:")
+        print(f"  (b) Trong firmware - phai nap lai (khoi cua DUNG xe, #if XE == ...):")
         print(f"      LIDAR_ANGLE_OFFSET_DEG  {FIRMWARE_OFFSET_NOW:.1f}f "
               f"-> {new_off:.1f}f")
         print()
