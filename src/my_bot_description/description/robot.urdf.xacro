@@ -48,13 +48,18 @@
     <material name="orange"><color rgba="1 0.5 0 1"/></material>
     <material name="red"><color rgba="1 0 0 1"/></material>
 
-    <!-- base_footprint nam tren MAT SAN. base_link trung voi no, nen moi toa
-         do z duoi day deu la chieu cao so voi san. -->
+    <!-- base_footprint nam tren MAT SAN, ngay duoi TAM TRUC BANH (tam xoay cua xe
+         vi sai). base_link = tam than, truoc truc 14 mm (-wheel_x); moi toa do
+         z duoi day deu la chieu cao so voi san.
+         Truoc 2026-10-10 base_footprint o tam THAN: xoay tai cho 180 do lam "vi tri
+         xe" (odom/AMCL/sa ban) troi 2.8 cm (90 do: 2 cm) ma odometry vi sai khong
+         biet -> xe 2 xe that toi dich lech 3-4.4 cm sau cu xoay cuoi. Gio xoay tai
+         cho khong doi vi tri; tam than luon nam truoc nut 1.4 cm theo mui xe. -->
     <link name="base_footprint"/>
     <joint name="base_footprint_joint" type="fixed">
         <parent link="base_footprint"/>
         <child link="base_link"/>
-        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <origin xyz="${-wheel_x} 0 0" rpy="0 0 0"/>
     </joint>
 
     <link name="base_link"></link>

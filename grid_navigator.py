@@ -550,6 +550,22 @@ class GridNavigator(Node):
     # lech > 20 do) quay ca vong de di 4 cm - da gap tren xe that 2026-10-10:
     # xe 2 dung yen bi xoay 158 do. Xe dang di thi van dung SNAP_DIST.
     STAY_DIST = 0.10
+    STAY_AHEAD = math.radians(30)   # o nam truoc mui trong goc nay -> van chay toi
+
+    def stay_put(self, off, rx, ry, sx, sy):
+        """Dich la o xe dang dung, xe lech `off`: True = coi nhu da toi.
+        O nam TRUOC mui (vd Nav2 dung som 8 cm vi vat can thoang qua) -> chay
+        thang toi, khong can xoay. O ben hong / sau lung va lech <= STAY_DIST ->
+        bo qua, khong quay ca vong de nhich vai cm."""
+        if off <= self.SNAP_DIST:
+            return True
+        if off > self.STAY_DIST:
+            return False
+        _, _, yaw = self.get_robot_pose()
+        if yaw is None:
+            return True
+        ahead = abs(self.normalize_angle(math.atan2(sy - ry, sx - rx) - yaw)) <= self.STAY_AHEAD
+        return not ahead
 
     # Xoay tai cho: so lan xoay bu toi da; thoi gian ra lenh ngan nhat moi lan (s)
     ROT_TRIES = 5
@@ -611,7 +627,7 @@ class GridNavigator(Node):
         rx, ry, _ = self.get_robot_pose()
         sx, sy = self.get_coordinates(start_row, start_col)
         off = math.hypot(sx - rx, sy - ry) if rx is not None else 0.0
-        if not segs and off <= self.STAY_DIST:
+        if not segs and rx is not None and self.stay_put(off, rx, ry, sx, sy):
             pass                    # dich la o dang dung, xe da trong o
         elif off > self.SNAP_DIST:
             if segs and off <= self.MERGE_START_DIST:

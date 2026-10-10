@@ -192,8 +192,8 @@ class FleetAgent(GridNavigator):
         sx, sy = self.get_coordinates(*nodes[i0])
         off = math.hypot(sx - rx, sy - ry)
         if not segs:
-            # Dich la o dang dung: lech <= STAY_DIST coi nhu da toi (xem GridNavigator)
-            if off > self.STAY_DIST:
+            # Dich la o dang dung (xem GridNavigator.stay_put)
+            if not self.stay_put(off, rx, ry, sx, sy):
                 segs = [(rx, ry, sx, sy)]
         elif off > self.SNAP_DIST:
             x0, y0, x1, y1 = segs[0]
