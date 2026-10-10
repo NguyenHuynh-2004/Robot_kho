@@ -190,6 +190,14 @@ local_costmap:
           clearing: True
           marking: True
           data_type: "LaserScan"
+          # Do 2026-10-10 (2 xe that): mac dinh raytrace_max_range 3.0 m -> tia cham
+          # vat xa hon 3 m KHONG xoa duoc o nao tren duong di, vet vat can (nguoi di
+          # qua, luc AMCL sai) nam mai trong RViz. 10 m: moi tia deu xoa toi mep
+          # costmap. Danh dau van chi trong 2.5 m.
+          raytrace_max_range: 10.0
+          raytrace_min_range: 0.0
+          obstacle_max_range: 2.5
+          obstacle_min_range: 0.0
 
 global_costmap:
   global_costmap:
@@ -217,6 +225,14 @@ global_costmap:
           clearing: True
           marking: True
           data_type: "LaserScan"
+          # Do 2026-10-10 (2 xe that): mac dinh raytrace_max_range 3.0 m -> tia cham
+          # vat xa hon 3 m KHONG xoa duoc o nao tren duong di, vet vat can (nguoi di
+          # qua, luc AMCL sai) nam mai trong RViz. 10 m: moi tia deu xoa toi mep
+          # costmap. Danh dau van chi trong 2.5 m.
+          raytrace_max_range: 10.0
+          raytrace_min_range: 0.0
+          obstacle_max_range: 2.5
+          obstacle_min_range: 0.0
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
