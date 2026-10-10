@@ -17,12 +17,15 @@ gỡ kẹt).
 | 2 Một xe thật | `ros2 launch my_bot_bringup bringup_real.launch.py xe:=N` → `navigation.launch.py use_sim_time:=false` → `python3 tools/auto_initial_pose.py` → `python3 grid_navigator.py --real` |
 | 3 Hai xe mô phỏng | `tools/fleet_sim.sh up` (domain 87) → `ROS_DOMAIN_ID=87 python3 traffic_manager.py agv1 agv2`; RViz `tools/fleet.rviz`; Gazebo xem/đặt vật cản `tools/fleet_gazebo.py` |
 | 4 Hai xe thật | xe 1 ở (3,1)→Đông, xe 2 ở (3,5)→Tây; `tools/fleet_real.sh up` → `python3 traffic_manager.py agv1 agv2`; `tools/fleet_real.sh down` |
+| **Tự động (trợ lý chạy)** | `tools/agvctl up` (chờ xe bật nguồn → tự bật hết) → `agvctl status/errors/events` → `agvctl goal "..." --go` → `agvctl down`. Xem `docs/AGVCTL.md` |
 
 Tài liệu người dùng: `docs/HUONG_DAN_CHAY.md`, `docs/SA_BAN_VA_TAI_LIEU.md` (tra sự cố,
 nối dây, thuật toán, quy tắc 2 xe, nạp firmware H3).
 
 ## Kiến trúc then chốt
-- Firmware `firmware/esp32_agv_base/esp32_agv_base.ino`, chọn xe bằng **`#define XE 1|2`**.
+- Firmware `firmware/esp32_agv_base/esp32_agv_base.ino`, chọn xe bằng **`#define XE 1|2`**
+  (`agvctl fw build N` biên dịch từ WSL bằng arduino-cli của IDE; `/agvN/diag` JSON 1 Hz,
+  `/agvN/estop_reset`).
   Node micro-ROS `/agvN/esp32_agv_base_N`; topic **`/agvN/scan`, `/agvN/imu/data`,
   `/agvN/joint_states`** (góc bánh tích luỹ), nhận **`/agvN/cmd_vel`**. ESTOP chốt tới reset
   (kẹt bánh / quay ngược chiều PWM); mất cmd 0.5 s thì dừng.
@@ -58,6 +61,8 @@ Tiếng Việt. **Người dùng tự nạp firmware** (giữ BOOT); trợ lý b
 **Không gửi `/cmd_vel` tới xe thật khi chưa được phép.** Không commit `wifi_config.h`.
 
 ## Trạng thái (2026-10-10)
-Hai xe thật: code + tài liệu xong, đã thử với ESP32 giả; **chờ nạp firmware namespace cho cả
-2 xe và chạy thật**. Xe 2 đang dùng `wheel_radius`/`coast` của xe 1. `main` đi trước
-`origin/main` 18 commit. Chi tiết: `activeContext.md`, `progress.md`.
+Hai xe thật: code + tài liệu xong, đã thử với ESP32 giả. Đã có môi trường vận hành tự động
+(`agvctl`, `fleet_monitor`, MCP `ros`, `/diag`) — thử đủ vòng với ESP32 giả (domain 89).
+**Chờ:** người dùng `sudo apt install ros-jazzy-rosbridge-server`; nạp firmware mới (có `/diag`)
+cho cả 2 xe. Xe 2 đang dùng `wheel_radius`/`coast` của xe 1. Chi tiết: `activeContext.md`,
+`progress.md`.

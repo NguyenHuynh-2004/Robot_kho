@@ -316,9 +316,9 @@ cd ~/robot_ws_3
 source install/setup.bash
 tools/fleet_real.sh up
 ```
-Chờ khoảng 30 giây tới khi in `Cho xe agv1 (/agv1/scan) co`, `... agv2 ... co`, rồi
-`Nav2 agv1 ... san sang` và `Nav2 agv2 ... san sang`. Báo `KHONG THAY` thì xe đó chưa bật
-nguồn hoặc nạp nhầm số xe.
+Chờ tới khi in `Cho xe agv1 (/agv1/scan) co`, `... agv2 ... co`, rồi `Nav2 agv1 ... san
+sang` và `Nav2 agv2 ... san sang` (30 giây – 2 phút: Nav2 một xe có lúc không lên lần đầu,
+script tự bật lại). Báo `KHONG THAY` thì xe đó chưa bật nguồn hoặc nạp nhầm số xe.
 
 Đặt xe ở chỗ khác:
 ```bash
@@ -348,6 +348,34 @@ rviz2 -d tools/fleet.rviz
 Thấy bản đồ, lưới sa bàn, hai xe (xe 1 xanh dương, xe 2 cam), đường còn lại và ô đang giữ
 của từng xe.
 
+### Thử Lần Đầu: Từng Bước, Từ Đứng Yên Tới Đổi Chỗ
+
+Mỗi bước đạt mới sang bước sau. Luôn có **một người đứng cạnh sa bàn, tay sẵn công tắc
+nguồn**; Ctrl-C Terminal 2 thì sau 1 giây hai xe tự dừng.
+
+| Bước | Nhập ở Terminal 2 (xe 1 rồi xe 2: hàng, cột, hướng) | Kiểm tra |
+|---|---|---|
+| 0. Đứng yên | (chưa nhập gì) | RViz: hai xe nằm đúng (3,1) và (3,5), điểm quét đỏ trùng tường đen. Terminal 1 không báo lỗi |
+| 1. Chỉ xe 1 | xe 1: `3` `2` `d` · xe 2: `3` `5` Enter (ô đang đứng) | Xe 1 tiến 60 cm, dừng ≤ 3 cm. Xe 2 không nhúc nhích |
+| 2. Chỉ xe 2 | xe 1: `3` `2` Enter · xe 2: `3` `4` `t` | Như bước 1, cho xe 2 |
+| 3. Hai xe, không giao nhau | xe 1: `5` `2` `b` · xe 2: `5` `4` `b` | Hai xe cùng chạy, không ai phải chờ ai |
+| 4. Nhường đường | xe 1: `5` `4` `d` · xe 2: `5` `2` `t` | Hai xe đổi chỗ trên hàng 5: một xe né sang ô bên cạnh chờ xe kia qua, không chạm nhau |
+| 5. Đường chéo nhau, về chỗ đầu | xe 1: `3` `1` `d` · xe 2: `3` `5` `t` | Hai đường cắt nhau: một xe chờ ở ô trước chỗ giao, xe kia đi qua trước |
+| 6. Đổi chỗ (như mô phỏng) | xe 1: `3` `5` `t` · xe 2: `3` `1` `d` | Một xe né sang hàng 4 rồi vòng về, xe kia đi thẳng hàng 3 |
+
+Sau mỗi bước, terminal in `Xe 1 ĐÃ TỚI ...`, `Xe 2 ĐÃ TỚI ...`. Một xe xoay vượt/thiếu góc
+hoặc tới đích lệch rõ (> 3 cm) thì dừng lại và hiệu chỉnh xe đó (dưới đây).
+
+### Hiệu Chỉnh Riêng Từng Xe
+Mặc định cả hai xe dùng số đo của **xe 1**. Đo được số riêng thì khai báo khi bật:
+```bash
+WHEEL_R_agv2=0.0330 COAST_agv2=0.30 tools/fleet_real.sh up
+```
+- `WHEEL_R_agvN`: bán kính lăn bánh (m) — xe đi **thiếu** quãng đường thì tăng, **thừa** thì giảm.
+- `COAST_agvN`: hệ số xoay tại chỗ (s) — xe xoay **vượt** góc thì tăng, **thiếu** thì giảm.
+
+Terminal 1 in lại `Xe agv2: wheel_radius ... m, coast ...` để xác nhận.
+
 ### Tắt
 ```bash
 cd ~/robot_ws_3
@@ -359,9 +387,7 @@ tools/fleet_real.sh down      # gửi lệnh dừng cho cả hai xe rồi tắt 
 > hoặc `tools/fleet_real.sh down`, hoặc tắt công tắc nguồn xe.
 
 > [!NOTE]
-> - Bán kính bánh (`wheel_radius`) và hệ số xoay tại chỗ (`coast` trong `grid_real.yaml`)
->   đang dùng số **đo trên xe 1** cho cả hai xe. Xe 2 xoay vượt hoặc thiếu góc rõ rệt thì
->   cần đo lại riêng cho xe 2.
+> - Mỗi lần `up`/`down`, script dọn bộ nhớ chung DDS bị bỏ lại (`fastdds shm clean`).
 > - Log từng phần ở `/tmp/fleet_real/` (`agent_agv1.log`, `nav_agv2.log`...).
 > - Thử không cần xe (ESP32 giả, LiDAR giả dò tường trên bản đồ): chạy hai
 >   `tools/fleet_fake_robot.py ... --esp32` rồi `AGENT=0 EMULATE=1 tools/fleet_real.sh up`.

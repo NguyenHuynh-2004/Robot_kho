@@ -1,27 +1,34 @@
-# Active Context (cập nhật 2026-10-10)
+# Active Context (cập nhật 2026-10-10 chiều)
 
 ## Đang làm
-Triển khai **hai xe thật** (Kịch bản 4). Code, tài liệu và thử với ESP32 giả đã xong
-(commit 1e5dec8). Bước tiếp theo là chạy trên hai xe thật.
+Chạy **hai xe thật** (Kịch bản 4). Người dùng đã chạy thành công **một xe thật** (nhiều khả
+năng xe 2, firmware namespace bản `1e5dec8` — đúng bản đang nằm ở
+`D:\CTU\Ardunio ide\code\Xe_lidar\Xe_lidar.ino`, `XE 2`, chưa có `/diag`).
+
+Đã xong trong phiên này (commit `a4af8ee` + tài liệu):
+- `fleet_real.sh`: hiệu chỉnh riêng từng xe `WHEEL_R_agvN`, `COAST_agvN`; `fastdds shm clean`
+  khi up/down (cổng /dev/shm bị `kill -9` bỏ lại làm container Nav2 "vô hình").
+- Commit khối `agvctl`, `fleet_monitor.py`, `.mcp.json`, firmware `/diag` + `estop_reset`
+  (firmware này **chưa chạy trên xe thật**).
+- Kịch bản 4 có **6 bước thử lần đầu** (đứng yên → từng xe → hai xe song song → nhường
+  đường → đường chéo → đổi chỗ). Đã chạy đúng 6 bước trên 2 ESP32 giả (domain 89): đều tới
+  đích, không va.
 
 ## Đang chờ người dùng
-1. Nạp firmware mới (có namespace `/agvN`) cho **cả hai xe**: xe 1 với `#define XE 1`, xe 2
-   với `#define XE 2` (`D:\CTU\Ardunio ide\code\Xe_lidar\Xe_lidar.ino` đang để `XE 2`).
-   Lưu ý: firmware cũ của xe 1 **không** có namespace → không chạy được với
-   `bringup_real.launch.py xe:=1` mới cho tới khi nạp lại.
-2. Đặt xe 1 ở (3,1) hướng Đông, xe 2 ở (3,5) hướng Tây, bật nguồn, rồi
-   `tools/fleet_real.sh up` → `python3 traffic_manager.py agv1 agv2` → `rviz2 -d tools/fleet.rviz`.
-3. Kiểm tra Nav2 (khởi động lại) với `always_send_full_costmap` ở chế độ 1 xe: nút đỏ phải
-   chuyển xanh ~0.2–0.4 s sau khi bỏ vật cản.
+1. Firmware: xe nào đã chạy được với `bringup_real.launch.py xe:=N` thì giữ nguyên. Xe còn lại
+   nạp `Xe_lidar.ino` (bản 1e5dec8) với `#define XE` tương ứng — **không cần** bản `/diag`.
+2. Chạy Kịch bản 4 theo 6 bước, gửi lại log `/tmp/fleet_real/*.log` nếu có lỗi.
+3. (Tuỳ chọn) `sudo apt install -y ros-jazzy-rosbridge-server` cho MCP `ros` (lần này MCP
+   `ros` không kết nối được).
 
 ## Gợi ý khi người dùng quay lại
-- Sau lần chạy 2 xe thật đầu tiên: đọc `/tmp/fleet_real/*.log`; kiểm tra xe 2 xoay có vượt/thiếu
-  góc (coast của xe 1) và quãng đường (wheel_radius của xe 1).
-- Nếu có tiến trình "vô hình" → đếm tiến trình ROS (giới hạn dò tìm LOCALHOST).
-- Thử không cần xe: hai `tools/fleet_fake_robot.py X Y YAW --esp32 --other /agvK/truth
-  --ros-args -r __ns:=/agvN` rồi `ROS_DOMAIN_ID=89 AGENT=0 EMULATE=1 tools/fleet_real.sh up`.
+- Lỗi "khong thay Nav2" ở một agent → đếm tiến trình ROS, kiểm tra `/dev/shm`, `fastdds shm clean`.
+- Xe 2 xoay vượt/thiếu → `COAST_agv2`; đi thiếu/thừa quãng → `WHEEL_R_agv2`.
+- Không cho xe chạy (`agvctl goal --go`, `/cmd_vel`) khi người dùng chưa cho phép trong phiên.
+- Thử không cần xe: `steps_test` = hai `tools/fleet_fake_robot.py ... --esp32` +
+  `ROS_DOMAIN_ID=89 AGENT=0 EMULATE=1 tools/fleet_real.sh up` + `/fleet/goal "pair ..."`.
 
 ## Quy tắc phiên làm việc
 Nói tiếng Việt; người dùng tự nạp firmware; không gửi `/cmd_vel` tới xe thật khi chưa được
-phép; không commit `wifi_config.h`; chỉ đẩy GitHub khi được bảo; làm xong từng giai đoạn chờ
-người dùng nói "xong".
+phép; không commit `wifi_config.h` và `nhiem_vu.txt`; chỉ đẩy GitHub khi được bảo; làm xong
+từng giai đoạn chờ người dùng nói "xong".

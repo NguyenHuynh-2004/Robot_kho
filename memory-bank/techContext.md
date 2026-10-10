@@ -55,6 +55,24 @@ Firmware XE 1 biên dịch ra đúng kích thước bản cũ "1 Xe" khi chưa c
 - Arduino CLI có thể dùng để biên dịch kiểm tra: `arduino-cli compile --fqbn esp32:esp32:esp32 <thư mục sketch>`
   (thư mục phải có `wifi_config.h`).
 
+## Môi trường vận hành tự động (2026-10-10) — xem `docs/AGVCTL.md`
+- `tools/agvctl`: `doctor | up [--emulate] | down | status | errors | events | logs | goal --go |
+  stop | localize | serial | fw build N | fw copy N`. Log mỗi lần `up`: `~/agv_logs/run-*/`
+  (`latest` → mới nhất): `status.json`, `errors.log` (WARN+ từ /rosout), `events.log`.
+- `tools/fleet_monitor.py`: 1 tiến trình rclpy, `raw=True`, không nghe imu (≈15% một nhân).
+- Firmware: `/agvN/diag` (String JSON 1 Hz: estop, rssi, reset, rpm, pwm, pub, heap) và
+  `/agvN/estop_reset` (Empty; chỉ gỡ khi bánh đã dừng). Executor 2 handle.
+- Biên dịch từ WSL: `arduino-cli.exe` của IDE tại `D:\CTU\Ardunio ide\Arduino IDE\resources\app\lib\backend\resources\`,
+  `--config-file C:\Users\LRGION\.arduinoIDE\arduino-cli.yaml`, FQBN
+  `esp32:esp32:esp32:PartitionScheme=huge_app`, sketch tạm ở `%TEMP%\agv_fw` (chạy với
+  `cwd=/mnt/c` để tránh cảnh báo UNC). Lần đầu ~5 phút. Kích thước 1.07 MB (33%).
+- Serial: PowerShell `System.IO.Ports.SerialPort` (DTR/RTS tắt → không reset), `ReadExisting`
+  (firmware in dấu chấm không xuống dòng). **COM3 = thiết bị Lenovo (VID_17EF), không phải
+  ESP32**; ESP32 nhận theo VID 10C4/1A86/0403/303A.
+- MCP: `uv` ở `~/.local/bin`; `.mcp.json` → `uvx ros-mcp==3.1.2` → rosbridge `127.0.0.1:9090`
+  (`agvctl up` tự bật nếu đã cài `ros-jazzy-rosbridge-server` — cần sudo, người dùng cài).
+- Dò tiến trình agent bằng `pgrep -x micro_ros_agent` (dò theo dòng lệnh khớp nhầm shell khác).
+
 ## Bẫy đã gặp (đọc trước khi chạy lệnh)
 - **Sửa file qua `\\wsl.localhost\...` làm mất bit chạy** → `chmod +x` (và
   `git update-index --chmod=+x` cho file mới). Triệu chứng: `Permission denied`, launch báo

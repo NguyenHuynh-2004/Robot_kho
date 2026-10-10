@@ -3,6 +3,8 @@
 ## Đã xong (mới nhất trước)
 | Ngày | Việc | Commit |
 |---|---|---|
+| 2026-10-10 | Hai xe thật: hiệu chỉnh riêng từng xe (`WHEEL_R_agvN`, `COAST_agvN`), `fastdds shm clean` khi up/down; Kịch bản 4 có 6 bước thử lần đầu — chạy đủ 6 bước trên 2 ESP32 giả: tới đích, không va (lệch hướng 6–9° do AMCL giả thô) | a4af8ee |
+| 2026-10-10 | **Môi trường vận hành tự động**: `tools/agvctl` (up/down/status/errors/events/logs/goal/stop/localize/serial/fw), `tools/fleet_monitor.py` (/rosout + nhịp + diag + AMCL → `~/agv_logs`), firmware `/agvN/diag` + `estop_reset`, MCP `ros` (`.mcp.json`, uv), biên dịch firmware bằng arduino-cli của IDE từ WSL, `docs/AGVCTL.md`. Thử đủ vòng với ESP32 giả | a4af8ee |
 | 2026-10-10 | **Hai xe thật**: micro-ROS gắn ID xe (`/agvN`), `tools/fleet_real.sh`, `fleet_real_robot.launch.py`, Nav2 gộp container, `ns_relay.py` cho chế độ 1 xe, `auto_initial_pose --ns`, `fleet_fake_robot --esp32` (ESP32 giả, LiDAR dò tường bản đồ), Kịch bản 4 trong tài liệu. **Mới thử bằng ESP32 giả**, chưa chạy trên 2 xe thật | 1e5dec8 |
 | 2026-10-10 | Local costmap luôn phát bản đầy đủ 5 Hz (nút đỏ không xoá khi xe đứng yên) | bffb85c |
 | 2026-10-10 | Xe 2 không nhận lệnh: dây động cơ L/R nối chéo trên mạch mới → đổi nhóm chân trong `XE 2` | d0a9406 |
@@ -29,6 +31,12 @@ GitHub: `main` đang **đi trước `origin/main` 18 commit** (chưa đẩy; ch�
   2.9–3.4 cm (AMCL), hướng ≤ 3.4°; 18 tiến trình ROS; mỗi agent ~9% CPU.
 
 ## Vấn đề còn mở
+- Cổng bộ nhớ chung FastDDS bị `kill -9` bỏ lại (/dev/shm) → container Nav2 bật sau không ai dò thấy; đã thêm `fastdds shm clean` vào fleet_real.sh. Nếu gặp lại ở chỗ khác: chạy lệnh đó khi hệ tắt.
+- rosbridge chưa cài (cần sudo) → MCP `ros` chưa dùng được; `agvctl` vẫn đủ để đọc lỗi.
+- Mô phỏng ESP32 giả: sau khi tới đích, agv2 báo hướng Nam +7.8° theo AMCL dù agent báo xoay
+  xong −0.5° (AMCL chỉnh lại sau khi dừng?) — cần xem lại trên xe thật.
+- Nav2 agv2 đôi khi không lên lần 1: `failed to send response to .../load_node (timeout)`
+  (fleet_real.sh tự thử lại, lần 2 lên).
 - **Chạy 2 xe thật lần đầu** (Kịch bản 4) — đang chờ người dùng nạp firmware có namespace
   cho cả 2 xe.
 - Xe 2: `wheel_radius` (0.03281) và `coast` (0.36) đang dùng số đo của xe 1 → có thể cần đo
@@ -40,6 +48,8 @@ GitHub: `main` đang **đi trước `origin/main` 18 commit** (chưa đẩy; ch�
 - Mạch in xe 2: J2_1 (3V3 cho encoder/BNO055) từng chưa nối — đã hỏi, chưa xác nhận.
 
 ## Lỗi đã sửa — đừng lặp lại
+- `pgrep -f "micro_ros_agent udp4"` khớp cả shell khác có chuỗi đó → `pgrep -x micro_ros_agent`.
+- Đọc Serial bằng `ReadLine` không ra gì khi firmware in dấu chấm không xuống dòng → `ReadExisting`.
 - Pending model xoay tại chỗ (tính cả lệnh xe không nhúc nhích) → dùng gyro + coast.
 - `/odom` ω có gai → điều khiển xoay theo gyro (`rot_w()`).
 - Goal checker dừng ở 2.6–2.9 cm → `xy_goal_tolerance 0.02`.
