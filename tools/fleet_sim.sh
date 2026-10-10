@@ -14,6 +14,8 @@ CFG=$WS/src/my_bot_bringup/config
 source /opt/ros/jazzy/setup.bash
 source "$WS/install/setup.bash"
 export ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-87} ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST
+# DDS chi dung UDP, bo SHM (cong /dev/shm bi khoa lam Nav2 mot xe vo hinh - xem fleet_real.sh)
+export FASTDDS_BUILTIN_TRANSPORTS=UDPv4
 NAMES=(agv1 agv2)
 
 down() {

@@ -26,6 +26,11 @@ source /opt/ros/jazzy/setup.bash
 [ -f ~/microros_ws/install/setup.bash ] && source ~/microros_ws/install/setup.bash
 source "$WS/install/setup.bash"
 export ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST
+# DDS chi dung UDP (localhost), BO bo nho chung SHM: cong /dev/shm/fastrtps_port*
+# bi khoa ("RTPS_TRANSPORT_SHM ... open_and_lock_file failed") lam ca container Nav2
+# cua mot xe VO HINH (2026-10-10: xe 2 khong co costmap, khong follow_path) ma tien
+# trinh van song. Luu luong o day nho, UDP thua suc.
+export FASTDDS_BUILTIN_TRANSPORTS=UDPv4
 NAMES=(${ROBOTS:-agv1 agv2})
 
 down() {
