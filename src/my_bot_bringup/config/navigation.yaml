@@ -158,7 +158,13 @@ local_costmap:
       global_frame: map
       robot_base_frame: base_footprint
       update_frequency: 5.0
-      publish_frequency: 2.0
+      # grid_navigator / fleet_agent doc /local_costmap/costmap (ban DAY DU) de
+      # biet nut/canh nao bi chan. Mac dinh Nav2 chi phat ban day du khi khung
+      # cuon dich chuyen; xe DUNG YEN thi chi phat costmap_updates -> vat can
+      # da di khoi van bi tinh la chan mai. Luon phat day du, 5 Hz (6x6 m o 5 cm
+      # = 14400 o, nhe).
+      publish_frequency: 5.0
+      always_send_full_costmap: True
       rolling_window: true
       width: 6
       height: 6

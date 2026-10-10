@@ -121,7 +121,7 @@ class GridNavigator(Node):
             f"- {b.path}. Đang chờ bản đồ...")
         
         # Publish static grid periodically
-        self.create_timer(1.0, self.publish_markers)
+        self.create_timer(0.2, self.publish_markers)   # nut do/xanh doi theo costmap (5 Hz)
         
         self.waypoints = []
         self.current_path_points = []
