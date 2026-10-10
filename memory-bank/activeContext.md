@@ -1,34 +1,29 @@
-# Active Context (cập nhật 2026-10-10 chiều)
+# Active Context (cập nhật 2026-10-10 tối)
 
-## Đang làm
-Chạy **hai xe thật** (Kịch bản 4). Người dùng đã chạy thành công **một xe thật** (nhiều khả
-năng xe 2, firmware namespace bản `1e5dec8` — đúng bản đang nằm ở
-`D:\CTU\Ardunio ide\code\Xe_lidar\Xe_lidar.ino`, `XE 2`, chưa có `/diag`).
+## Trạng thái
+**Hai xe thật chạy được theo logic mô phỏng** (2026-10-10): 6 bước thử (từng xe → song song →
+đổi chỗ hàng 5 → đường cắt nhau → đổi chỗ như mô phỏng) đều phối hợp đúng, không va (gần
+nhất 59–60 cm). Người dùng xác nhận OK; hướng dẫn Kịch bản 4 đã viết lại để người dùng tự chạy.
 
-Đã xong trong phiên này (commit `a4af8ee` + tài liệu):
-- `fleet_real.sh`: hiệu chỉnh riêng từng xe `WHEEL_R_agvN`, `COAST_agvN`; `fastdds shm clean`
-  khi up/down (cổng /dev/shm bị `kill -9` bỏ lại làm container Nav2 "vô hình").
-- Commit khối `agvctl`, `fleet_monitor.py`, `.mcp.json`, firmware `/diag` + `estop_reset`
-  (firmware này **chưa chạy trên xe thật**).
-- Kịch bản 4 có **6 bước thử lần đầu** (đứng yên → từng xe → hai xe song song → nhường
-  đường → đường chéo → đổi chỗ). Đã chạy đúng 6 bước trên 2 ESP32 giả (domain 89): đều tới
-  đích, không va.
+Phần cứng đã chốt:
+- Cả hai xe dùng **mạch in 2026-10-05** (encoder 23/18/19/17, PWM LiDAR 4).
+- Dây động cơ: **xe 1 nối thẳng** (27/26/25 trái), **xe 2 nối chéo** (33/32/14 trái).
+- LiDAR: xe 1 ×1.0, xe 2 ×1.062. Gyro xe 1 cùng chiều encoder.
+- Firmware **tách 2 file**: `Xe_1\Xe_1.ino`, `Xe_2\Xe_2.ino` (sinh từ file gốc bằng
+  `tools/agvctl fw split`). Có `/agvN/diag` + sự kiện ESTOP gửi ngay + `/agvN/estop_reset`.
+- URDF: `base_footprint` tại **tâm trục bánh** (xoay tại chỗ không trôi vị trí).
 
-## Đang chờ người dùng
-1. Firmware: xe nào đã chạy được với `bringup_real.launch.py xe:=N` thì giữ nguyên. Xe còn lại
-   nạp `Xe_lidar.ino` (bản 1e5dec8) với `#define XE` tương ứng — **không cần** bản `/diag`.
-2. Chạy Kịch bản 4 theo 6 bước, gửi lại log `/tmp/fleet_real/*.log` nếu có lỗi.
-3. (Tuỳ chọn) `sudo apt install -y ros-jazzy-rosbridge-server` cho MCP `ros` (lần này MCP
-   `ros` không kết nối được).
+## Vấn đề còn mở
+- Phía **tây** sa bàn (cột 1) có đồ đạc mới không có trên bản đồ → xe ở cột 1 lệch 4–6 cm
+  (phía đông < 1 cm). Cần dọn hoặc **vẽ lại bản đồ + căn lại sa bàn**.
+- Chế độ 1 xe chưa chạy lại sau khi đổi URDF (base_footprint) — nên thử một lần.
+- Xe 2 vẫn dùng `wheel_radius`/`coast` của xe 1 (chạy thật thấy ổn).
 
 ## Gợi ý khi người dùng quay lại
-- Lỗi "khong thay Nav2" ở một agent → đếm tiến trình ROS, kiểm tra `/dev/shm`, `fastdds shm clean`.
-- Xe 2 xoay vượt/thiếu → `COAST_agv2`; đi thiếu/thừa quãng → `WHEEL_R_agv2`.
-- Không cho xe chạy (`agvctl goal --go`, `/cmd_vel`) khi người dùng chưa cho phép trong phiên.
-- Thử không cần xe: `steps_test` = hai `tools/fleet_fake_robot.py ... --esp32` +
-  `ROS_DOMAIN_ID=89 AGENT=0 EMULATE=1 tools/fleet_real.sh up` + `/fleet/goal "pair ..."`.
+- Chạy: `tools/fleet_real.sh up` → `python3 tools/fleet_localize.py` → `traffic_manager.py`.
+- Lỗi xe không chạy: xem `/agvN/diag` (ESTOP + lý do), `tools/wheel_test.py agvN` (kê bánh).
+- Không cho xe chạy khi người dùng chưa cho phép trong phiên.
 
 ## Quy tắc phiên làm việc
 Nói tiếng Việt; người dùng tự nạp firmware; không gửi `/cmd_vel` tới xe thật khi chưa được
-phép; không commit `wifi_config.h` và `nhiem_vu.txt`; chỉ đẩy GitHub khi được bảo; làm xong
-từng giai đoạn chờ người dùng nói "xong".
+phép; không commit `wifi_config.h` và `nhiem_vu.txt`; chỉ đẩy GitHub khi được bảo.

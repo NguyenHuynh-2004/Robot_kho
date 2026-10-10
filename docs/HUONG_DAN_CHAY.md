@@ -10,7 +10,7 @@ Mở các terminal **lần lượt** — terminal trước khởi động xong m
 | 1️⃣ Vẽ và lưu bản đồ bằng tay cầm | phòng mới / đồ đạc thay đổi | 5 + 1 PowerShell |
 | 2️⃣ Chạy một xe thật trên sa bàn | **dùng hằng ngày** | 4 |
 | 3️⃣ Chạy hai xe (mô phỏng) | thử điều phối hai xe | 4 |
-| 4️⃣ Chạy hai xe thật | điều phối hai xe trên sa bàn thật | 3 |
+| 4️⃣ Chạy hai xe thật | **hai xe cùng chạy** trên sa bàn thật | 3 |
 
 > [!IMPORTANT]
 > **Mỗi xe một file firmware riêng**: xe 1 nạp `Xe_1\Xe_1.ino`, xe 2 nạp `Xe_2\Xe_2.ino`
@@ -296,37 +296,48 @@ Quy tắc điều phối và kết quả kiểm thử:
 
 ## 4️⃣ Kịch Bản 4: Chạy Hai Xe Thật (Cần 3 Terminals)
 
-Giống Kịch bản 3 nhưng là **hai xe thật** trên sa bàn: mỗi xe có định vị AMCL và Nav2
-riêng, dùng chung bản đồ và một micro-ROS agent; bộ điều phối giữ chỗ, ưu tiên xe gần
-đích hơn, tự gỡ kẹt.
+Hai xe thật cùng chạy trên sa bàn theo đúng luật của mô phỏng: giữ chỗ trước, ưu tiên
+**xe gần đích hơn**, xe đang đỗ ở đích của xe kia tự né, tự gỡ kẹt. Mỗi xe có định vị AMCL
+và Nav2 riêng, dùng chung bản đồ và một micro-ROS agent.
 
 > [!IMPORTANT]
 > **Chuẩn bị:**
-> - Xe 1 nạp `Xe_1\Xe_1.ino`, xe 2 nạp `Xe_2\Xe_2.ino` (topic `/agv1`, `/agv2`).
-> - **Tắt hết** các terminal của Kịch bản 1 và 2: cầu nối ESP32, Nav2, `grid_navigator`
->   (chạy song song thì hai bản đồ, hai agent đè nhau).
+> - **Firmware:** xe 1 nạp `Xe_1\Xe_1.ino`, xe 2 nạp `Xe_2\Xe_2.ino` (đã nạp ngày
+>   2026-10-10; chỉ nạp lại khi firmware thay đổi —
+>   [cách nạp](SA_BAN_VA_TAI_LIEU.md#h3-nạp-firmware-xe-thật)).
+> - **Pin đầy**, công tắc nguồn động cơ bật.
+> - **Tắt hết** các terminal của Kịch bản 1 và 2 (cầu nối ESP32, Nav2, `grid_navigator`):
+>   chạy song song thì hai bản đồ, hai agent đè nhau.
 > - **Đặt xe:** xe 1 ở **(hàng 3, cột 1) mũi hướng Đông**, xe 2 ở **(hàng 3, cột 5) mũi
->   hướng Tây**. Định vị bắt đầu từ đúng hai chỗ này.
+>   hướng Tây**. Tâm xe trên nút, mũi xe dọc vạch.
 
-### Terminal 1: Bật Hai Xe (agent, bản đồ, định vị, 2 Nav2, 2 agent xe)
-Bật nguồn **cả hai xe** trước, rồi:
+### Terminal 1: Bật Hệ Hai Xe
+Bật nguồn **cả hai xe**, để yên 2 giây, rồi:
 ```bash
 cd ~/robot_ws_3
 source install/setup.bash
 tools/fleet_real.sh up
 ```
-Chờ tới khi in `Cho xe agv1 (/agv1/scan) co`, `... agv2 ... co`, rồi `Nav2 agv1 ... san
-sang` và `Nav2 agv2 ... san sang` (30 giây – 2 phút: Nav2 một xe có lúc không lên lần đầu,
-script tự bật lại). Báo `KHONG THAY` thì xe đó chưa bật nguồn hoặc nạp nhầm số xe.
+Chờ tới khi in đủ (30 giây – 2 phút; Nav2 một xe có lúc không lên lần đầu, script tự bật lại):
+```
+Cho xe agv1 (/agv1/scan) co
+Cho xe agv2 (/agv2/scan) co
+Nav2 agv1 (lan 1)...... san sang
+Nav2 agv2 (lan 1)...... san sang
+Da bat. ...
+```
+Báo `KHONG THAY` → xe đó chưa bật nguồn hoặc nạp nhầm file.
 
-Đặt xe ở chỗ khác:
+**Định vị chính xác** (cùng terminal, sau khi `Da bat`):
+```bash
+python3 tools/fleet_localize.py
+```
+Mỗi xe phải in `da gui cho AMCL`, độ dời thường vài cm. Báo `KHONG GUI` → xe đặt sai ô,
+hoặc quanh xe có nhiều đồ đạc không có trên bản đồ: đặt lại xe rồi chạy lại lệnh.
+
+Đặt xe ở chỗ khác thì khai báo khi bật:
 ```bash
 AGV1="3 1 0" AGV2="3 5 180" tools/fleet_real.sh up     # hàng cột hướng_độ
-```
-Đặt lệch nhiều (vài chục cm hoặc vài chục độ) thì sửa định vị cho từng xe:
-```bash
-python3 tools/auto_initial_pose.py --ns agv1
-python3 tools/auto_initial_pose.py --ns agv2
 ```
 
 ### Terminal 2: Bộ Điều Phối
@@ -335,8 +346,18 @@ cd ~/robot_ws_3
 source install/setup.bash
 python3 traffic_manager.py agv1 agv2
 ```
-Nhập giống hệt Kịch bản 3 (xe 1 rồi xe 2: hàng, cột, hướng; phải nhập đủ cả hai xe thì
-hai xe mới cùng xuất phát). Gõ `q` để thoát.
+Hỏi lần lượt **xe 1 rồi xe 2**:
+
+| Hỏi | Nhập | Ví dụ |
+|---|---|---|
+| Xe 1 - Hàng đích | `1`–`5` (1 = dưới cùng) | `3` |
+| Xe 1 - Cột đích | `1`–`5` (1 = bên trái) | `5` |
+| Hướng tại đích | `D` Đông · `T` Tây · `B` Bắc · `N` Nam · Enter = giữ hướng | `t` |
+| Xe 2 - Hàng / Cột / Hướng | như trên | `3`, `1`, `d` |
+
+Phải **nhập đủ cả hai xe** thì hai xe mới **cùng xuất phát**. Muốn một xe **đứng yên**:
+nhập đúng ô nó đang đứng và Enter ở hướng. Khi xong, terminal in `Xe 1 ĐÃ TỚI ...`,
+`Xe 2 ĐÃ TỚI ...` rồi hỏi lượt tiếp. Gõ `q` để thoát.
 
 ### Terminal 3: RViz
 ```bash
@@ -344,26 +365,48 @@ cd ~/robot_ws_3
 source install/setup.bash
 rviz2 -d tools/fleet.rviz
 ```
-Thấy bản đồ, lưới sa bàn, hai xe (xe 1 xanh dương, xe 2 cam), đường còn lại và ô đang giữ
-của từng xe.
+Thấy bản đồ, lưới sa bàn (điểm đỏ = bị chặn), hai xe (xe 1 xanh dương, xe 2 cam, mũi tên =
+hướng đầu xe), đường còn lại và ô đang giữ của từng xe.
 
-### Thử Lần Đầu: Từng Bước, Từ Đứng Yên Tới Đổi Chỗ
+### Chạy Thử Từng Bước (đã chạy thật 2026-10-10)
 
-Mỗi bước đạt mới sang bước sau. Luôn có **một người đứng cạnh sa bàn, tay sẵn công tắc
-nguồn**; Ctrl-C Terminal 2 thì sau 1 giây hai xe tự dừng.
+Lần đầu trong ngày nên chạy lại vài bước này. Mỗi bước đạt mới sang bước sau.
 
-| Bước | Nhập ở Terminal 2 (xe 1 rồi xe 2: hàng, cột, hướng) | Kiểm tra |
-|---|---|---|
-| 0. Đứng yên | (chưa nhập gì) | RViz: hai xe nằm đúng (3,1) và (3,5), điểm quét đỏ trùng tường đen. Terminal 1 không báo lỗi |
-| 1. Chỉ xe 1 | xe 1: `3` `2` `d` · xe 2: `3` `5` Enter (ô đang đứng) | Xe 1 tiến 60 cm, dừng ≤ 3 cm. Xe 2 không nhúc nhích |
-| 2. Chỉ xe 2 | xe 1: `3` `2` Enter · xe 2: `3` `4` `t` | Như bước 1, cho xe 2 |
-| 3. Hai xe, không giao nhau | xe 1: `5` `2` `b` · xe 2: `5` `4` `b` | Hai xe cùng chạy, không ai phải chờ ai |
-| 4. Nhường đường | xe 1: `5` `4` `d` · xe 2: `5` `2` `t` | Hai xe đổi chỗ trên hàng 5: một xe né sang ô bên cạnh chờ xe kia qua, không chạm nhau |
-| 5. Đường chéo nhau, về chỗ đầu | xe 1: `3` `1` `d` · xe 2: `3` `5` `t` | Hai đường cắt nhau: một xe chờ ở ô trước chỗ giao, xe kia đi qua trước |
-| 6. Đổi chỗ (như mô phỏng) | xe 1: `3` `5` `t` · xe 2: `3` `1` `d` | Một xe né sang hàng 4 rồi vòng về, xe kia đi thẳng hàng 3 |
+| Bước | Xe 1 | Xe 2 | Phải thấy | Kết quả thật |
+|---|---|---|---|---|
+| 1. Chỉ xe 1 | `3 2 d` | `3 5` Enter | xe 1 tiến 60 cm; xe 2 đứng yên | lệch 0.5 cm, 1.7° |
+| 2. Chỉ xe 2 | `3 2` Enter | `3 4 t` | xe 2 tiến 60 cm; xe 1 đứng yên | lệch 0.4 cm, 0.9° |
+| 3. Song song | `5 2 b` | `5 4 b` | cùng chạy, không ai chờ ai | lệch 1.2 / 0.4 cm |
+| 4. Đổi chỗ hàng 5 | `5 4 d` | `5 2 t` | một xe né sang ô bên cạnh, xe kia qua | không va, gần nhất 60 cm |
+| 5. Đường cắt nhau | `3 1 d` | `3 5 t` | một xe chờ trước chỗ giao | không va |
+| 6. Đổi chỗ (như mô phỏng) | `3 5 t` | `3 1 d` | một xe né lên hàng 4 rồi vòng về | không va, gần nhất 59 cm |
 
-Sau mỗi bước, terminal in `Xe 1 ĐÃ TỚI ...`, `Xe 2 ĐÃ TỚI ...`. Một xe xoay vượt/thiếu góc
-hoặc tới đích lệch rõ (> 3 cm) thì dừng lại và hiệu chỉnh xe đó (dưới đây).
+> [!WARNING]
+> **Độ chính xác phụ thuộc bản đồ.** Ngày 2026-10-10, phía **tây** sa bàn (quanh cột 1) có
+> nhiều đồ đạc mới không có trên bản đồ (cách (3,1) ~48 cm, (4,1) ~26 cm, (5,1) ~45 cm):
+> xe đứng ở cột 1 lệch 4–6 cm, phía đông thì < 1 cm. Dọn các vật đó, hoặc vẽ lại bản đồ
+> (Kịch bản 1) rồi căn lại sa bàn, thì cột 1 cũng sẽ < 3 cm.
+
+### Khi Xe Báo ESTOP
+ESP32 tự dừng khẩn khi **bánh kẹt / mất encoder / hết pin** hoặc **bánh quay ngược chiều**,
+và báo ngay về máy tính — Terminal 2 in đỏ:
+```
+!!! [agv1] ESTOP tren ESP32: Banh ket / mat encoder - xe dung han, bo lo trinh; ...
+```
+Xe đó bỏ lộ trình, xe kia tránh nó như xe đang đỗ. Sửa nguyên nhân rồi gỡ ESTOP (terminal mới):
+```bash
+ros2 topic pub --once /agv1/estop_reset std_msgs/msg/Empty     # hoặc tắt/bật nguồn xe
+```
+rồi nhập đích mới. Terminal 2 in `[agv1] da go ESTOP`.
+
+### Kiểm Tra Động Cơ + Encoder (sau khi nạp firmware / đổi dây)
+**Kê xe hở bánh**, tắt Terminal 2, rồi:
+```bash
+python3 tools/wheel_test.py agv1     # hoặc agv2
+```
+Bốn dòng tiến / lùi / quay trái / quay phải phải đều `DUNG` cho cả hai bánh. Tiến mà cả hai
+bánh `NGUOC` → dây động cơ trái/phải nối chéo so với firmware (xe 1 nối thẳng, xe 2 nối chéo
+— đổi trong file gốc firmware rồi `tools/agvctl fw split`).
 
 ### Hiệu Chỉnh Riêng Từng Xe
 Mặc định cả hai xe dùng số đo của **xe 1**. Đo được số riêng thì khai báo khi bật:
@@ -384,15 +427,9 @@ tools/fleet_real.sh down      # gửi lệnh dừng cho cả hai xe rồi tắt 
 > [!CAUTION]
 > **Dừng khẩn:** Ctrl-C Terminal 2 (mất lệnh điều phối quá 1 giây thì từng xe tự dừng),
 > hoặc `tools/fleet_real.sh down`, hoặc tắt công tắc nguồn xe.
->
-> **Xe tự ESTOP** (kẹt bánh, hết pin, quay ngược chiều): ESP32 báo ngay về máy tính —
-> Terminal 2 in đỏ `!!! [agvN] ESTOP tren ESP32: <lý do>`, xe đó bỏ lộ trình, xe kia tránh
-> nó như xe đang đỗ. Sửa nguyên nhân rồi gỡ: `ros2 topic pub --once /agvN/estop_reset
-> std_msgs/msg/Empty` (hoặc tắt/bật nguồn xe), rồi nhập đích mới. Chế độ 1 xe: terminal
-> `grid_navigator` in `!!! ESP32 ESTOP` và huỷ lộ trình. (Cần firmware mới có `/diag`.)
 
 > [!NOTE]
+> - Log từng phần ở `/tmp/fleet_real/` (`agent_agv1.log`, `nav_agv2.log`, `robot_agv1.log`...).
 > - Mỗi lần `up`/`down`, script dọn bộ nhớ chung DDS bị bỏ lại (`fastdds shm clean`).
-> - Log từng phần ở `/tmp/fleet_real/` (`agent_agv1.log`, `nav_agv2.log`...).
 > - Thử không cần xe (ESP32 giả, LiDAR giả dò tường trên bản đồ): chạy hai
 >   `tools/fleet_fake_robot.py ... --esp32` rồi `AGENT=0 EMULATE=1 tools/fleet_real.sh up`.
