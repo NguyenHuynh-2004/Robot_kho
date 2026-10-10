@@ -59,6 +59,8 @@ class FleetAgent(GridNavigator):
         self.status_pub = self.create_publisher(String, '/fleet/status', 10)
         self.create_subscription(String, f'/fleet/{name}/cmd', self.cb_cmd, 10)
         self.create_subscription(String, '/fleet/status', self.cb_status, 10)
+        # ESTOP tren ESP32: GridNavigator da dang ky /agvN/diag -> self.cb_diag (ham
+        # o duoi ghi de): dung xe, bao state 'estop', bo qua lenh cho toi khi go.
         self.create_timer(STATUS_PERIOD, self.tick)
         self.get_logger().info(f'[{name}] cho lenh tu traffic_manager tren /fleet/{name}/cmd')
 
@@ -94,6 +96,26 @@ class FleetAgent(GridNavigator):
         if d.get('name') != self.name and d.get('x') is not None:
             self.others[d['name']] = (d['x'], d['y'], time.time())
 
+    def cb_diag(self, msg):
+        try:
+            d = json.loads(msg.data)
+        except ValueError:
+            return
+        reason = d.get('estop') or ''
+        if reason and not self.esp_estop:
+            self.esp_estop = reason
+            self.halt()
+            self.state = 'estop'
+            self.get_logger().error(
+                f'[{self.name}] !!! ESP32 ESTOP: {reason} - xe dung han. Kiem tra xe '
+                f'(pin, banh ket, day dong co) roi go: ros2 topic pub --once '
+                f'/{self.name}/estop_reset std_msgs/msg/Empty  (hoac tat/bat nguon xe)')
+        elif not reason and self.esp_estop and d.get('event') != 'ESTOP':
+            self.get_logger().warn(f'[{self.name}] ESP32 da go ESTOP ({self.esp_estop})')
+            self.esp_estop = ''
+            self.route, self.waypoints = [], []
+            self.state = 'idle'
+
     def cb_cmd(self, msg):
         try:
             d = json.loads(msg.data)
@@ -101,6 +123,9 @@ class FleetAgent(GridNavigator):
             self.get_logger().error(f'[{self.name}] lenh hong: {e}')
             return
         self.last_cmd_t = time.time()
+        if self.esp_estop:
+            return                  # dang ESTOP: khong chay, traffic_manager da thay 'estop'
+
         nodes = [tuple(n) for n in d.get('nodes', [])]
         if d.get('route_id') != self.route_id or self.cmd_lost:
             self.cmd_lost = False
@@ -167,7 +192,8 @@ class FleetAgent(GridNavigator):
         sx, sy = self.get_coordinates(*nodes[i0])
         off = math.hypot(sx - rx, sy - ry)
         if not segs:
-            if off > self.SNAP_DIST:
+            # Dich la o dang dung: lech <= STAY_DIST coi nhu da toi (xem GridNavigator)
+            if off > self.STAY_DIST:
                 segs = [(rx, ry, sx, sy)]
         elif off > self.SNAP_DIST:
             x0, y0, x1, y1 = segs[0]
@@ -360,7 +386,8 @@ class FleetAgent(GridNavigator):
         msg.data = json.dumps({
             'name': self.name, 't': now,
             'x': x, 'y': y, 'yaw': yaw,
-            'state': self.state, 'route_id': self.route_id,
+            'state': 'estop' if self.esp_estop else self.state, 'route_id': self.route_id,
+            'estop': self.esp_estop,
             'blocked_nodes': sorted(self.dyn_blocked_nodes),
             'blocked_edges': sorted([list(map(list, e)) for e in self.dyn_blocked_edges]),
         })

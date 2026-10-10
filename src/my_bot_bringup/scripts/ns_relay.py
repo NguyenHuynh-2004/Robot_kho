@@ -8,6 +8,7 @@ nen node nay noi hai ben:
     /agvN/scan          -> /scan            (best-effort, giong ESP32)
     /agvN/imu/data      -> /imu/data        (best-effort)
     /agvN/joint_states  -> /joint_states    (best-effort)
+    /agvN/diag          -> /diag            (chan doan + su kien ESTOP, firmware co /diag)
     /cmd_vel            -> /agvN/cmd_vel
 
 Chuyen NGUYEN goi da tuan tu hoa (raw), khong giai ma - tre ~0.1 ms.
@@ -22,6 +23,7 @@ from rclpy.qos import QoSHistoryPolicy, QoSProfile, QoSReliabilityPolicy
 from rclpy.utilities import remove_ros_args
 from geometry_msgs.msg import Twist
 from sensor_msgs.msg import Imu, JointState, LaserScan
+from std_msgs.msg import String
 
 BEST_EFFORT = QoSProfile(reliability=QoSReliabilityPolicy.BEST_EFFORT,
                          history=QoSHistoryPolicy.KEEP_LAST, depth=10)
@@ -33,12 +35,13 @@ class NsRelay(Node):
     def __init__(self, ns):
         super().__init__('ns_relay')
         self.pubs = []
-        for name, typ in (('scan', LaserScan), ('imu/data', Imu), ('joint_states', JointState)):
+        for name, typ in (('scan', LaserScan), ('imu/data', Imu), ('joint_states', JointState),
+                          ('diag', String)):
             self.relay(typ, f'/{ns}/{name}', f'/{name}', BEST_EFFORT, BEST_EFFORT)
         # cmd_vel: phat RELIABLE nhu Nav2 van gui thang cho ESP32 truoc day -
         # ESP32 nghe best-effort van nhan duoc (con nguoc lai thi khong).
         self.relay(Twist, '/cmd_vel', f'/{ns}/cmd_vel', RELIABLE, RELIABLE)
-        self.get_logger().info(f'Chuyen tiep /{ns}/{{scan, imu/data, joint_states}} -> goc, '
+        self.get_logger().info(f'Chuyen tiep /{ns}/{{scan, imu/data, joint_states, diag}} -> goc, '
                                f'/cmd_vel -> /{ns}/cmd_vel')
 
     def relay(self, typ, src, dst, qos_in, qos_out):

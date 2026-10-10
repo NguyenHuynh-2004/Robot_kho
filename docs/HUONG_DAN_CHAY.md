@@ -385,6 +385,12 @@ tools/fleet_real.sh down      # gửi lệnh dừng cho cả hai xe rồi tắt 
 > [!CAUTION]
 > **Dừng khẩn:** Ctrl-C Terminal 2 (mất lệnh điều phối quá 1 giây thì từng xe tự dừng),
 > hoặc `tools/fleet_real.sh down`, hoặc tắt công tắc nguồn xe.
+>
+> **Xe tự ESTOP** (kẹt bánh, hết pin, quay ngược chiều): ESP32 báo ngay về máy tính —
+> Terminal 2 in đỏ `!!! [agvN] ESTOP tren ESP32: <lý do>`, xe đó bỏ lộ trình, xe kia tránh
+> nó như xe đang đỗ. Sửa nguyên nhân rồi gỡ: `ros2 topic pub --once /agvN/estop_reset
+> std_msgs/msg/Empty` (hoặc tắt/bật nguồn xe), rồi nhập đích mới. Chế độ 1 xe: terminal
+> `grid_navigator` in `!!! ESP32 ESTOP` và huỷ lộ trình. (Cần firmware mới có `/diag`.)
 
 > [!NOTE]
 > - Mỗi lần `up`/`down`, script dọn bộ nhớ chung DDS bị bỏ lại (`fastdds shm clean`).

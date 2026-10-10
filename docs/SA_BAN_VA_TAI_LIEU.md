@@ -52,6 +52,7 @@ Chạy lại `grid_navigator.py --real` sau khi đổi. Vẽ lại ảnh xem tr�
 
 | Triệu chứng | Nguyên nhân | Cách sửa |
 |---|---|---|
+| Terminal in đỏ `!!! ESP32 ESTOP: <lý do>` (xe không chạy dù có lệnh) | ESP32 tự dừng khẩn: `Banh ket / mat encoder` (hết pin, mất nguồn động cơ 12 V, bánh kẹt, encoder đứt) hoặc `Banh quay nguoc chieu` (đấu ngược dây / nạp nhầm `#define XE`) | sửa nguyên nhân rồi gỡ: `ros2 topic pub --once /agvN/estop_reset std_msgs/msg/Empty` hoặc tắt/bật nguồn xe. Cần firmware có `/diag` |
 | **Xe thật: mọi thứ treo, không lỗi gì** | sót `use_sim_time:=false` ở một terminal | thêm vào; node đó đang chờ `/clock` mãi |
 | `package 'micro_ros_agent' not found` | chưa source workspace agent | `source ~/microros_ws/install/setup.bash` |
 | Các node không thấy nhau, `ros2 topic list` thiếu topic | thiếu biến discovery | `export ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST` |

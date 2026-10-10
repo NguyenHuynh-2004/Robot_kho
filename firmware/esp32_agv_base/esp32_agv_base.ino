@@ -496,6 +496,9 @@ Wheel wl, wr;
 static volatile bool emergency_stop = false;
 static const char *volatile estop_reason = "";   // gui trong /agvN/diag
 static volatile uint32_t estop_resets = 0;       // so lan go ESTOP tu xa
+// Bao NGAY cho laptop (khong cho chu ky /diag 1 s): motor_task bat co, ros_task gui
+static volatile bool estop_event = false;        // vua ESTOP
+static volatile bool estop_cleared_event = false; // vua go ESTOP tu xa
 static const char *reset_reason_str = "?";       // ly do ESP32 khoi dong lan nay
 static volatile unsigned long last_cmd_vel_ms = 0;
 
@@ -638,6 +641,7 @@ static void trigger_estop(const char *reason) {
   wheel_write_pwm(wl, 0);
   wheel_write_pwm(wr, 0);
   Serial.printf("\n!!! ESTOP: %s\n", reason);
+  estop_event = true;              // ros_task gui {"event":"ESTOP"} len /agvN/diag
 }
 
 // Bao ve sai chieu (dao nham day) va ket banh / mat encoder
@@ -938,9 +942,32 @@ void estop_reset_callback(const void *msgin) {
   estop_resets++;
   emergency_stop = false;
   Serial.printf(">>> ESTOP duoc go tu xa (lan %lu)\n", (unsigned long)estop_resets);
+  estop_cleared_event = true;
 }
 
 // Gui chuoi chan doan loop() da chuan bi (goi trong ros_task)
+// Su kien ESTOP / go ESTOP: gui NGAY tren /agvN/diag (cung topic, them "event")
+// de laptop (fleet_agent, grid_navigator, fleet_monitor) bao do va dung xe.
+static char estop_ev_buf[200];
+static void publish_estop_event_if_any() {
+  const char *ev = nullptr;
+  if (estop_event) { estop_event = false; ev = "ESTOP"; }
+  else if (estop_cleared_event) { estop_cleared_event = false; ev = "ESTOP_CLEARED"; }
+  if (!ev) return;
+  snprintf(estop_ev_buf, sizeof(estop_ev_buf),
+           "{\"xe\":%d,\"event\":\"%s\",\"estop\":\"%s\",\"up_s\":%lu,\"rpm\":[%.1f,%.1f],"
+           "\"tgt\":[%.1f,%.1f]}",
+           ROBOT_ID, ev, emergency_stop ? (const char *)estop_reason : "",
+           (unsigned long)(millis() / 1000), wl.current_rpm, wr.current_rpm,
+           wl.target_rpm, wr.target_rpm);
+  diag_msg.data.data = estop_ev_buf;
+  diag_msg.data.size = strlen(estop_ev_buf);
+  diag_msg.data.capacity = sizeof(estop_ev_buf);
+  // best-effort: gui 2 lan cho chac (mat mot goi Wi-Fi thi /diag 1 s sau van bao)
+  for (int k = 0; k < 2; k++)
+    if (rcl_publish(&diag_pub, &diag_msg, NULL) != RCL_RET_OK) publish_failed++;
+}
+
 static void publish_diag_if_ready() {
   if (!diag_ready) return;
   portENTER_CRITICAL(&diag_mux);
@@ -1227,6 +1254,7 @@ void ros_task(void *pv) {
     uint32_t spin_dt = micros() - loop_t0;
     if (spin_dt > t_spin_max) t_spin_max = spin_dt;
     publish_scan_if_ready();
+    publish_estop_event_if_any();
     publish_diag_if_ready();
 
     uint32_t now = millis();

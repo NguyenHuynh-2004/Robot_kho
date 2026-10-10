@@ -74,6 +74,7 @@ DIRS = [(0, 1), (1, 0), (0, -1), (-1, 0)]       # Dong, Bac, Tay, Nam (theo truc
 class Robot:
     def __init__(self, name, idx):
         self.name, self.idx = name, idx
+        self.estop = None               # ly do ESTOP tren ESP32 (None = khong)
         self.x = self.y = self.yaw = None
         self.t = 0.0
         self.state = 'unknown'
@@ -293,6 +294,17 @@ class TrafficManager(Node):
                 rb.mark = (rb.x, rb.y, rb.yaw)
                 rb.last_move_t = rb.t
         rb.state = d.get('state', 'unknown')
+        if rb.state == 'estop' and rb.estop is None:
+            rb.estop = d.get('estop') or '?'
+            self.log(f'!!! [{rb.name}] ESTOP tren ESP32: {rb.estop} - xe dung han, bo lo trinh; '
+                     f'xe kia coi no nhu xe dang do. Kiem tra xe roi go: ros2 topic pub --once '
+                     f'/{rb.name}/estop_reset std_msgs/msg/Empty (hoac tat/bat nguon xe)', 'error')
+            if rb.route is not None or rb.goal is not None:
+                rb.goal, rb.pending = None, False
+                self.clear_route(rb, 'ESTOP')
+        elif rb.state != 'estop' and rb.estop is not None:
+            self.log(f'[{rb.name}] da go ESTOP ({rb.estop}) - nhap dich moi cho xe nay')
+            rb.estop = None
         rb.ack = d.get('route_id')
         rb.dyn_nodes = {tuple(n) for n in d.get('blocked_nodes', [])}
         rb.dyn_edges = {edge_key(tuple(a), tuple(b)) for a, b in d.get('blocked_edges', [])}

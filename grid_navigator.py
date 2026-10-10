@@ -8,12 +8,14 @@ from action_msgs.msg import GoalStatus
 from visualization_msgs.msg import Marker, MarkerArray
 from geometry_msgs.msg import Point, PoseStamped, Twist
 from nav_msgs.msg import OccupancyGrid, Odometry, Path
+from std_msgs.msg import String
 from sensor_msgs.msg import Imu
 from tf2_ros import Buffer, TransformListener
 from rclpy.qos import QoSProfile, QoSDurabilityPolicy, QoSReliabilityPolicy, qos_profile_sensor_data
 import threading
 import sys
 import time
+import json
 import math
 import numpy as np
 
@@ -38,6 +40,10 @@ class GridNavigator(Node):
         self.requested_heading = None   # huong nguoi dung chon cho dich hien tai
         self.imu_yaw = None             # goc tu quaternion BNO055 (/imu/data)
         self.create_subscription(Imu, 'imu/data', self.cb_imu, qos_profile_sensor_data)
+        # ESTOP tren ESP32 (firmware gui ngay qua /diag; 1 xe: ns_relay chuyen
+        # /agvN/diag -> /diag, 2 xe: /agvN/diag). Bao do va huy lo trinh.
+        self.esp_estop = ''
+        self.create_subscription(String, 'diag', self.cb_diag, qos_profile_sensor_data)
         # Xoay tai cho do node nay tu lam (xem rotate_tick): lenh vao
         # cmd_vel_nav = dau vao velocity_smoother, cung cho controller phat.
         self.cmd_pub = self.create_publisher(Twist, 'cmd_vel_nav', 10)
@@ -539,6 +545,11 @@ class GridNavigator(Node):
     # Xe cach diem xuat phat xa hon muc nay thi them mot doan dua xe ve diem do
     # truoc (bang xy_goal_tolerance cua Nav2: sai so dich 3 cm).
     SNAP_DIST = 0.03
+    # Dich CHINH LA o xe dang dung va xe lech tam o duoi muc nay -> coi nhu da toi,
+    # KHONG tao doan sua vi tri. Doan vai cm nam sau lung xe lam xe (hoac RPP,
+    # lech > 20 do) quay ca vong de di 4 cm - da gap tren xe that 2026-10-10:
+    # xe 2 dung yen bi xoay 158 do. Xe dang di thi van dung SNAP_DIST.
+    STAY_DIST = 0.10
 
     # Xoay tai cho: so lan xoay bu toi da; thoi gian ra lenh ngan nhat moi lan (s)
     ROT_TRIES = 5
@@ -600,7 +611,9 @@ class GridNavigator(Node):
         rx, ry, _ = self.get_robot_pose()
         sx, sy = self.get_coordinates(start_row, start_col)
         off = math.hypot(sx - rx, sy - ry) if rx is not None else 0.0
-        if off > self.SNAP_DIST:
+        if not segs and off <= self.STAY_DIST:
+            pass                    # dich la o dang dung, xe da trong o
+        elif off > self.SNAP_DIST:
             if segs and off <= self.MERGE_START_DIST:
                 # Gan diem xuat phat: doan dau bat dau tu CHO XE DUNG
                 x0, y0, x1, y1 = segs[0]
@@ -854,6 +867,28 @@ class GridNavigator(Node):
     # ------------------------------------------------------------------
     def cb_odom(self, msg):
         self.odom_w = msg.twist.twist.angular.z
+
+    def cb_diag(self, msg):
+        try:
+            d = json.loads(msg.data)
+        except ValueError:
+            return
+        reason = d.get('estop') or ''
+        if reason and not self.esp_estop:
+            self.esp_estop = reason
+            if self.goal_handle is not None:
+                try:
+                    self.goal_handle.cancel_goal_async()
+                except Exception:       # noqa: BLE001 - van huy lo trinh
+                    pass
+            self.get_logger().error(
+                f'!!! ESP32 ESTOP: {reason} - xe dung han. Kiem tra xe (pin, banh ket, day '
+                f'dong co) roi go ESTOP: tat/bat nguon xe, hoac ros2 topic pub --once '
+                f'/agv<so xe>/estop_reset std_msgs/msg/Empty')
+            self.abort_route(f'ESP32 ESTOP ({reason})')
+        elif not reason and self.esp_estop and d.get('event') != 'ESTOP':
+            self.get_logger().warn(f'ESP32 da go ESTOP ({self.esp_estop}) - nhap dich moi')
+            self.esp_estop = ''
 
     def cb_imu(self, msg):
         q = msg.orientation
@@ -1159,6 +1194,9 @@ def input_thread(navigator):
                       f"{HEADING_NAMES[hkey]} ({math.degrees(hyaw):+.0f}°), sai số ≤ "
                       f"{math.degrees(nav.rot_done):.0f}°.")
 
+            if nav.esp_estop:
+                print(f"[LỖI] Xe đang ESTOP ({nav.esp_estop}) - gỡ ESTOP trước rồi nhập lại.")
+                continue
             nav.requested_heading = hyaw
             nav.send_grid_goal(current_row, current_col, target_row, target_col, start_yaw,
                                final_heading=hyaw)
