@@ -159,12 +159,26 @@
 //         LOW  HIGH PWM   quay nghich
 //         LOW  LOW  0     tha troi
 // PHAI THAO jumper ENA/ENB tren module thi chan PWM moi co tac dung.
+#if XE == 1
 const int L_IN1_PIN = 27;   // banh TRAI
 const int L_IN2_PIN = 26;
 const int L_ENA_PIN = 25;   // PWM banh trai
 const int R_IN1_PIN = 33;   // banh PHAI
 const int R_IN2_PIN = 32;
 const int R_ENB_PIN = 14;   // PWM banh phai
+#else
+// XE 2: day dong co TRAI/PHAI noi CHEO so voi xe 1 - kenh 27/26/25 chay banh
+// PHAI, kenh 33/32/14 chay banh TRAI (encoder thi dung ben). Do 2026-10-10,
+// ke banh: lenh TIEN -> ca hai encoder bao LUI -> ESTOP "quay nguoc chieu";
+// lenh QUAY thi van dung chieu (doi cho + nguoc cuc triet tieu nhau). Doi cho
+// hai nhom chan, GIU NGUYEN INVERT_MOTOR_x.
+const int L_IN1_PIN = 33;   // banh TRAI
+const int L_IN2_PIN = 32;
+const int L_ENA_PIN = 14;   // PWM banh trai
+const int R_IN1_PIN = 27;   // banh PHAI
+const int R_IN2_PIN = 26;
+const int R_ENB_PIN = 25;   // PWM banh phai
+#endif
 
 // --- Encoder ---
 #if XE == 1
