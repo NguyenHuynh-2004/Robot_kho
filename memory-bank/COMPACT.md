@@ -38,7 +38,9 @@ nối dây, thuật toán, quy tắc 2 xe, nạp firmware H3).
   xe kia, `/fleet/status` 5 Hz, `/fleet/agvN/cmd`). `/map` và `/fleet/*` dùng chung.
 - `grid_navigator.py`: Dijkstra (ít cạnh → ít rẽ) → đoạn thẳng → action `follow_path`; xoay tại
   chỗ theo **gyro**, `coast 0.36` (đo xe 1), bù ≤ 5 lần. Chặn nút/cạnh tính lại mỗi local costmap
-  (**`always_send_full_costmap: True`, 5 Hz**).
+  (**`always_send_full_costmap: True`, 5 Hz**). Local costmap: ObstacleLayer,
+  `observation_persistence 1.0`, `fleet_agent` xoá lớp vật cản mỗi 1 s (ô kẹt mất sau 1–2 s;
+  1 xe: `grid_navigator.py --decay 1`).
 - Cấu hình: `src/my_bot_bringup/config/{navigation.yaml, grid_real.yaml, real_room_map.yaml}`;
   `wheel_radius 0.03281`, cách bánh 0.200; `xy_goal_tolerance 0.02`.
 

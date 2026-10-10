@@ -39,8 +39,10 @@ NAV2_WAIT = 5.0         # s - cho Nav2 (action follow_path) khi vua bat agent
 
 class FleetAgent(GridNavigator):
     def __init__(self, name, use_sim_time=False, grid_file=None):
+        # costmap_decay 1 s: o vat can KET tren local costmap mat sau ~1-2 s (xem
+        # GridNavigator); dong INFO moi lan xoa da tat trong tools/fleet_nav.launch.py
         super().__init__(use_sim_time=use_sim_time, grid_file=grid_file,
-                         node_name='fleet_agent')
+                         node_name='fleet_agent', costmap_decay=1.0)
         self.name = name
         self.route_id = None
         self.route = []             # [(r, c)] chi so tu 0

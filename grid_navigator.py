@@ -22,7 +22,8 @@ import numpy as np
 from grid_board import Board, config_path, edge_key as board_edge_key
 
 class GridNavigator(Node):
-    def __init__(self, use_sim_time=True, grid_file=None, node_name='grid_navigator'):
+    def __init__(self, use_sim_time=True, grid_file=None, node_name='grid_navigator',
+                 costmap_decay=0.0):
         # use_sim_time truoc day bi dong cung = True. Tren xe that khong co
         # /clock nen node se treo vinh vien ma khong bao loi gi.
         #   Mo phong: python3 grid_navigator.py
@@ -118,6 +119,17 @@ class GridNavigator(Node):
             'local_costmap/costmap',
             self.costmap_callback,
             10)
+        # Vat can "phai" tren local costmap: cu costmap_decay giay xoa lop vat can
+        # (tru vung 0.5 m quanh xe); chu ky costmap ke tiep danh dau lai tu anh
+        # quet 1 s qua (observation_persistence trong navigation.yaml) nen vat
+        # that van con, chi o KET (khong tia nao di qua de raytrace xoa) mat.
+        self.costmap_decay = costmap_decay
+        if costmap_decay > 0:
+            from nav2_msgs.srv import ClearCostmapExceptRegion
+            self._clear_req = ClearCostmapExceptRegion.Request(reset_distance=0.5)
+            self._clear_cli = self.create_client(
+                ClearCostmapExceptRegion, 'local_costmap/clear_except_local_costmap')
+            self.create_timer(costmap_decay, self.decay_costmap)
 
         b = self.board
         self.get_logger().info(
@@ -266,6 +278,10 @@ class GridNavigator(Node):
         py = origin_y + (idx // width + 0.5) * resolution
         keep = (px >= grid_min_x) & (px <= grid_max_x) & (py >= grid_min_y) & (py <= grid_max_y)
         return list(zip(px[keep].tolist(), py[keep].tolist()))
+
+    def decay_costmap(self):
+        if self._clear_cli.service_is_ready():
+            self._clear_cli.call_async(self._clear_req)
 
     def costmap_callback(self, msg: OccupancyGrid):
         if not self.map_received:
@@ -1241,7 +1257,15 @@ def main(args=None):
         if i + 1 < len(sys.argv):
             grid_file = sys.argv[i + 1]
 
-    navigator = GridNavigator(use_sim_time=use_sim_time, grid_file=grid_file)
+    # --decay S: xoa o vat can KET tren local costmap moi S giay (mac dinh tat:
+    # moi lan xoa costmap in mot dong INFO ra terminal navigation.launch.py)
+    decay = 0.0
+    if '--decay' in sys.argv:
+        i = sys.argv.index('--decay')
+        decay = float(sys.argv[i + 1]) if i + 1 < len(sys.argv) else 1.0
+
+    navigator = GridNavigator(use_sim_time=use_sim_time, grid_file=grid_file,
+                              costmap_decay=decay)
 
     # Chạy vòng lặp spin của ROS trong background thread
     executor = MultiThreadedExecutor()

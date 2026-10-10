@@ -46,6 +46,10 @@ def generate_launch_description():
                                            allow_substs=True),
                              {'autostart': True, 'use_sim_time': False}],
                  remappings=[('/tf', 'tf'), ('/tf_static', 'tf_static')],
+                 # fleet_agent xoa local costmap moi 1 s (vat can KET) -> bo dong INFO
+                 # "Received request to clear except a region" moi giay
+                 arguments=['--ros-args', '--log-level',
+                            [ns, '.local_costmap.local_costmap:=warn']],
                  output='screen'),
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(nav),

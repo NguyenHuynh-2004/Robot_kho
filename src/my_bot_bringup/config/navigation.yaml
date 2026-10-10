@@ -173,15 +173,16 @@ local_costmap:
       #   sqrt(0.046^2 + 0.113^2) = 0.122 m  -> lay 0.13 cho co bien.
       # Truoc day la 0.6, khop voi URDF cu mo ta mot chiec xe duong kinh 1 m.
       robot_radius: 0.13
-      plugins: ["voxel_layer", "inflation_layer"]
+      # LiDAR 2D -> ObstacleLayer (VoxelLayer chi them tang z, khong dung den).
+      plugins: ["obstacle_layer", "inflation_layer"]
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
         # robot_radius 0.13 + khoang an toan. Giu 0.75 cho xe 0.13 thi ca
         # phong 10x10 deu thanh vung cam va Nav2 khong tim duoc duong nao.
         inflation_radius: 0.25
-      voxel_layer:
-        plugin: "nav2_costmap_2d::VoxelLayer"
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: True
         observation_sources: scan
         scan:
@@ -190,6 +191,15 @@ local_costmap:
           clearing: True
           marking: True
           data_type: "LaserScan"
+          # Vat can "phai" sau ~1 s khong thay (xem grid_navigator COSTMAP_DECAY):
+          # moi chu ky costmap danh dau lai TAT CA anh quet trong 1 s qua, con
+          # grid_navigator xoa lop vat can moi 1 s. Vi sao can: o danh dau boi mot
+          # diem nhieu ma sau do KHONG tia nao di qua (sau vat that, huong LiDAR
+          # khong phan hoi = 0, hay nam giua hai tia 1.13 do o xa > 1.5 m) thi
+          # raytrace khong bao gio xoa -> nam mai tren RViz (do 2026-10-10: 15-20
+          # o/xe). X2 hay roi diem (~15%/vong) nen giu 1 s anh quet de vat that
+          # khong chop tat.
+          observation_persistence: 1.0
           # Do 2026-10-10 (2 xe that): mac dinh raytrace_max_range 3.0 m -> tia cham
           # vat xa hon 3 m KHONG xoa duoc o nao tren duong di, vet vat can (nguoi di
           # qua, luc AMCL sai) nam mai trong RViz. 10 m: moi tia deu xoa toi mep

@@ -3,6 +3,7 @@
 ## Đã xong (mới nhất trước)
 | Ngày | Việc | Commit |
 |---|---|---|
+| 2026-10-10 | Local costmap hết ô "kẹt" (vật cản còn trên RViz dù LiDAR không thấy): ObstacleLayer + `observation_persistence 1.0` + `fleet_agent` xoá lớp vật cản mỗi 1 s (`clear_except`, giữ 0.5 m); `raytrace_max_range 10` | (HEAD) |
 | 2026-10-10 | **Hai xe thật chạy đủ 6 bước** theo logic mô phỏng, không va. Sửa: dây động cơ riêng từng xe, firmware tách `Xe_1`/`Xe_2`, ESTOP báo ngay về máy tính, URDF base_footprint tại trục bánh, xe không xoay vòng khi đích là ô đang đứng / chạy nốt khi Nav2 dừng sớm, `tools/fleet_localize.py` (ICP), `tools/wheel_test.py` | 7b1c103..(HEAD) |
 | 2026-10-10 | Hai xe thật: hiệu chỉnh riêng từng xe (`WHEEL_R_agvN`, `COAST_agvN`), `fastdds shm clean` khi up/down; Kịch bản 4 có 6 bước thử lần đầu — chạy đủ 6 bước trên 2 ESP32 giả: tới đích, không va (lệch hướng 6–9° do AMCL giả thô) | a4af8ee |
 | 2026-10-10 | **Môi trường vận hành tự động**: `tools/agvctl` (up/down/status/errors/events/logs/goal/stop/localize/serial/fw), `tools/fleet_monitor.py` (/rosout + nhịp + diag + AMCL → `~/agv_logs`), firmware `/agvN/diag` + `estop_reset`, MCP `ros` (`.mcp.json`, uv), biên dịch firmware bằng arduino-cli của IDE từ WSL, `docs/AGVCTL.md`. Thử đủ vòng với ESP32 giả | a4af8ee |
