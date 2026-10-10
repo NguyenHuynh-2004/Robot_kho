@@ -57,7 +57,7 @@ Chạy lại `grid_navigator.py --real` sau khi đổi. Vẽ lại ảnh xem tr�
 | Các node không thấy nhau, `ros2 topic list` thiếu topic | thiếu biến discovery | `export ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST` |
 | RViz / Gazebo cực chậm, cửa sổ trắng như treo | WSL vẽ bằng CPU (llvmpipe) thay vì GPU | `export GALLIUM_DRIVER=d3d12` (đã có trong `~/.bashrc`), mở terminal mới rồi chạy lại |
 | RViz in đỏ `GLSL link result ... indexed_8bit_image ... active samplers with a different type` | shader bản đồ của RViz, Mesa kiểm tra khắt khe | `sudo tools/fix_rviz_shader.sh` (một lần; `undo` để trả lại; chạy lại sau khi apt nâng cấp RViz) |
-| Tiêu đề cửa sổ Linux có `[WARN:COPY MODE]` | WSLg không mở được bộ nhớ chung (`/mnt/wslg/weston.log`: `rdp_allocate_shared_memory ... Input/output error`), chép hình từng khung — vẫn chạy | chỉ là chữ: `C:SERSrgion.wslgconfig` c� `[system-distro-env]` + `weston_rdp_copy_warning_title=false`, rồi `wsl --shutdown` |
+| Tiêu đề cửa sổ Linux có `[WARN:COPY MODE]` | WSLg không mở được bộ nhớ chung (`/mnt/wslg/weston.log`: `rdp_allocate_shared_memory ... Input/output error`), chép hình từng khung — vẫn chạy | chỉ là chữ: file `C:\Users\LRGION\.wslgconfig` có `[system-distro-env]` + `WESTON_RDP_COPY_WARNING_TITLE=false`, rồi `wsl --shutdown` |
 | Nav2 mô phỏng đứng im | `/clock` không chạy | bấm **Play** trong Gazebo |
 | Nhập đích xong xe không chạy | Nav2 chưa xong | `ros2 run tf2_ros tf2_echo map base_footprint` báo `Invalid frame ID "map"` → đợi thêm |
 | ESP32 không kết nối agent sau khi bật lại | ESP32 cần thêm thời gian, hoặc sai `AGENT_IP` | chờ 30 s; kiểm `hostname -I` khớp `AGENT_IP` |
@@ -366,6 +366,17 @@ Làm lần đầu và mỗi khi firmware thay đổi. Dùng **Arduino IDE** trê
 > [!NOTE]
 > `wifi_config.h` **không nằm trong git** — mật khẩu không bao giờ lên GitHub.
 > Lần nạp sau chỉ cần chép đè file `.ino`, để nguyên `wifi_config.h`.
+
+**Bước 3b — Chọn xe (MỖI LẦN NẠP):** gần đầu phần `1. CAU HINH` có dòng
+`#define XE 2`. Đổi cho đúng xe đang cắm USB:
+
+| `XE` | Xe | Khác nhau |
+|---|---|---|
+| `1` | xe 1 — mạch cũ | encoder 23/34/4/35, PWM LiDAR 18, LiDAR bù 180°, khoảng cách ×1.0 |
+| `2` | xe 2 — mạch in 2026-10-05 | encoder 23/18/19/17, PWM LiDAR 4, kéo lên, LiDAR bù 180°, khoảng cách **×1.062** (LiDAR xe này đo thiếu ~6%) |
+
+Nạp nhầm số xe: encoder không đếm (sai chân) hoặc AMCL không khớp được bản đồ.
+Sau khi nạp, `ros2 node list` phải thấy `/esp32_agv_base_<số xe>`.
 
 **Bước 4 — Nạp:** bấm Upload. Khi IDE hiện `Connecting....` thì **giữ nút BOOT**
 trên ESP32 tới khi thanh tiến trình chạy.
