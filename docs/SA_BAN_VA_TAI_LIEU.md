@@ -55,7 +55,9 @@ Chạy lại `grid_navigator.py --real` sau khi đổi. Vẽ lại ảnh xem tr�
 | **Xe thật: mọi thứ treo, không lỗi gì** | sót `use_sim_time:=false` ở một terminal | thêm vào; node đó đang chờ `/clock` mãi |
 | `package 'micro_ros_agent' not found` | chưa source workspace agent | `source ~/microros_ws/install/setup.bash` |
 | Các node không thấy nhau, `ros2 topic list` thiếu topic | thiếu biến discovery | `export ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST` |
-| RViz / Gazebo cực chậm, cửa sổ trắng như treo, tiêu đề có `[WARN:COPY MODE]` | WSL vẽ bằng CPU (llvmpipe) thay vì GPU | `export GALLIUM_DRIVER=d3d12` (đã có trong `~/.bashrc`), mở terminal mới rồi chạy lại. Dòng đỏ `GLSL link result ... indexed_8bit_image` vẫn hiện — vô hại |
+| RViz / Gazebo cực chậm, cửa sổ trắng như treo | WSL vẽ bằng CPU (llvmpipe) thay vì GPU | `export GALLIUM_DRIVER=d3d12` (đã có trong `~/.bashrc`), mở terminal mới rồi chạy lại |
+| RViz in đỏ `GLSL link result ... indexed_8bit_image ... active samplers with a different type` | shader bản đồ của RViz, Mesa kiểm tra khắt khe | `sudo tools/fix_rviz_shader.sh` (một lần; `undo` để trả lại; chạy lại sau khi apt nâng cấp RViz) |
+| Tiêu đề cửa sổ Linux có `[WARN:COPY MODE]` | WSLg không mở được bộ nhớ chung (`/mnt/wslg/weston.log`: `rdp_allocate_shared_memory ... Input/output error`), chép hình từng khung — vẫn chạy | chỉ là chữ: `C:SERSrgion.wslgconfig` c� `[system-distro-env]` + `weston_rdp_copy_warning_title=false`, rồi `wsl --shutdown` |
 | Nav2 mô phỏng đứng im | `/clock` không chạy | bấm **Play** trong Gazebo |
 | Nhập đích xong xe không chạy | Nav2 chưa xong | `ros2 run tf2_ros tf2_echo map base_footprint` báo `Invalid frame ID "map"` → đợi thêm |
 | ESP32 không kết nối agent sau khi bật lại | ESP32 cần thêm thời gian, hoặc sai `AGENT_IP` | chờ 30 s; kiểm `hostname -I` khớp `AGENT_IP` |
