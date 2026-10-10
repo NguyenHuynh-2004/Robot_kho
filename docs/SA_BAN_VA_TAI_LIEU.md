@@ -106,9 +106,9 @@ theo **mạch in 2026-10-05**.
 | 3V3 | VCC encoder, BNO055 VIN | **không** dùng 5 V cho encoder |
 | VIN (5V) | ra của mạch hạ áp | không cắm USB cùng lúc |
 
-Bánh trái → **OUT1/OUT2**, bánh phải → **OUT3/OUT4**. (**Xe 2** đang nối chéo: kênh
-27/26/25 chạy bánh phải, 33/32/14 chạy bánh trái — firmware `#define XE 2` đã đổi chân
-cho khớp, không cần đổi dây. Xe 1 dùng chân encoder 23/34/4/35, PWM LiDAR 18.) LiDAR VCC lấy 5 V từ mạch hạ áp.
+Bánh trái → **OUT1/OUT2**, bánh phải → **OUT3/OUT4**. (Trên mạch in mới, **cả hai xe**,
+dây động cơ đang nối chéo: kênh 27/26/25 chạy bánh phải, 33/32/14 chạy bánh trái —
+firmware đã đổi chân cho khớp, không cần đổi dây.) LiDAR VCC lấy 5 V từ mạch hạ áp.
 GPIO 13 còn trống (dùng cho chân EN nếu đổi sang LiDAR X4).
 
 > [!WARNING]
@@ -354,8 +354,16 @@ rviz2 -d /opt/ros/jazzy/share/nav2_bringup/rviz/nav2_default_view.rviz --ros-arg
 
 Làm lần đầu và mỗi khi firmware thay đổi. Dùng **Arduino IDE** trên Windows.
 
-**Bước 1 — Mở sketch:** `D:\CTU\Ardunio ide\code\Xe_lidar\Xe_lidar.ino` (bản sao của
-`firmware/esp32_agv_base/esp32_agv_base.ino`).
+**Bước 1 — Mở sketch ĐÚNG XE:** mỗi xe một file, đã đặt sẵn số xe:
+
+| Xe | Mở trong Arduino IDE |
+|---|---|
+| Xe 1 | `D:\CTU\Ardunio ide\code\Xe_1\Xe_1.ino` |
+| Xe 2 | `D:\CTU\Ardunio ide\code\Xe_2\Xe_2.ino` |
+
+Hai file sinh từ một file gốc `firmware/esp32_agv_base/esp32_agv_base.ino` bằng
+`tools/agvctl fw split` (sửa code ở file gốc rồi chạy lại lệnh này; bản trong repo ở
+`firmware/xe1/`, `firmware/xe2/`).
 
 **Bước 2 — Chọn partition:** **Tools → Partition Scheme → Huge APP (3MB No OTA/1MB SPIFFS)**.
 
@@ -370,15 +378,10 @@ Làm lần đầu và mỗi khi firmware thay đổi. Dùng **Arduino IDE** trê
 > `wifi_config.h` **không nằm trong git** — mật khẩu không bao giờ lên GitHub.
 > Lần nạp sau chỉ cần chép đè file `.ino`, để nguyên `wifi_config.h`.
 
-**Bước 3b — Chọn xe (MỖI LẦN NẠP):** gần đầu phần `1. CAU HINH` có dòng
-`#define XE 2`. Đổi cho đúng xe đang cắm USB:
-
-| `XE` | Xe | Khác nhau |
-|---|---|---|
-| `1` | xe 1 — mạch cũ | encoder 23/34/4/35, PWM LiDAR 18, LiDAR bù 180°, khoảng cách ×1.0 |
-| `2` | xe 2 — mạch in 2026-10-05 | encoder 23/18/19/17, PWM LiDAR 4, kéo lên, LiDAR bù 180°, khoảng cách **×1.062** (LiDAR xe này đo thiếu ~6%) |
-
-Nạp nhầm số xe: encoder không đếm (sai chân) hoặc AMCL không khớp được bản đồ.
+**Bước 3b — Hai xe khác nhau ở đâu:** cả hai dùng mạch in 2026-10-05 (encoder
+23/18/19/17, PWM LiDAR 4). Khác nhau: ID micro-ROS (`/agv1`, `/agv2`) và LiDAR — xe 2 nhân
+khoảng cách **×1.062** (LiDAR xe này đo thiếu ~6%), xe 1 ×1.0. Nạp nhầm file thì xe hiện
+sai tên (`/agv2` thay vì `/agv1`) và AMCL khớp kém.
 Sau khi nạp, `ros2 node list` phải thấy `/agv<số xe>/esp32_agv_base_<số xe>`: mọi topic
 của xe nằm trong `/agv<số xe>/` (micro-ROS gắn ID xe), nên chạy một xe thì
 `bringup_real.launch.py xe:=<số xe>`, hai xe thì `tools/fleet_real.sh up` (Kịch bản 4).

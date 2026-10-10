@@ -84,14 +84,13 @@
 //  1. CAU HINH - SUA TRUOC KHI NAP
 // ============================================================================
 
-// --- CHON XE --- DOI SO NAY TRUOC MOI LAN NAP
-// Hai xe khac mach va khac cach gan LiDAR; moi thu rieng tung xe nam trong
-// cac khoi "#if XE == 1" ben duoi (chan encoder, chan PWM LiDAR, dien tro keo
-// encoder, goc bu LiDAR) va ten node micro-ROS (esp32_agv_base_<XE>).
-//   1 = XE 1: mach cu - encoder 23/34/4/35, PWM LiDAR 18, LiDAR bu 180 do
-//             (dung y ban "1 Xe", da0278b)
-//   2 = XE 2: mach in 2026-10-05 - encoder 23/18/19/17, PWM LiDAR 4, keo len,
-//             LiDAR bu rieng (do bang tools/check_lidar_offset.py)
+// --- CHON XE ---
+// FILE GOC. Khong nap file nay: tools/fw_split.sh sinh firmware/xe1/xe1.ino
+// (XE 1) va firmware/xe2/xe2.ino (XE 2) tu day va chep sang Arduino IDE
+// (Xe_1\Xe_1.ino, Xe_2\Xe_2.ino). Sua code -> sua O DAY roi chay lai script.
+// Ca hai xe dung MACH IN 2026-10-05 (encoder 23/18/19/17, PWM LiDAR 4). Rieng
+// tung xe (khoi "#if XE == ..." ben duoi): ID micro-ROS /agv<XE>, cach noi day
+// dong co, he so LiDAR.
 #define XE 2
 #if XE != 1 && XE != 2
 #error "XE phai la 1 hoac 2"
@@ -161,15 +160,8 @@
 //         LOW  HIGH PWM   quay nghich
 //         LOW  LOW  0     tha troi
 // PHAI THAO jumper ENA/ENB tren module thi chan PWM moi co tac dung.
-#if XE == 1
-const int L_IN1_PIN = 27;   // banh TRAI
-const int L_IN2_PIN = 26;
-const int L_ENA_PIN = 25;   // PWM banh trai
-const int R_IN1_PIN = 33;   // banh PHAI
-const int R_IN2_PIN = 32;
-const int R_ENB_PIN = 14;   // PWM banh phai
-#else
-// XE 2: day dong co TRAI/PHAI noi CHEO so voi xe 1 - kenh 27/26/25 chay banh
+// (Mach cu truoc 2026-10-05: trai 27/26/25, phai 33/32/14.)
+// MACH IN MOI (ca 2 xe): day dong co TRAI/PHAI noi CHEO so voi mach cu - kenh 27/26/25 chay banh
 // PHAI, kenh 33/32/14 chay banh TRAI (encoder thi dung ben). Do 2026-10-10,
 // ke banh: lenh TIEN -> ca hai encoder bao LUI -> ESTOP "quay nguoc chieu";
 // lenh QUAY thi van dung chieu (doi cho + nguoc cuc triet tieu nhau). Doi cho
@@ -180,17 +172,12 @@ const int L_ENA_PIN = 14;   // PWM banh trai
 const int R_IN1_PIN = 27;   // banh PHAI
 const int R_IN2_PIN = 26;
 const int R_ENB_PIN = 25;   // PWM banh phai
-#endif
+// XE 1 chuyen sang mach in moi 2026-10-10: gia dinh noi cheo giong xe 2 (cung
+// thiet ke) - XAC NHAN bang thu ke banh (tien/lui/trai/phai dung chieu).
 
 // --- Encoder ---
-#if XE == 1
-// XE 1 (mach cu). 34/35 chi vao, KHONG co dien tro keo noi bo.
-const int ENC_L_A_PIN = 23;
-const int ENC_L_B_PIN = 34;
-const int ENC_R_A_PIN = 4;
-const int ENC_R_B_PIN = 35;
-#else
-// XE 2 (mach in 2026-10-05: A_T, B_T, A_P, B_P). 18/19/17 co dien tro keo
+// (Mach cu: 23/34/4/35, 34/35 chi vao, khong keo len.)
+// Mach in 2026-10-05 (A_T, B_T, A_P, B_P), ca 2 xe. 18/19/17 co dien tro keo
 // len noi bo, encoder ho cuc thu cung chay.
 // GPIO17 la TX mac dinh cua UART2 nhung LiDAR mo UART2 voi TX = -1 (core 3.x
 // chi gan chan mac dinh khi CA RX lan TX deu -1) nen 17 ranh cho encoder.
@@ -198,7 +185,6 @@ const int ENC_L_A_PIN = 23;   // A_T
 const int ENC_L_B_PIN = 18;   // B_T
 const int ENC_R_A_PIN = 19;   // A_P
 const int ENC_R_B_PIN = 17;   // B_P
-#endif
 
 // --- BNO055 (I2C) ---
 const int I2C_SDA_PIN = 21;
@@ -211,11 +197,9 @@ const int I2C_SCL_PIN = 22;
 // chan TX cua ESP32, cung khong can chan EN.
 //   -1 = khong cap phat chan nao (HardwareSerial::begin va callback deu hieu).
 const int8_t LIDAR_RX_PIN  = 16;   // ESP32 RX <- Tx cua LiDAR   (BAT BUOC)
-#if XE == 1
-const int8_t LIDAR_PWM_PIN = 18;   // -> chan PWM cua LiDAR      (BAT BUOC; xe 1)
-#else
-const int8_t LIDAR_PWM_PIN = 4;    // -> chan PWM cua LiDAR      (BAT BUOC; xe 2)
-#endif
+// Mach cu: 18. Nap nham so do chan -> chan PWM tha noi, LiDAR chay het toc
+// (do duoc 10.8 Hz thay vi ~7 Hz) - dau hieu nhan biet.
+const int8_t LIDAR_PWM_PIN = 4;    // -> chan PWM cua LiDAR      (BAT BUOC)
 const int8_t LIDAR_TX_PIN  = -1;   // LiDAR khong co chan Rx     -> bo trong
 const int8_t LIDAR_EN_PIN  = -1;   // driver X2/X2L khong dung   -> bo trong
 
@@ -334,7 +318,7 @@ float maxAccelRPMPerSec = 320.0f;    // ramp, chong giat va sut ap
 // lidar_joint trong URDF - lam ca hai la bu thua gap doi.
 // MOI XE MOT SO (LiDAR gan khac nhau):
 #if XE == 1
-#define LIDAR_ANGLE_OFFSET_DEG 180.0f   // XE 1 - do o tren, giu nguyen
+#define LIDAR_ANGLE_OFFSET_DEG 180.0f   // XE 1 - do tren mach cu; chua do lai sau khi doi mach
 #else
 #define LIDAR_ANGLE_OFFSET_DEG 180.0f   // XE 2 - do 2026-10-10: chai truoc mui o 1.1 do -> dung
 #endif
@@ -1597,13 +1581,10 @@ void setup() {
   print_reset_reason();
 
   // --- Encoder ---
-#if XE != 1
-  // XE 2. Thu vien mac dinh KEO XUONG. Chan 18/19/17/23 co dien tro noi: keo
+  // Mach in moi (ca 2 xe). Thu vien mac dinh KEO XUONG. Chan 18/19/17/23 co dien tro noi: keo
   // LEN hop ca encoder push-pull lan ho cuc thu (keo xuong ~45k chia ap voi
   // tro keo len tren mach encoder, muc cao chi con ~2.7 V).
-  // XE 1 giu mac dinh cua thu vien nhu ban cu.
   ESP32Encoder::useInternalWeakPullResistors = puType::up;
-#endif
   encL.attachHalfQuad(ENC_L_A_PIN, ENC_L_B_PIN);
   encR.attachHalfQuad(ENC_R_A_PIN, ENC_R_B_PIN);
   encL.setFilter(1023);

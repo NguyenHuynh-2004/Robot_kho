@@ -52,7 +52,8 @@ ARDUINO_CLI = os.environ.get(
 ARDUINO_CFG = r'C:\Users\LRGION\.arduinoIDE\arduino-cli.yaml'
 WIN_TMP = '/mnt/c/Users/LRGION/AppData/Local/Temp/agv_fw'
 WIN_TMP_W = r'C:\Users\LRGION\AppData\Local\Temp\agv_fw'
-IDE_SKETCH = '/mnt/d/CTU/Ardunio ide/code/Xe_lidar'
+IDE_ROOT = '/mnt/d/CTU/Ardunio ide/code'
+IDE_SKETCH = os.path.join(IDE_ROOT, 'Xe_lidar')
 FQBN = 'esp32:esp32:esp32:PartitionScheme=huge_app'
 FW = os.path.join(WS, 'firmware', 'esp32_agv_base', 'esp32_agv_base.ino')
 DEFAULT_COM = os.environ.get('AGV_COM')   # khong dat = tu tim cong ESP32
@@ -534,6 +535,35 @@ def _fw_source(xe):
     return new
 
 
+def _fw_car_text(xe):
+    """File RIENG cua mot xe: file goc + dong canh bao o dau, XE dat san."""
+    head = (f'// ===== FIRMWARE XE {xe} - FILE TU SINH, KHONG SUA O DAY =====\n'
+            f'// Sinh tu firmware/esp32_agv_base/esp32_agv_base.ino boi: tools/agvctl fw split\n'
+            f'// Sua code o file goc roi chay lai lenh tren (sinh ca xe1 lan xe2).\n')
+    return head + _fw_source(xe)
+
+
+def _write_car(xe):
+    """firmware/xe<N>/xe<N>.ino trong repo + Xe_<N>/Xe_<N>.ino cua Arduino IDE."""
+    text = _fw_car_text(xe)
+    out = []
+    for folder, name in ((os.path.join(WS, 'firmware', f'xe{xe}'), f'xe{xe}.ino'),
+                         (os.path.join(IDE_ROOT, f'Xe_{xe}'), f'Xe_{xe}.ino')):
+        ide = folder.startswith(IDE_ROOT)
+        os.makedirs(folder, exist_ok=True)
+        dst = os.path.join(folder, name)
+        if ide and os.path.exists(dst):
+            bak = os.path.join(LOGS, 'firmware', time.strftime(f'Xe_{xe}-%Y%m%d-%H%M%S.ino.bak'))
+            os.makedirs(os.path.dirname(bak), exist_ok=True)
+            shutil.copy(dst, bak)
+        open(dst, 'w', newline='\r\n' if ide else '\n').write(text)
+        wc = os.path.join(folder, 'wifi_config.h')      # khong vao git (.gitignore)
+        if not os.path.exists(wc):
+            shutil.copy(_wifi_cfg(), wc)
+        out.append(dst)
+    return out
+
+
 def _wifi_cfg():
     for p in (os.path.join(WS, 'firmware/esp32_agv_base/wifi_config.h'),
               os.path.join(IDE_SKETCH, 'wifi_config.h')):
@@ -544,6 +574,18 @@ def _wifi_cfg():
 
 def cmd_fw(a):
     xe = a.xe
+    if a.action == 'split' or (a.action == 'copy' and xe is None):
+        for x in (1, 2):
+            for dst in _write_car(x):
+                print(f'XE {x}: {dst}')
+        print(r'Nap: Arduino IDE mo Xe_1\Xe_1.ino cho xe 1, Xe_2\Xe_2.ino cho xe 2 (giu BOOT).')
+        return
+    if a.action == 'build' and xe is None:
+        sys.exit('fw build can so xe: tools/agvctl fw build 1')
+    if a.action == 'copy':
+        for dst in _write_car(xe):
+            print(f'XE {xe}: {dst}')
+        return
     if a.action == 'build':
         sk = os.path.join(WIN_TMP, f'xe{xe}', 'esp32_agv_base')
         os.makedirs(sk, exist_ok=True)
@@ -612,8 +654,8 @@ def main():
     p.add_argument('--reset', action='store_true', help='nhan EN qua RTS de xem log khoi dong')
     p.add_argument('--list', action='store_true')
     p = sub.add_parser('fw')
-    p.add_argument('action', choices=['build', 'copy'])
-    p.add_argument('xe', type=int, choices=[1, 2])
+    p.add_argument('action', choices=['build', 'copy', 'split'])
+    p.add_argument('xe', type=int, choices=[1, 2], nargs='?')
     p = sub.add_parser('_bringup')
     p.add_argument('run')
     a = ap.parse_args()

@@ -13,8 +13,8 @@ Mở các terminal **lần lượt** — terminal trước khởi động xong m
 | 4️⃣ Chạy hai xe thật | điều phối hai xe trên sa bàn thật | 3 |
 
 > [!IMPORTANT]
-> **Mỗi xe có số riêng (`XE 1`, `XE 2`)**, nạp vào firmware bằng `#define XE`
-> ([Nạp firmware, bước 3b](SA_BAN_VA_TAI_LIEU.md#h3-nạp-firmware-xe-thật)). Mọi topic của xe
+> **Mỗi xe một file firmware riêng**: xe 1 nạp `Xe_1\Xe_1.ino`, xe 2 nạp `Xe_2\Xe_2.ino`
+> ([Nạp firmware](SA_BAN_VA_TAI_LIEU.md#h3-nạp-firmware-xe-thật)). Mọi topic của xe
 > nằm trong `/agv1/...` hoặc `/agv2/...`, nên chạy một xe phải ghi rõ **`xe:=1`** hoặc
 > **`xe:=2`** ở lệnh cầu nối ESP32.
 
@@ -302,8 +302,7 @@ riêng, dùng chung bản đồ và một micro-ROS agent; bộ điều phối g
 
 > [!IMPORTANT]
 > **Chuẩn bị:**
-> - Xe 1 nạp firmware với `#define XE 1`, xe 2 với `#define XE 2` (bản có namespace
->   `/agv1`, `/agv2`).
+> - Xe 1 nạp `Xe_1\Xe_1.ino`, xe 2 nạp `Xe_2\Xe_2.ino` (topic `/agv1`, `/agv2`).
 > - **Tắt hết** các terminal của Kịch bản 1 và 2: cầu nối ESP32, Nav2, `grid_navigator`
 >   (chạy song song thì hai bản đồ, hai agent đè nhau).
 > - **Đặt xe:** xe 1 ở **(hàng 3, cột 1) mũi hướng Đông**, xe 2 ở **(hàng 3, cột 5) mũi
