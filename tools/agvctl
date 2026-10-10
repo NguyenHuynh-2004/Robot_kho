@@ -1,0 +1,629 @@
+#!/usr/bin/env python3
+"""agvctl - mot cua de bat/tat, xem trang thai, doc LOI cua doi xe (khong can mo
+terminal, RViz hay Arduino IDE). Dung duoc tu Claude Code / script.
+
+  agvctl doctor                 kiem tra moi truong (ROS, agent, rosbridge, MCP,
+                                arduino-cli, COM, Wi-Fi, firmware)
+  agvctl up [--cars agv1,agv2] [--emulate] [--no-tm]
+                                bat he CHAY NEN: micro_ros_agent + fleet_monitor +
+                                rosbridge (neu co) ngay; CHO den khi moi xe bat
+                                nguon (co /agvN/scan) roi bat tools/fleet_real.sh
+                                va traffic_manager (khong tty, nhan /fleet/goal)
+  agvctl down                   tat het, gui lenh dung cho cac xe
+  agvctl status [--json]        trang thai tung xe (doc status.json cua monitor)
+  agvctl errors [-n 30]         loi/canh bao gom tu /rosout + monitor
+  agvctl events [-n 30]         dong thoi gian (xe ket noi, agent, traffic_manager)
+  agvctl logs [TEN] [-n 50]     log mot thanh phan (khong TEN: liet ke)
+  agvctl goal "1 3 5 d" --go    giao dich cho traffic_manager (/fleet/goal);
+                                "pair 1 3 5 d ; 2 3 1 t". Xe THAT phai co --go
+  agvctl stop                   dung tat ca (/fleet/goal "s" + cmd_vel 0)
+  agvctl localize agv1          tools/auto_initial_pose.py --ns agv1 (xe dung yen)
+  agvctl serial [COMx] [-t 10] [--reset] [--list]
+                                doc Serial ESP32 qua PowerShell cua Windows (khong
+                                COMx: tu tim cong CP210x/CH340/CH9102; --reset: nhan
+                                EN de xem log khoi dong - XE SE KHOI DONG LAI)
+  agvctl fw build 1|2           bien dich firmware (#define XE N) bang arduino-cli
+                                cua Arduino IDE; in loi + kich thuoc
+  agvctl fw copy 1|2            chep firmware (XE N) sang thu muc Arduino IDE de nap
+
+Log moi lan "up": ~/agv_logs/run-<gio>/ (~/agv_logs/latest tro toi lan moi nhat).
+Thu nghiem khong can xe: ROS_DOMAIN_ID=89 agvctl up --emulate  (ESP32 gia).
+"""
+import argparse
+import glob
+import json
+import os
+import re
+import shutil
+import signal
+import subprocess
+import sys
+import time
+
+WS = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+LOGS = os.path.expanduser(os.environ.get('AGV_LOGS', '~/agv_logs'))
+LATEST = os.path.join(LOGS, 'latest')
+ROS_SETUP = ('source /opt/ros/jazzy/setup.bash; '
+             '[ -f ~/microros_ws/install/setup.bash ] && source ~/microros_ws/install/setup.bash; '
+             f'source {WS}/install/setup.bash; export ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST; ')
+# Phia Windows (WSL goi duoc .exe truc tiep)
+ARDUINO_CLI = os.environ.get(
+    'ARDUINO_CLI', '/mnt/d/CTU/Ardunio ide/Arduino IDE/resources/app/lib/backend/resources/arduino-cli.exe')
+ARDUINO_CFG = r'C:\Users\LRGION\.arduinoIDE\arduino-cli.yaml'
+WIN_TMP = '/mnt/c/Users/LRGION/AppData/Local/Temp/agv_fw'
+WIN_TMP_W = r'C:\Users\LRGION\AppData\Local\Temp\agv_fw'
+IDE_SKETCH = '/mnt/d/CTU/Ardunio ide/code/Xe_lidar'
+FQBN = 'esp32:esp32:esp32:PartitionScheme=huge_app'
+FW = os.path.join(WS, 'firmware', 'esp32_agv_base', 'esp32_agv_base.ino')
+DEFAULT_COM = os.environ.get('AGV_COM')   # khong dat = tu tim cong ESP32
+
+
+# ---------------------------------------------------------------------- tien ich
+def sh(cmd, timeout=None, check=False):
+    """Chay lenh bash (co moi truong ROS), tra (ma, stdout+stderr)."""
+    p = subprocess.run(['bash', '-c', ROS_SETUP + cmd], capture_output=True, text=True,
+                       timeout=timeout)
+    if check and p.returncode:
+        sys.exit(p.stdout + p.stderr)
+    return p.returncode, (p.stdout + p.stderr)
+
+
+def spawn(cmd, log, env=None):
+    """Bat tien trinh nen trong nhom rieng (kill ca nhom duoc). Tra pid."""
+    e = dict(os.environ, **(env or {}))
+    with open(log, 'ab') as f:
+        p = subprocess.Popen(['bash', '-c', ROS_SETUP + 'exec ' + cmd], stdout=f,
+                             stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
+                             start_new_session=True, env=e)
+    return p.pid
+
+
+def run_dir():
+    if not os.path.exists(LATEST):
+        sys.exit('Chua co lan chay nao (agvctl up).')
+    return os.path.realpath(LATEST)
+
+
+def add_pid(run, name, pid):
+    with open(os.path.join(run, 'pids.json'), 'a') as f:
+        f.write(json.dumps({'name': name, 'pid': pid}) + '\n')
+
+
+def read_pids(run):
+    path = os.path.join(run, 'pids.json')
+    if not os.path.exists(path):
+        return []
+    return [json.loads(line) for line in open(path) if line.strip()]
+
+
+def alive(pid):
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
+
+
+def kill_group(pid, sig):
+    try:
+        os.killpg(pid, sig)
+    except OSError:
+        pass
+
+
+def tail(path, n):
+    if not os.path.exists(path):
+        return f'(chua co {path})'
+    with open(path, errors='replace') as f:
+        return ''.join(f.readlines()[-n:])
+
+
+def domain():
+    return int(os.environ.get('ROS_DOMAIN_ID', '0') or 0)
+
+
+def ps_run(script, timeout=60):
+    """Chay PowerShell cua Windows, tra (ma, output)."""
+    p = subprocess.run(['powershell.exe', '-NoProfile', '-NonInteractive', '-Command', script],
+                       capture_output=True, text=True, timeout=timeout, cwd='/mnt/c')
+    return p.returncode, (p.stdout + p.stderr).replace('\r', '')
+
+
+# ---------------------------------------------------------------------- doctor
+def cmd_doctor(a):
+    ok_all = True
+
+    def line(ok, what, detail=''):
+        nonlocal ok_all
+        mark = {True: 'OK ', False: 'LOI', None: ' - '}[ok]
+        if ok is False:
+            ok_all = False
+        print(f' [{mark}] {what}' + (f': {detail}' if detail else ''))
+
+    print('== ROS ==')
+    rc, out = sh('ros2 pkg prefix micro_ros_agent && ros2 pkg prefix my_bot_bringup', timeout=30)
+    line(rc == 0, 'ROS 2 Jazzy + micro_ros_agent + workspace', out.strip().replace('\n', ', ')
+         if rc == 0 else out.strip()[-200:])
+    rc, out = sh('ros2 pkg prefix rosbridge_server', timeout=30)
+    line(rc == 0 or None, 'rosbridge_server (cho MCP ros)',
+         'co' if rc == 0 else 'CHUA CAI: sudo apt install -y ros-jazzy-rosbridge-server')
+    print(f' [ - ] ROS_DOMAIN_ID={domain()}' + (' (xe that)' if domain() == 0 else ' (thu nghiem)'))
+    n = len([p for p in os.popen('pgrep -af "ros2|_ros|python3|component_container"').read().splitlines()
+             if '/opt/ros' in p or 'robot_ws_3' in p or 'ros-args' in p])
+    line(n < 30 or None, 'so tien trinh ROS dang chay', f'{n} (gioi han do tim LOCALHOST ~30-40)')
+    ag = os.popen('pgrep -ax micro_ros_agent').read().strip()
+    print(f' [ - ] micro_ros_agent: {"DANG CHAY" if ag else "khong chay"}')
+
+    print('== MCP (Claude doc ROS truc tiep) ==')
+    uvx = shutil.which('uvx') or os.path.expanduser('~/.local/bin/uvx')
+    line(os.path.exists(uvx), 'uvx', uvx)
+    mcp = os.path.join(WS, '.mcp.json')
+    line(os.path.exists(mcp), '.mcp.json (server "ros" -> rosbridge ws://127.0.0.1:9090)')
+    rb = os.popen('ss -ltn 2>/dev/null | grep -c ":9090 "').read().strip()
+    print(f' [ - ] rosbridge cong 9090: {"DANG MO" if rb not in ("", "0") else "khong mo (agvctl up se bat)"}')
+
+    print('== Mang ==')
+    ip = os.popen('ip -4 -o addr show').read()
+    agent_ip = None
+    for p in (os.path.join(WS, 'firmware/esp32_agv_base/wifi_config.h'),
+              os.path.join(IDE_SKETCH, 'wifi_config.h')):
+        if os.path.exists(p):
+            m = re.search(r'#define\s+AGENT_IP\s+"([\d.]+)"', open(p).read())
+            if m:
+                agent_ip = m.group(1)
+                break
+    line(bool(agent_ip and agent_ip in ip), 'AGENT_IP trong wifi_config.h = IP laptop',
+         f'{agent_ip} {"co" if agent_ip and agent_ip in ip else "KHONG CO trong"} '
+         f'{re.findall(r"inet ([\d.]+)", ip)}')
+
+    print('== Windows / firmware ==')
+    line(os.path.exists(ARDUINO_CLI), 'arduino-cli.exe (Arduino IDE)', ARDUINO_CLI)
+    wc = os.path.join(WS, 'firmware/esp32_agv_base/wifi_config.h')
+    line(os.path.exists(wc), 'firmware/esp32_agv_base/wifi_config.h (khong vao git)')
+    try:
+        ports = com_ports()
+        esp = [f'{c} ({chip})' for c, _, chip in ports if chip]
+        line(None, 'cong COM cua ESP32 (cap USB)', ', '.join(esp) or
+             f'khong co (dang co: {", ".join(c for c, _, _ in ports) or "-"})')
+    except (OSError, subprocess.TimeoutExpired) as e:
+        line(False, 'PowerShell (doc COM)', str(e))
+    ide = os.path.join(IDE_SKETCH, 'Xe_lidar.ino')
+    if os.path.exists(ide):
+        m = re.search(r'^#define XE (\d)', open(ide, errors='replace').read(), re.M)
+        same = _strip_xe(open(ide, errors='replace').read()) == _strip_xe(open(FW).read())
+        print(f' [ - ] Xe_lidar.ino (Arduino IDE): XE {m.group(1) if m else "?"}, '
+              f'{"GIONG" if same else "KHAC"} firmware trong repo')
+
+    print('== Lan chay gan nhat ==')
+    if os.path.exists(LATEST):
+        run = os.path.realpath(LATEST)
+        procs = read_pids(run)
+        print(f'  {run}: ' + ', '.join(f'{p["name"]}({"song" if alive(p["pid"]) else "chet"})'
+                                        for p in procs))
+    else:
+        print('  chua co')
+    print('\nKet luan:', 'OK' if ok_all else 'CO LOI (xem dong [LOI])')
+    return 0 if ok_all else 1
+
+
+def _strip_xe(text):
+    return re.sub(r'^#define XE \d', '', text, flags=re.M).replace('\r\n', '\n')
+
+
+# ---------------------------------------------------------------------- up / down
+def cmd_up(a):
+    if os.path.exists(LATEST) and any(alive(p['pid']) for p in read_pids(os.path.realpath(LATEST))):
+        sys.exit('He dang chay (agvctl status). Tat truoc: agvctl down')
+    run = os.path.join(LOGS, time.strftime('run-%Y%m%d-%H%M%S'))
+    os.makedirs(run)
+    if os.path.lexists(LATEST):
+        os.remove(LATEST)
+    os.symlink(run, LATEST)
+    cars = a.cars.split(',')
+    meta = {'cars': cars, 'emulate': a.emulate, 'domain': domain(), 'tm': not a.no_tm,
+            'start': time.strftime('%Y-%m-%d %H:%M:%S'),
+            'agv1': os.environ.get('AGV1', '3 1 0'), 'agv2': os.environ.get('AGV2', '3 5 180')}
+    json.dump(meta, open(os.path.join(run, 'meta.json'), 'w'), indent=1)
+    # Phan dieu phoi chay NEN (cho xe bat nguon co the lau) - lenh nay tra ve ngay
+    pid = spawn(f'python3 {os.path.realpath(__file__)} _bringup {run}', os.path.join(run, 'bringup.log'))
+    add_pid(run, 'bringup', pid)
+    print(f'Da bat (nen). Log: {run}\n'
+          f'  Xem: agvctl status | agvctl events | agvctl logs bringup\n'
+          f'  He se cho {", ".join(cars)} bat nguon (co /agvN/scan) roi moi bat Nav2.')
+
+
+def _bringup(run):
+    """Chay nen: agent + monitor + rosbridge -> cho xe -> fleet_real.sh -> traffic_manager."""
+    meta = json.load(open(os.path.join(run, 'meta.json')))
+    cars = meta['cars']
+
+    def log(t):
+        print(time.strftime('%H:%M:%S ') + t, flush=True)
+
+    if not meta['emulate'] and not os.popen('pgrep -x micro_ros_agent').read().strip():
+        add_pid(run, 'micro_ros_agent', spawn('ros2 run micro_ros_agent micro_ros_agent udp4 --port 8888',
+                                              os.path.join(run, 'micro_ros_agent.log')))
+        log('bat micro_ros_agent udp 8888')
+    add_pid(run, 'monitor', spawn(f'python3 {WS}/tools/fleet_monitor.py {" ".join(cars)} --out {run}'
+                                  + (' --emulate' if meta['emulate'] else ''),
+                                  os.path.join(run, 'monitor.log')))
+    log('bat fleet_monitor')
+    if sh('ros2 pkg prefix rosbridge_server', timeout=30)[0] == 0:
+        add_pid(run, 'rosbridge', spawn('ros2 launch rosbridge_server rosbridge_websocket_launch.xml '
+                                        'port:=9090 address:=127.0.0.1',
+                                        os.path.join(run, 'rosbridge.log')))
+        log('bat rosbridge ws://127.0.0.1:9090 (MCP "ros")')
+    else:
+        log('CHUA CAI rosbridge_server -> khong co MCP ros (sudo apt install -y ros-jazzy-rosbridge-server)')
+
+    if meta['emulate']:
+        _emulate_cars(run, cars, meta, log)
+
+    # Cho moi xe co /scan (monitor ghi status.json). Khong gioi han thoi gian.
+    t0, last_say = time.time(), 0
+    while True:
+        st = _status(run, quiet=True)
+        up = [c for c in cars if st and st['cars'].get(c, {}).get('connected')]
+        if len(up) == len(cars):
+            break
+        if time.time() - last_say > 30:
+            last_say = time.time()
+            log(f'cho xe bat nguon: da co {up or "chua xe nao"}, '
+                f'thieu {[c for c in cars if c not in up]} ({time.time() - t0:.0f} s)')
+        time.sleep(1)
+    log(f'du xe {cars} sau {time.time() - t0:.0f} s; doi 3 s cho BNO055/LiDAR on dinh')
+    time.sleep(3)
+
+    env = {'ROBOTS': ' '.join(cars), 'LOGDIR': os.path.join(run, 'fleet'), 'AGENT': '0',
+           'AGV1': meta['agv1'], 'AGV2': meta['agv2']}
+    if meta['emulate']:
+        env['EMULATE'] = '1'
+    log('tools/fleet_real.sh up ...')
+    with open(os.path.join(run, 'fleet_up.log'), 'ab') as f:
+        rc = subprocess.call(['bash', '-c', ROS_SETUP + f'{WS}/tools/fleet_real.sh up'],
+                             stdout=f, stderr=subprocess.STDOUT, env=dict(os.environ, **env))
+    log(f'fleet_real.sh xong (ma {rc}):\n' + tail(os.path.join(run, 'fleet_up.log'), 20))
+    if meta['tm']:
+        # Khong tty: traffic_manager doc lenh tu stdin + /fleet/goal. stdin la
+        # 'tail -f /dev/null' de khong bao gio het (het stdin = no tu thoat).
+        add_pid(run, 'traffic_manager', spawn(
+            f'bash -c "tail -f /dev/null | python3 {WS}/traffic_manager.py {" ".join(cars)}"',
+            os.path.join(run, 'traffic_manager.log')))
+        log('bat traffic_manager (nhan lenh: agvctl goal ...)')
+    log('SAN SANG')
+
+
+def _emulate_cars(run, cars, meta, log):
+    """ESP32 GIA (tools/fleet_fake_robot.py --esp32) de thu ca he khong can xe."""
+    if domain() == 0:
+        log('--emulate tren domain 0 (domain xe that) -> tu choi. Dat ROS_DOMAIN_ID=89')
+        sys.exit(1)
+    sys.path.insert(0, WS)
+    from grid_board import Board, config_path
+    import math
+    b = Board.load(config_path(True))
+    for c in cars:
+        r, col, h = map(float, meta[c].split())
+        x, y = b.xy(int(r) - 1, int(col) - 1)
+        other = [o for o in cars if o != c]
+        args = f'{x:.3f} {y:.3f} {h + math.degrees(b.yaw):.1f} --esp32'
+        if other:
+            args += f' --other /{other[0]}/truth'
+        add_pid(run, f'fake_{c}', spawn(f'python3 {WS}/tools/fleet_fake_robot.py {args} '
+                                        f'--ros-args -r __ns:=/{c}', os.path.join(run, f'fake_{c}.log')))
+        log(f'ESP32 gia {c} tai ({meta[c]})')
+
+
+def cmd_down(a):
+    run = os.path.realpath(LATEST) if os.path.exists(LATEST) else None
+    procs = read_pids(run) if run else []
+    meta = json.load(open(os.path.join(run, 'meta.json'))) if run and \
+        os.path.exists(os.path.join(run, 'meta.json')) else {'cars': ['agv1', 'agv2']}
+    # Dieu phoi truoc (khong giao them lenh), roi Nav2/agent, cuoi cung monitor
+    order = ['bringup', 'traffic_manager']
+    for name in order:
+        for p in procs:
+            if p['name'] == name:
+                kill_group(p['pid'], signal.SIGINT)
+    env = dict(os.environ, ROBOTS=' '.join(meta['cars']))
+    if run:
+        env['LOGDIR'] = os.path.join(run, 'fleet')
+    subprocess.call(['bash', '-c', ROS_SETUP + f'{WS}/tools/fleet_real.sh down'], env=env)
+    for p in procs:
+        kill_group(p['pid'], signal.SIGINT)
+    time.sleep(3)
+    for p in procs:
+        kill_group(p['pid'], signal.SIGKILL)
+    subprocess.call(['pkill', '-9', '-f', f'^python3 {WS}/(traffic_manager|tools/fleet_monitor|'
+                                          f'tools/fleet_fake_robot)\\.py'])
+    print('Da tat.' + (f' Log con o {run}' if run else ''))
+
+
+# ---------------------------------------------------------------------- xem
+def _status(run, quiet=False):
+    path = os.path.join(run, 'status.json')
+    try:
+        return json.load(open(path))
+    except (OSError, ValueError):
+        if not quiet:
+            print(f'(chua co {path} - monitor chua chay?)')
+        return None
+
+
+def cmd_status(a):
+    run = run_dir()
+    st = _status(run)
+    procs = read_pids(run)
+    if a.json:
+        print(json.dumps({'run': run, 'procs': {p['name']: alive(p['pid']) for p in procs},
+                          'status': st}, ensure_ascii=False, indent=1))
+        return
+    print(f'Lan chay: {run}')
+    print('Tien trinh: ' + ', '.join(f'{p["name"]}{"" if alive(p["pid"]) else " (CHET)"}' for p in procs))
+    last = tail(os.path.join(run, 'bringup.log'), 1).strip()
+    print(f'Bringup: {last}')
+    if not st:
+        return
+    age = time.time() - st['unix']
+    print(f'Monitor: {st["time"]}' + (f'  !!! CU {age:.0f} s - monitor chet?' if age > 3 else '')
+          + f' | domain {st["domain"]} | {st["node_count"]} node ROS')
+    for n, c in st['cars'].items():
+        r = c['rate_hz']
+        print(f'\n[{n}] {"KET NOI" if c["connected"] else "MAT KET NOI"} | scan {r["scan"]} Hz, '
+              f'joint_states {r["js"]} Hz'
+              + (f' | tia hop le {c["scan_valid_ratio"]:.0%}' if c['scan_valid_ratio'] is not None else ''))
+        if c['estop']:
+            print(f'   !!! ESTOP: {c["estop"]}')
+        if c['suspect_stuck']:
+            print('   !!! co lenh chay ma banh dung yen (nghi ESTOP / ket banh / het pin)')
+        d = c.get('diag')
+        if d:
+            print('   ESP32: ' + ', '.join(f'{k}={v}' for k, v in d.items()))
+        p = c.get('pose')
+        if p:
+            print(f'   Vi tri: o (hang {p["row"]}, cot {p["col"]}) lech tam {p["off_node_cm"]} cm, '
+                  f'huong {p["heading"]} {p["heading_off_deg"]:+.1f} do  [{p["source"]}]')
+        if c.get('amcl_sd'):
+            s = c['amcl_sd']
+            print(f'   AMCL lech chuan: x {s["sd_x"] * 100:.1f} cm, y {s["sd_y"] * 100:.1f} cm, '
+                  f'goc {s["sd_yaw_deg"]:.1f} do')
+        if c.get('agent'):
+            print(f'   Agent: {c["agent"]["state"]}, route {c["agent"]["route_id"]}, '
+                  f'nut bi chan {c["agent"]["blocked_nodes"]}')
+        if c.get('cmd_vel'):
+            print(f'   cmd_vel: v {c["cmd_vel"]["v"]} m/s, w {c["cmd_vel"]["w"]} rad/s')
+        if c['flags']:
+            print(f'   Bat thuong: {", ".join(c["flags"])}')
+    if st['missing_nodes']:
+        print(f'\nThieu node: {", ".join(st["missing_nodes"])}')
+    e = st['error_count']
+    print(f'\nLoi tu luc bat: {e["ERROR"]} ERROR, {e["WARN"]} WARN, {e["FATAL"]} FATAL '
+          f'(agvctl errors)')
+
+
+def cmd_errors(a):
+    print(tail(os.path.join(run_dir(), 'errors.log'), a.n), end='')
+
+
+def cmd_events(a):
+    print(tail(os.path.join(run_dir(), 'events.log'), a.n), end='')
+
+
+def cmd_logs(a):
+    run = run_dir()
+    files = sorted(glob.glob(os.path.join(run, '*.log')) + glob.glob(os.path.join(run, 'fleet', '*.log')))
+    names = {os.path.relpath(f, run)[:-4].replace('fleet/', ''): f for f in files}
+    if not a.name:
+        print('Co: ' + ', '.join(sorted(names)))
+        return
+    m = [k for k in names if k == a.name] or [k for k in names if a.name in k]
+    if not m:
+        sys.exit(f'Khong co log "{a.name}". Co: {", ".join(sorted(names))}')
+    for k in m:
+        print(f'===== {k} ({names[k]})')
+        print(tail(names[k], a.n), end='')
+
+
+# ---------------------------------------------------------------------- lenh xe
+def _pub_goal(text):
+    rc, out = sh(f"timeout 15 ros2 topic pub --once -w 1 /fleet/goal std_msgs/msg/String "
+                 f"\"{{data: '{text}'}}\"", timeout=20)
+    return rc, out
+
+
+def cmd_goal(a):
+    if domain() == 0 and not a.go:
+        sys.exit('Domain 0 = XE THAT. Them --go khi DA DUOC PHEP cho xe chay.')
+    rc, out = _pub_goal(a.text)
+    if rc:
+        sys.exit('Gui that bai (traffic_manager co chay khong? agvctl status):\n' + out[-500:])
+    print(f'Da gui /fleet/goal: "{a.text}". Theo doi: agvctl events')
+
+
+def cmd_stop(a):
+    run = os.path.realpath(LATEST) if os.path.exists(LATEST) else None
+    cars = json.load(open(os.path.join(run, 'meta.json')))['cars'] if run else ['agv1', 'agv2']
+    _pub_goal('s')
+    cmds = ' & '.join(f'timeout 5 ros2 topic pub --times 5 -r 10 /{c}/cmd_vel '
+                      f'geometry_msgs/msg/Twist "{{}}" >/dev/null' for c in cars)
+    sh(cmds + ' ; wait', timeout=20)
+    print('Da gui lenh dung (traffic_manager "s" + cmd_vel 0).')
+
+
+def cmd_localize(a):
+    rc = subprocess.call(['bash', '-c', ROS_SETUP + f'cd {WS} && timeout 120 python3 '
+                          f'tools/auto_initial_pose.py --ns {a.car}'])
+    sys.exit(rc)
+
+
+# ---------------------------------------------------------------------- Serial
+PS_SERIAL = r'''
+$ErrorActionPreference = 'Stop'
+$p = New-Object System.IO.Ports.SerialPort '{port}', 115200, 'None', 8, 'One'
+$p.DtrEnable = $false; $p.RtsEnable = $false
+try {{ $p.Open() }} catch {{ Write-Output "LOI_MO_CONG: $($_.Exception.Message)"; exit 2 }}
+if ({reset}) {{ $p.RtsEnable = $true; Start-Sleep -Milliseconds 120; $p.RtsEnable = $false }}
+# ReadExisting chu khong ReadLine: luc cho Wi-Fi/agent firmware in dau cham
+# KHONG xuong dong -> ReadLine khong bao gio tra ve.
+$end = (Get-Date).AddSeconds({secs}); $n = 0
+while ((Get-Date) -lt $end) {{
+  $s = $p.ReadExisting()
+  if ($s) {{ [Console]::Out.Write($s); $n += $s.Length }} else {{ Start-Sleep -Milliseconds 50 }}
+}}
+$p.Close()
+if ($n -eq 0) {{ Write-Output "KHONG_CO_DU_LIEU" }}
+'''
+
+
+# VID cac chip USB-UART hay gap tren board ESP32 (COM khac la Bluetooth, modem laptop...)
+ESP_VIDS = {'10C4': 'CP210x', '1A86': 'CH340/CH9102', '0403': 'FTDI', '303A': 'Espressif'}
+
+
+def com_ports():
+    """[(COMx, ten, la_esp32)] cac cong COM dang cam tren Windows."""
+    rc, out = ps_run('Get-PnpDevice -Class Ports -PresentOnly | ForEach-Object '
+                     '{ $_.FriendlyName + "|" + $_.InstanceId }', timeout=30)
+    ports = []
+    for line in out.splitlines():
+        if '|' not in line:
+            continue
+        name, inst = line.split('|', 1)
+        m = re.search(r'\((COM\d+)\)', name)
+        vid = re.search(r'VID_([0-9A-F]{4})', inst.upper())
+        if m:
+            ports.append((m.group(1), name.strip(), ESP_VIDS.get(vid.group(1)) if vid else None))
+    return ports
+
+
+def cmd_serial(a):
+    ports = com_ports()
+    if a.list:
+        for com, name, chip in ports:
+            print(f'{com}: {name}' + (f'  <- ESP32? ({chip})' if chip else ''))
+        return
+    port = a.port or DEFAULT_COM
+    if not port:
+        esp = [c for c, _, chip in ports if chip]
+        if not esp:
+            sys.exit('Khong thay cong COM nao cua ESP32 (CP210x/CH340/CH9102/FTDI). Cam cap USB '
+                     'cua xe roi thu lai. Dang co: ' + ', '.join(f'{c} {n}' for c, n, _ in ports))
+        port = esp[0]
+        if len(esp) > 1:
+            print(f'(co {len(esp)} cong ESP32: {esp} - doc {port}; chon cong khac: agvctl serial COMx)')
+    rc, out = ps_run(PS_SERIAL.format(port=port, secs=a.t, reset='$true' if a.reset else '$false'),
+                     timeout=a.t + 30)
+    d = os.path.join(LOGS, 'serial')
+    os.makedirs(d, exist_ok=True)
+    path = os.path.join(d, time.strftime(f'{port}-%Y%m%d-%H%M%S.log'))
+    open(path, 'w').write(out)
+    print(out, end='')
+    if 'KHONG_CO_DU_LIEU' in out:
+        print(f'-> {port} mo duoc nhung {a.t} s khong co byte nao: ESP32 chua cap nguon / dang treo / '
+              f'khong phai ESP32? Thu --reset de xem log khoi dong.')
+    if 'LOI_MO_CONG' in out:
+        print(f'\n-> Khong mo duoc {port}: Arduino IDE Serial Monitor dang giu cong? cap USB da cam?')
+    print(f'\n(luu {path})')
+
+
+# ---------------------------------------------------------------------- firmware
+def _fw_source(xe):
+    src = open(FW).read()
+    new, n = re.subn(r'^#define XE \d', f'#define XE {xe}', src, count=1, flags=re.M)
+    if n != 1:
+        sys.exit('Khong tim thay dong "#define XE" trong firmware')
+    return new
+
+
+def _wifi_cfg():
+    for p in (os.path.join(WS, 'firmware/esp32_agv_base/wifi_config.h'),
+              os.path.join(IDE_SKETCH, 'wifi_config.h')):
+        if os.path.exists(p):
+            return p
+    sys.exit('Khong co wifi_config.h (firmware/esp32_agv_base/ hoac thu muc Arduino IDE)')
+
+
+def cmd_fw(a):
+    xe = a.xe
+    if a.action == 'build':
+        sk = os.path.join(WIN_TMP, f'xe{xe}', 'esp32_agv_base')
+        os.makedirs(sk, exist_ok=True)
+        open(os.path.join(sk, 'esp32_agv_base.ino'), 'w').write(_fw_source(xe))
+        shutil.copy(_wifi_cfg(), os.path.join(sk, 'wifi_config.h'))
+        t0 = time.time()
+        p = subprocess.run([ARDUINO_CLI, 'compile', '--config-file', ARDUINO_CFG, '--fqbn', FQBN,
+                            '--build-path', WIN_TMP_W + rf'\build_xe{xe}', '--warnings', 'default',
+                            WIN_TMP_W + rf'\xe{xe}\esp32_agv_base'],
+                           capture_output=True, text=True, cwd='/mnt/c', timeout=1800)
+        out = (p.stdout + p.stderr).replace('\r', '')
+        log = os.path.join(LOGS, 'firmware')
+        os.makedirs(log, exist_ok=True)
+        path = os.path.join(log, time.strftime(f'build-xe{xe}-%Y%m%d-%H%M%S.log'))
+        open(path, 'w').write(out)
+        # -Wvolatile ('++' bien volatile): co tu truoc, vo hai - bo khoi tom tat
+        errs = [l for l in out.splitlines() if re.search(r'\b(error|warning)\b', l, re.I)
+                and 'esp32_agv_base' in l and 'Wvolatile' not in l]
+        size = [l for l in out.splitlines() if 'Sketch uses' in l or 'Global variables' in l]
+        print('\n'.join(errs[:40]) or '(khong co loi/canh bao trong sketch)')
+        print('\n'.join(size))
+        print(f'{"BIEN DICH OK" if p.returncode == 0 else "BIEN DICH LOI"} (XE {xe}, '
+              f'{time.time() - t0:.0f} s). Log day du: {path}')
+        if p.returncode:
+            print(out[-3000:])
+        sys.exit(p.returncode)
+    if a.action == 'copy':
+        dst = os.path.join(IDE_SKETCH, 'Xe_lidar.ino')
+        if os.path.exists(dst):
+            bak = os.path.join(LOGS, 'firmware', time.strftime('Xe_lidar-%Y%m%d-%H%M%S.ino.bak'))
+            os.makedirs(os.path.dirname(bak), exist_ok=True)
+            shutil.copy(dst, bak)
+        open(dst, 'w', newline='\r\n').write(_fw_source(xe))
+        print(f'Da chep firmware XE {xe} -> {dst} (ban cu luu o ~/agv_logs/firmware/). '
+              f'Mo Arduino IDE, giu BOOT va nap.')
+
+
+# ---------------------------------------------------------------------- main
+def main():
+    ap = argparse.ArgumentParser(prog='agvctl', description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = ap.add_subparsers(dest='cmd', required=True)
+    sub.add_parser('doctor')
+    p = sub.add_parser('up')
+    p.add_argument('--cars', default='agv1,agv2')
+    p.add_argument('--emulate', action='store_true', help='ESP32 gia (can ROS_DOMAIN_ID khac 0)')
+    p.add_argument('--no-tm', action='store_true', help='khong bat traffic_manager')
+    sub.add_parser('down')
+    p = sub.add_parser('status')
+    p.add_argument('--json', action='store_true')
+    for name in ('errors', 'events'):
+        p = sub.add_parser(name)
+        p.add_argument('-n', type=int, default=30)
+    p = sub.add_parser('logs')
+    p.add_argument('name', nargs='?')
+    p.add_argument('-n', type=int, default=50)
+    p = sub.add_parser('goal')
+    p.add_argument('text')
+    p.add_argument('--go', action='store_true', help='cho phep xe THAT chay (domain 0)')
+    sub.add_parser('stop')
+    p = sub.add_parser('localize')
+    p.add_argument('car')
+    p = sub.add_parser('serial')
+    p.add_argument('port', nargs='?')
+    p.add_argument('-t', type=int, default=10, help='doc bao nhieu giay')
+    p.add_argument('--reset', action='store_true', help='nhan EN qua RTS de xem log khoi dong')
+    p.add_argument('--list', action='store_true')
+    p = sub.add_parser('fw')
+    p.add_argument('action', choices=['build', 'copy'])
+    p.add_argument('xe', type=int, choices=[1, 2])
+    p = sub.add_parser('_bringup')
+    p.add_argument('run')
+    a = ap.parse_args()
+    if a.cmd == '_bringup':
+        return _bringup(a.run)
+    return {'doctor': cmd_doctor, 'up': cmd_up, 'down': cmd_down, 'status': cmd_status,
+            'errors': cmd_errors, 'events': cmd_events, 'logs': cmd_logs, 'goal': cmd_goal,
+            'stop': cmd_stop, 'localize': cmd_localize, 'serial': cmd_serial,
+            'fw': cmd_fw}[a.cmd](a)
+
+
+if __name__ == '__main__':
+    sys.exit(main() or 0)

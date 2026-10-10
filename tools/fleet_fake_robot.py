@@ -22,9 +22,11 @@ TUONG tren ban do that (real_room_map) de AMCL cua laptop co cai ma khop:
     python3 tools/fleet_fake_robot.py X Y YAW --esp32 --other /agv2/truth \
         --ros-args -r __ns:=/agv1
 """
+import json
 import math
 import os
 import sys
+import time
 
 import numpy as np
 import yaml
@@ -68,6 +70,10 @@ class FakeRobot(Node):
         if esp32:
             self.js_pub = self.create_publisher(JointState, 'joint_states', 10)
             self.imu_pub = self.create_publisher(Imu, 'imu/data', 10)
+            # Chuoi chan doan giong firmware (/agvN/diag) cho tools/fleet_monitor.py
+            self.diag_pub = self.create_publisher(String, 'diag', 10)
+            self.t0 = time.time()
+            self.create_timer(1.0, self.diag)
         self.scan_pub = self.create_publisher(LaserScan, 'scan', 10)
         self.tfb = TransformBroadcaster(self)
         st = StaticTransformBroadcaster(self)
@@ -129,6 +135,13 @@ class FakeRobot(Node):
         o.pose.pose.orientation = tf.transform.rotation
         o.twist.twist.linear.x, o.twist.twist.angular.z = self.v, self.w
         self.odom_pub.publish(o)
+
+    def diag(self):
+        m = String()
+        m.data = json.dumps({'xe': 0, 'up_s': int(time.time() - self.t0), 'reset': 'FAKE',
+                             'estop': '', 'estop_resets': 0, 'rssi': -50, 'imu_ok': 1,
+                             'scan_hz': 9.1, 'pub_fail': 0})
+        self.diag_pub.publish(m)
 
     def wall_ranges(self, s):
         """Tia LiDAR cat tuong ban do (buoc 2 cm), inf neu khong cham."""

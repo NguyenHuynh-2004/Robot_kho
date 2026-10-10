@@ -77,6 +77,8 @@
 // tf_message.h chi keo struct cua TransformStamped, khong keo cac ham __init.
 // Thieu dong duoi la loi bien dich: '...TransformStamped__init' was not declared.
 #include <geometry_msgs/msg/transform_stamped.h>
+#include <std_msgs/msg/string.h>   // /agvN/diag
+#include <std_msgs/msg/empty.h>    // /agvN/estop_reset
 
 // ============================================================================
 //  1. CAU HINH - SUA TRUOC KHI NAP
@@ -386,6 +388,17 @@ rclc_executor_t executor;
 
 rcl_subscription_t cmd_vel_sub;
 rcl_publisher_t    scan_pub, imu_pub, js_pub;
+// Chan doan qua Wi-Fi (khong can cam USB): /agvN/diag moi giay mot chuoi JSON
+// (ESTOP + ly do, RSSI, ly do reset, RPM/PWM, nhip publish) - laptop doc bang
+// tools/fleet_monitor.py. /agvN/estop_reset (Empty) go ESTOP khi banh da dung.
+rcl_publisher_t    diag_pub;
+rcl_subscription_t estop_reset_sub;
+std_msgs__msg__String diag_msg;
+std_msgs__msg__Empty  estop_reset_msg;
+static char diag_buf[320];                 // loop() (core 1) viet
+static char diag_out[320];                 // ros_task (core 0) gui
+static volatile bool diag_ready = false;
+static portMUX_TYPE diag_mux = portMUX_INITIALIZER_UNLOCKED;
 #if ODOM_ON_ESP32
 rcl_publisher_t    odom_pub, tf_pub;
 #endif
@@ -481,6 +494,9 @@ struct Wheel {
 Wheel wl, wr;
 
 static volatile bool emergency_stop = false;
+static const char *volatile estop_reason = "";   // gui trong /agvN/diag
+static volatile uint32_t estop_resets = 0;       // so lan go ESTOP tu xa
+static const char *reset_reason_str = "?";       // ly do ESP32 khoi dong lan nay
 static volatile unsigned long last_cmd_vel_ms = 0;
 
 // --- Odometry ---
@@ -614,6 +630,7 @@ static void wheel_write_pwm(Wheel &w, int pwm) {
 
 static void trigger_estop(const char *reason) {
   emergency_stop = true;
+  estop_reason = reason;
   wl.target_rpm = wr.target_rpm = 0.0f;
   wl.ramped_rpm = wr.ramped_rpm = 0.0f;
   wl.integral   = wr.integral   = 0.0f;
@@ -904,6 +921,38 @@ void cmd_vel_callback(const void *msgin) {
   last_cmd_vel_ms = millis();
 }
 
+// /agvN/estop_reset: go ESTOP tu laptop (thay cho tat/bat nguon). Chi go khi
+// ca hai banh da dung han; lenh cu bi xoa, xe chi chay lai khi co /cmd_vel moi.
+// Nguyen nhan ESTOP (ket banh, het pin, sai chieu) van con thi se chot lai.
+void estop_reset_callback(const void *msgin) {
+  (void)msgin;
+  if (!emergency_stop) return;
+  if (fabsf(wl.current_rpm) > 1.0f || fabsf(wr.current_rpm) > 1.0f) {
+    Serial.println(">>> estop_reset bi bo qua: banh chua dung");
+    return;
+  }
+  wl.target_rpm = wr.target_rpm = 0.0f;
+  wl.stall_since = wr.stall_since = 0;
+  wl.wrong_dir_since = wr.wrong_dir_since = 0;
+  estop_reason = "";
+  estop_resets++;
+  emergency_stop = false;
+  Serial.printf(">>> ESTOP duoc go tu xa (lan %lu)\n", (unsigned long)estop_resets);
+}
+
+// Gui chuoi chan doan loop() da chuan bi (goi trong ros_task)
+static void publish_diag_if_ready() {
+  if (!diag_ready) return;
+  portENTER_CRITICAL(&diag_mux);
+  memcpy(diag_out, diag_buf, sizeof(diag_out));
+  diag_ready = false;
+  portEXIT_CRITICAL(&diag_mux);
+  diag_msg.data.data = diag_out;
+  diag_msg.data.size = strlen(diag_out);
+  diag_msg.data.capacity = sizeof(diag_out);
+  if (rcl_publish(&diag_pub, &diag_msg, NULL) != RCL_RET_OK) publish_failed++;
+}
+
 // ============================================================================
 //  11. micro-ROS: PHAT
 // ============================================================================
@@ -1178,6 +1227,7 @@ void ros_task(void *pv) {
     uint32_t spin_dt = micros() - loop_t0;
     if (spin_dt > t_spin_max) t_spin_max = spin_dt;
     publish_scan_if_ready();
+    publish_diag_if_ready();
 
     uint32_t now = millis();
 
@@ -1334,8 +1384,14 @@ static void init_microros() {
 
   RCCHECK(rclc_subscription_init_best_effort(&cmd_vel_sub, &node,
       ROSIDL_GET_MSG_TYPE_SUPPORT(geometry_msgs, msg, Twist), "cmd_vel"));
+  // Chan doan: best-effort, ~250 byte/giay, nam gon mot goi UDP
+  RCCHECK(rclc_publisher_init_best_effort(&diag_pub, &node,
+      ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, String), "diag"));
+  RCCHECK(rclc_subscription_init_default(&estop_reset_sub, &node,
+      ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Empty), "estop_reset"));
 
-  RCCHECK(rclc_executor_init(&executor, &support.context, 1, &allocator));
+  // 2 handle: cmd_vel + estop_reset (thu vien gioi han 5 subscription, 10 publisher)
+  RCCHECK(rclc_executor_init(&executor, &support.context, 2, &allocator));
 
   // ---------------------------------------------------------------------------
   // VAN DE DA DO DUOC TREN PHAN CUNG:
@@ -1355,6 +1411,8 @@ static void init_microros() {
 
   RCCHECK(rclc_executor_add_subscription(&executor, &cmd_vel_sub, &cmd_vel_msg,
                                          &cmd_vel_callback, ON_NEW_DATA));
+  RCCHECK(rclc_executor_add_subscription(&executor, &estop_reset_sub, &estop_reset_msg,
+                                         &estop_reset_callback, ON_NEW_DATA));
   clock_anchor_bootstrap();   // tu goi sync_session ben trong, dung canh tick
 
   // --- Cap bo nho tinh cho cac message (micro-ROS khong tu cap phat) ---
@@ -1456,6 +1514,17 @@ static void init_microros() {
 // ============================================================================
 static void print_reset_reason() {
   esp_reset_reason_t r = esp_reset_reason();
+  switch (r) {   // ten ngan cho /agvN/diag
+    case ESP_RST_POWERON:  reset_reason_str = "POWERON";  break;
+    case ESP_RST_BROWNOUT: reset_reason_str = "BROWNOUT"; break;
+    case ESP_RST_PANIC:    reset_reason_str = "PANIC";    break;
+    case ESP_RST_INT_WDT:
+    case ESP_RST_TASK_WDT:
+    case ESP_RST_WDT:      reset_reason_str = "WATCHDOG"; break;
+    case ESP_RST_SW:       reset_reason_str = "SOFTWARE"; break;
+    case ESP_RST_EXT:      reset_reason_str = "EN_BUTTON"; break;
+    default:               reset_reason_str = "OTHER";    break;
+  }
   Serial.println("\n======================================");
   switch (r) {
     case ESP_RST_POWERON:  Serial.println(">>> Reset: CAP NGUON"); break;
@@ -1607,6 +1676,26 @@ void loop() {
                   (unsigned long)t_imu_max, (unsigned long)t_pub_max,
                   (unsigned long)t_scan_max, (unsigned long)t_sync_max,
                   (unsigned long)t_loop_max);
+
+    // Cung so lieu do gui qua Wi-Fi (/agvN/diag) - doc duoc khi xe chay pin
+    char d[sizeof(diag_buf)];
+    snprintf(d, sizeof(d),
+             "{\"xe\":%d,\"up_s\":%lu,\"reset\":\"%s\",\"estop\":\"%s\",\"estop_resets\":%lu,"
+             "\"rssi\":%d,\"imu_ok\":%d,\"scan_hz\":%.1f,\"rpm\":[%.1f,%.1f],\"tgt\":[%.1f,%.1f],"
+             "\"pwm\":[%d,%d],\"ros_loops\":%lu,\"pub\":[%lu,%lu],\"pub_fail\":%lu,"
+             "\"max_loop_us\":%lu,\"heap\":%lu}",
+             ROBOT_ID, (unsigned long)(millis() / 1000), reset_reason_str,
+             emergency_stop ? (const char *)estop_reason : "", (unsigned long)estop_resets,
+             (int)WiFi.RSSI(), imu_ok ? 1 : 0, scan_freq_hz,
+             wl.current_rpm, wr.current_rpm, wl.target_rpm, wr.target_rpm,
+             wl.output_pwm, wr.output_pwm, (unsigned long)ros_loops,
+             (unsigned long)pub_scan, (unsigned long)pub_imu, (unsigned long)publish_failed,
+             (unsigned long)t_loop_max, (unsigned long)ESP.getFreeHeap());
+    portENTER_CRITICAL(&diag_mux);
+    memcpy(diag_buf, d, sizeof(diag_buf));
+    diag_ready = true;
+    portEXIT_CRITICAL(&diag_mux);
+
     ros_loops = pub_scan = pub_odom = pub_imu = 0;
     t_imu_max = t_pub_max = t_scan_max = t_loop_max = t_spin_max = t_sync_max = 0;
   }

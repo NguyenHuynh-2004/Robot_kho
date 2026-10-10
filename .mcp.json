@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "ros": {
+      "command": "/home/huynh/.local/bin/uvx",
+      "args": ["ros-mcp==3.1.2", "--transport=stdio"],
+      "env": {
+        "ROSBRIDGE_IP": "127.0.0.1",
+        "ROSBRIDGE_PORT": "9090"
+      }
+    }
+  }
+}

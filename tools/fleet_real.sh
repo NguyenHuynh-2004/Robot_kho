@@ -13,11 +13,14 @@
 #   AGV1="3 1 0" AGV2="3 5 180" tools/fleet_real.sh up      # hang cot huong_do
 # Sai vai cm / vai do thi AMCL tu sua khi xe chay; lech nhieu thi:
 #   python3 tools/auto_initial_pose.py --ns agv1
+# Hieu chinh RIENG tung xe (mac dinh = so do tren xe 1):
+#   WHEEL_R_agv2=0.0330 COAST_agv2=0.30 tools/fleet_real.sh up
+#   WHEEL_R_*: ban kinh lan banh (m, wheel_odometry); COAST_*: he so xoay tai cho (s)
 # Da co agent chay rieng (vd bringup_real.launch.py) thi tu dung chung; AGENT=0
 # thi khong bat agent (thu voi ESP32 gia: tools/fleet_fake_robot.py --esp32,
 # them EMULATE=1: LiDAR gia khong co tuong -> inf_is_valid, xoay coast 0).
 WS=$(cd "$(dirname "$0")/.." && pwd)
-L=/tmp/fleet_real
+L=${LOGDIR:-/tmp/fleet_real}   # tools/agvctl dat LOGDIR vao ~/agv_logs/run-*/fleet
 CFG=$WS/src/my_bot_bringup/config
 source /opt/ros/jazzy/setup.bash
 [ -f ~/microros_ws/install/setup.bash ] && source ~/microros_ws/install/setup.bash
@@ -34,6 +37,11 @@ down() {
   fi
   pkill -9 -f "^python3 $WS/fleet_agent\.py" 2>/dev/null
   pkill -9 -f "fleet_(nav|real_robot)\.launch\.py" 2>/dev/null
+  # Tien trinh bi kill -9 de lai cong bo nho chung (/dev/shm/fastrtps_*) bi khoa.
+  # Container Nav2 bat sau ma vuong cong do thi KHONG ai do thay no (da gap:
+  # "RTPS_TRANSPORT_SHM ... open_and_lock_file failed", fleet_agent bao "khong
+  # thay Nav2"). Lenh nay chi xoa vung khong con tien trinh nao dung.
+  fastdds shm clean >/dev/null 2>&1 || true
 }
 
 if [ "${1:-}" = down ]; then
@@ -46,7 +54,7 @@ if [ "${1:-}" = down ]; then
   echo "da tat"; exit 0
 fi
 if [ "${1:-}" != up ]; then
-  sed -n '2,19p' "$0"; exit 1
+  sed -n '2,22p' "$0"; exit 1
 fi
 down
 rm -rf $L; mkdir -p $L
@@ -63,11 +71,22 @@ for n in "${NAMES[@]}"; do
   # EMULATE=1: thu voi ESP32 GIA (LiDAR gia khong co tuong) - giong mo phong
   [ "${EMULATE:-0}" = 1 ] && sed -i 's#^\( *\)data_type: "LaserScan"#&\n\1inf_is_valid: True#' $L/navigation_$n.yaml
 done
-GRID=$CFG/grid_real.yaml
-if [ "${EMULATE:-0}" = 1 ]; then   # xe gia khong co quan tinh -> coast 0 (nhu mo phong)
-  sed -e 's/^\( *coast:\).*/\1 0/' "$CFG/grid_real.yaml" > $L/grid_emulate.yaml
-  GRID=$L/grid_emulate.yaml
-fi
+# File sa ban RIENG tung xe (chi khac rotate.coast): EMULATE -> 0 (xe gia khong
+# quan tinh), COAST_agvN -> so do rieng cua xe do, khong thi giu grid_real.yaml.
+declare -A GRID WHEEL_R
+for n in "${NAMES[@]}"; do
+  c="COAST_$n"; w="WHEEL_R_$n"
+  WHEEL_R[$n]=${!w:-0.03281}
+  coast=${!c:-}
+  [ "${EMULATE:-0}" = 1 ] && coast=0
+  if [ -n "$coast" ]; then
+    sed -e "s/^\( *coast:\).*/\1 $coast/" "$CFG/grid_real.yaml" > $L/grid_$n.yaml
+    GRID[$n]=$L/grid_$n.yaml
+  else
+    GRID[$n]=$CFG/grid_real.yaml
+  fi
+  echo "Xe $n: wheel_radius ${WHEEL_R[$n]} m, coast $(grep -m1 -E '^ *coast:' ${GRID[$n]} | awk '{print $2}')"
+done
 
 pose() {   # "hang cot huong_do" -> "x y yaw_rad"
   python3 - "$@" <<EOF
@@ -114,7 +133,7 @@ for n in "${NAMES[@]}"; do
   read -r X Y YAW <<< "$(pose ${START[$n]})"
   echo "Xe $n dat tai (${START[$n]}) -> map ($X, $Y, $YAW rad)"
   setsid ros2 launch $WS/tools/fleet_real_robot.launch.py ns:=$n x:=$X y:=$Y yaw:=$YAW \
-    > $L/robot_$n.log 2>&1 & PIDS+=($!)
+    wheel_radius:=${WHEEL_R[$n]} > $L/robot_$n.log 2>&1 & PIDS+=($!)
 done
 echo "${PIDS[@]}" > $L/pids
 
@@ -139,7 +158,7 @@ for n in "${NAMES[@]}"; do
 done
 
 for n in "${NAMES[@]}"; do
-  setsid python3 $WS/fleet_agent.py $n --grid $GRID --ros-args -r __ns:=/$n \
+  setsid python3 $WS/fleet_agent.py $n --grid ${GRID[$n]} --ros-args -r __ns:=/$n \
     -r /tf:=/$n/tf -r /tf_static:=/$n/tf_static > $L/agent_$n.log 2>&1 & PIDS+=($!)
 done
 echo "${PIDS[@]}" > $L/pids
