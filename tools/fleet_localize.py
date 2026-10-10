@@ -9,10 +9,11 @@ Diem xuat phat = vi tri AMCL hien tai (fleet_real.sh dat AMCL o cho ban khai
 bao khi bat, nen xe dat dung o la du gan). ICP tinh tien + xoay de anh quet
 trung tuong nhat, roi gui /<xe>/initialpose. Khong lam xe chay.
 
-Khac tools/auto_initial_pose.py (do toan ban do, can >= 60% tia trung tuong):
-cong cu nay chi tinh chinh quanh vi tri dang co nen van dung duoc khi phong
-co them do dac (da gap: xe 1 o cot 1 chi 58%).
+Neu khop KEM quanh vi tri AMCL (vd bat he ma khai bao AGV1/AGV2 khong dung cho
+dat xe), tu DO TREN CA SA BAN: 25 nut x 4 huong, chon cho khop nhat roi ICP.
+Nho vay dat xe o nut nao, mui huong nao cung duoc.
 """
+import sys
 import argparse
 import math
 import time
@@ -78,6 +79,26 @@ def icp(tree, M, RA, x0, y0, th0):
     return best
 
 
+def quick_score(tree, RA, x, y, th):
+    d, _ = tree.query(np.c_[x + RA[:, 0] * np.cos(RA[:, 1] + th), y + RA[:, 0] * np.sin(RA[:, 1] + th)])
+    return float(np.median(d))
+
+
+def board_seeds():
+    """(x, y, yaw) cua LiDAR tai moi nut sa ban x 4 huong (dau xe theo truc sa ban)."""
+    import os
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    from grid_board import Board, config_path
+    b = Board.load(config_path(True))
+    out = []
+    for r, c in b.nodes():
+        x, y = b.xy(r, c)
+        for k in range(4):
+            th = b.yaw + k * math.pi / 2
+            out.append((x + LIDAR_X * math.cos(th), y + LIDAR_X * math.sin(th), th, (r, c, k)))
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('cars', nargs='*', default=['agv1', 'agv2'])
@@ -115,6 +136,17 @@ def main():
             RA.append(np.c_[rr[ok], ang[ok]])
         RA = np.vstack(RA)
         p, (med, good) = icp(tree, M, RA, lx, ly, th)
+        if good < MIN_GOOD:
+            # Do tren ca sa ban: xep hang nhanh 100 diem xuat phat, ICP 5 cho tot nhat
+            seeds = sorted(board_seeds(), key=lambda s: quick_score(tree, RA, s[0], s[1], s[2]))[:5]
+            names = ('Dong', 'Bac', 'Tay', 'Nam')
+            for sx, sy, sth, (r, cc, k) in seeds:
+                q, (m2, g2) = icp(tree, M, RA, sx, sy, sth)
+                if g2 > good:
+                    p, med, good = q, m2, g2
+                    found = f'o ({r + 1},{cc + 1}) huong {names[k]}'
+            if good >= MIN_GOOD:
+                print(f'{c}: khong khop quanh vi tri AMCL -> do tren sa ban: xe dang o {found}')
         bx, by = p[0] - LIDAR_X * math.cos(p[2]), p[1] - LIDAR_X * math.sin(p[2])
         moved = math.hypot(bx - p0.position.x, by - p0.position.y) * 100
         print(f'{c}: AMCL ({p0.position.x:+.3f}, {p0.position.y:+.3f}, {math.degrees(th):+.1f} do) -> '

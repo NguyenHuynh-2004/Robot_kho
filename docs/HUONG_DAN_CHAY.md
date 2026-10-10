@@ -333,8 +333,10 @@ Báo `KHONG THAY` → xe đó chưa bật nguồn hoặc nạp nhầm file.
 ```bash
 python3 tools/fleet_localize.py
 ```
-Mỗi xe phải in `da gui cho AMCL`, độ dời thường vài cm. Báo `KHONG GUI` → xe đặt sai ô,
-hoặc quanh xe có nhiều đồ đạc không có trên bản đồ: đặt lại xe rồi chạy lại lệnh.
+Mỗi xe phải in `da gui cho AMCL`, độ dời thường vài cm. Xe không đứng ở chỗ đã khai báo
+(`AGV1`/`AGV2`) thì công cụ **tự dò cả sa bàn** (25 nút × 4 hướng, vài giây) và in
+`xe dang o (hàng,cột) huong ...` — kiểm tra đúng chỗ bạn đặt xe. Vẫn báo `KHONG GUI` → xe
+không đứng trên nút nào, hoặc quanh xe có nhiều đồ đạc không có trên bản đồ.
 
 Đặt xe ở chỗ khác thì khai báo khi bật:
 ```bash
