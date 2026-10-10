@@ -55,6 +55,7 @@ Chạy lại `grid_navigator.py --real` sau khi đổi. Vẽ lại ảnh xem tr�
 | **Xe thật: mọi thứ treo, không lỗi gì** | sót `use_sim_time:=false` ở một terminal | thêm vào; node đó đang chờ `/clock` mãi |
 | `package 'micro_ros_agent' not found` | chưa source workspace agent | `source ~/microros_ws/install/setup.bash` |
 | Các node không thấy nhau, `ros2 topic list` thiếu topic | thiếu biến discovery | `export ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST` |
+| RViz / Gazebo cực chậm, cửa sổ trắng như treo, tiêu đề có `[WARN:COPY MODE]` | WSL vẽ bằng CPU (llvmpipe) thay vì GPU | `export GALLIUM_DRIVER=d3d12` (đã có trong `~/.bashrc`), mở terminal mới rồi chạy lại. Dòng đỏ `GLSL link result ... indexed_8bit_image` vẫn hiện — vô hại |
 | Nav2 mô phỏng đứng im | `/clock` không chạy | bấm **Play** trong Gazebo |
 | Nhập đích xong xe không chạy | Nav2 chưa xong | `ros2 run tf2_ros tf2_echo map base_footprint` báo `Invalid frame ID "map"` → đợi thêm |
 | ESP32 không kết nối agent sau khi bật lại | ESP32 cần thêm thời gian, hoặc sai `AGENT_IP` | chờ 30 s; kiểm `hostname -I` khớp `AGENT_IP` |
@@ -175,6 +176,8 @@ python3 tools/eval_bag_localization.py ~/bags/thu1 src/my_bot_bringup/config/rea
   đã build sẵn ở `~/microros_ws`. Thiếu dòng này: `package 'micro_ros_agent' not found`.
 - **`fix_wsl_clock.sh`** — `systemd-timesyncd` cãi nhau với Hyper-V làm đồng hồ Ubuntu
   chậm 8.3% rồi giật 2.4 s mỗi ~35 s; tay cầm bị ngắt từng cơn.
+- **`GALLIUM_DRIVER=d3d12`** — Mesa trên WSL mặc định chọn llvmpipe (vẽ bằng CPU, RViz
+  ~150% CPU, cửa sổ như treo). Ép d3d12 thì dùng card AMD qua DirectX: RViz còn ~16% CPU.
 
 ## E. Thuật Toán Đang Dùng
 
@@ -270,6 +273,9 @@ echo 'source ~/robot_ws_3/install/setup.bash'          >> ~/.bashrc
 
 # 2. Sửa lỗi discovery của WSL (BẮT BUỘC)
 echo 'export ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST'  >> ~/.bashrc
+
+# 2b. RViz/Gazebo vẽ bằng GPU (mặc định WSL vẽ bằng CPU -> chậm như treo)
+echo 'export GALLIUM_DRIVER=d3d12'                   >> ~/.bashrc
 source ~/.bashrc
 
 # 3. Build dự án
