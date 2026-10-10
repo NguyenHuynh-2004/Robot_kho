@@ -25,7 +25,7 @@ down() {
   fi
   # Ca tien trinh bat tay ngoai danh sach (vd bat lai mot agent): hai agent
   # cung ten cung ra lenh cho mot Nav2 thi gianh goal cua nhau lien tuc.
-  pkill -9 -f "^python3 $WS/(fleet_agent|tools/fleet_fake_robot)\.py" 2>/dev/null
+  pkill -9 -f "^python3 $WS/(fleet_agent|tools/fleet_fake_robot|tools/fleet_viz)\.py" 2>/dev/null
   pkill -9 -f "^python3 (fleet_agent|tools/fleet_fake_robot)\.py" 2>/dev/null
   pkill -9 -f "fleet_nav\.launch\.py" 2>/dev/null
 }
@@ -116,5 +116,8 @@ for n in "${NAMES[@]}"; do
   setsid python3 $WS/fleet_agent.py $n --grid $L/grid_fleet.yaml --ros-args -r __ns:=/$n \
     -r /tf:=/$n/tf -r /tf_static:=/$n/tf_static > $L/agent_$n.log 2>&1 & PIDS+=($!)
 done
+echo "${PIDS[@]}" > $L/pids
+# Gop TF cac xe vao /tf chung cho RViz (tools/fleet.rviz): frame agvN/..., scan /fleet_viz/agvN/scan
+setsid python3 $WS/tools/fleet_viz.py ${NAMES[@]} > $L/fleet_viz.log 2>&1 & PIDS+=($!)
 echo "${PIDS[@]}" > $L/pids
 echo "Da bat. Log: $L. Dieu phoi: ROS_DOMAIN_ID=$ROS_DOMAIN_ID python3 traffic_manager.py agv1 agv2"

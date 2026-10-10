@@ -240,8 +240,9 @@ liên lạc hiện mờ kèm chữ `MAT LIEN LAC`.
 
 > [!NOTE]
 > Không dùng file RViz của Kịch bản 2 ở đây: mỗi xe có cây TF riêng (`/agv1/tf`,
-> `/agv2/tf`) mà một cửa sổ RViz chỉ đọc được một cây, nên sẽ không thấy xe nào.
-> Bộ điều phối tự vẽ mọi thứ trên khung `map` (topic `/fleet/markers`).
+> `/agv2/tf`). `tools/fleet_sim.sh` tự chạy `tools/fleet_viz.py` gộp hai cây (frame
+> `agv1/...`, `agv2/...`) nên `tools/fleet.rviz` thấy được ảnh quét, costmap, đường đi của
+> từng xe. Xe ảo không có URDF nên mục "Mô hình xe" và "Hạt AMCL" để trống — bình thường.
 
 ### Terminal 4: Gazebo (xem 3D + đặt vật cản)
 ```bash
@@ -365,8 +366,21 @@ cd ~/robot_ws_3
 source install/setup.bash
 rviz2 -d tools/fleet.rviz
 ```
-Thấy bản đồ, lưới sa bàn (điểm đỏ = bị chặn), hai xe (xe 1 xanh dương, xe 2 cam, mũi tên =
-hướng đầu xe), đường còn lại và ô đang giữ của từng xe.
+Hiện đầy đủ như Kịch bản 2, cho **từng xe** (nhóm `Xe 1 (agv1)`, `Xe 2 (agv2)` ở cột trái —
+bỏ dấu tick để ẩn cả nhóm):
+
+| Mục | Ý nghĩa |
+|---|---|
+| Mô hình xe | thân, bánh, LiDAR theo URDF |
+| LaserScan | điểm quét **đỏ, cỡ 5** — phải trùng tường đen |
+| Hạt AMCL | đám mũi tên quanh xe (xe 1 xanh, xe 2 cam); co gọn = định vị chắc |
+| Local Costmap | vùng vật cản quanh xe |
+| Global Costmap | tắt sẵn (hai xe chồng lên nhau rối) — tick để xem |
+| Footprint, Đoạn đang chạy, Local Plan | khung xe, đoạn thẳng đang giao cho Nav2 |
+
+Cộng thêm bản đồ, lưới sa bàn (điểm đỏ = bị chặn), đường còn lại và ô đang giữ của từng xe.
+`tools/fleet_real.sh` tự chạy `tools/fleet_viz.py` để gộp cây TF hai xe (frame `agv1/...`,
+`agv2/...`) cho một cửa sổ RViz.
 
 ### Chạy Thử Từng Bước (đã chạy thật 2026-10-10)
 

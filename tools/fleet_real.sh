@@ -35,7 +35,7 @@ down() {
     for p in $(cat $L/pids); do kill -9 -"$p" 2>/dev/null; done
     rm -f $L/pids
   fi
-  pkill -9 -f "^python3 $WS/fleet_agent\.py" 2>/dev/null
+  pkill -9 -f "^python3 $WS/(fleet_agent|tools/fleet_viz)\.py" 2>/dev/null
   pkill -9 -f "fleet_(nav|real_robot)\.launch\.py" 2>/dev/null
   # Tien trinh bi kill -9 de lai cong bo nho chung (/dev/shm/fastrtps_*) bi khoa.
   # Container Nav2 bat sau ma vuong cong do thi KHONG ai do thay no (da gap:
@@ -161,5 +161,8 @@ for n in "${NAMES[@]}"; do
   setsid python3 $WS/fleet_agent.py $n --grid ${GRID[$n]} --ros-args -r __ns:=/$n \
     -r /tf:=/$n/tf -r /tf_static:=/$n/tf_static > $L/agent_$n.log 2>&1 & PIDS+=($!)
 done
+echo "${PIDS[@]}" > $L/pids
+# Gop TF cac xe vao /tf chung cho RViz (tools/fleet.rviz): frame agvN/..., scan /fleet_viz/agvN/scan
+setsid python3 $WS/tools/fleet_viz.py ${NAMES[@]} > $L/fleet_viz.log 2>&1 & PIDS+=($!)
 echo "${PIDS[@]}" > $L/pids
 echo "Da bat. Log: $L. Dieu phoi: python3 traffic_manager.py ${NAMES[*]}"
