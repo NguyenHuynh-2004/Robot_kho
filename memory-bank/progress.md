@@ -18,7 +18,7 @@
 | 2026-10-05 | Điều phối 2 xe (mô phỏng): giữ chỗ, ưu tiên gần đích, gỡ kẹt; firmware chân mạch in 2026-10-05 | 679f763, c3256a7 |
 | trước đó | 1 xe thật trên sa bàn: xoay tại chỗ bằng gyro + coast, PID Kf 3.0, goal 2 cm; đẩy GitHub "1 Xe" | da0278b |
 
-GitHub: `main` đang **đi trước `origin/main` 18 commit** (chưa đẩy; chỉ đẩy khi người dùng bảo).
+GitHub: đã đẩy 2026-10-11, commit "2 xe chạy thật" (chỉ đẩy khi người dùng bảo).
 
 ## Số đo
 - **Xe 1 thật (2026-10-03):** 9/9 lần xoay ≤ 2.8° trong 4–6 s; tới đích lệch 0.4–1.6 cm;
