@@ -1,0 +1,51 @@
+# Do kich thuoc hang (rong x cao) bang camera nhin thang + khoang cach tu LiDAR.
+# Doc boi cargo_measure.py / cargo_task.py, va tools/sim_cargo.py (camera ao).
+#
+# Xe toi o (5,c) quay Bac -> LiDAR khop duong thang mat truoc hang (Z, goc lech)
+# -> anh camera: tach hang khoi nen -> mep trai/phai/tren/duoi -> chieu tia qua
+# tung mep len mat phang mat truoc hang (tu LiDAR) -> rong, cao (m)
+# -> bang phan loai -> xe chay ve o (1,k).
+
+camera:
+  # ESP32-CAM OV2640 640x480, goc ngang ~66 do. Xe that: thay bang so hieu chuan
+  # (cv2.calibrateCamera, ~15 anh ban co).
+  width: 640
+  height: 480
+  fx: 492.8
+  fy: 492.8
+  cx: 320.0
+  cy: 240.0
+  dist: [-0.12, 0.02, 0.0, 0.0, 0.0]     # k1 k2 p1 p2 k3 (OpenCV)
+  # Vi tri tam quang hoc so voi base_footprint (tam truc banh): truoc, trai, cao (m).
+  # Camera nhin thang ra truoc, khong nghieng. Phai THAP hon mat tren hang thap
+  # nhat - neu cao hon thi thay ca mat tren hop, mep tren anh khong con la mep
+  # mat truoc.
+  x: 0.06
+  y: 0.0
+  z: 0.11
+
+lidar:
+  # LiDAR so voi base_footprint (truoc, cao). Xe that (URDF): 0.014; xe ao: 0.0.
+  x: 0.014
+  z: 0.075
+  half_fov_deg: 35        # chi xet tia trong +-35 do phia truoc
+  max_range: 0.9          # m - xa hon la nen, khong phai hang
+  scans: 10               # so vong quet lay trung binh
+
+place:
+  # Hang dat phia Bac o (5,c): mat truoc cach tam xe (o dich) gap m.
+  # < 0.25 m thi costmap chan luon nut (5,c) (node_clearance).
+  gap: 0.35
+
+# Gioi han do (gap 0.35, camera cach mat hang ~0.29 m): rong toi ~0.33 m, cao toi
+# ~0.25 m (camera.z + 0.29 * 240 / fy) - hang cham mep anh thi bao loi, khong giao.
+# Cao phai > camera.z (0.11) neu khong se thay mat tren (co canh bao).
+# Bang phan loai: dong DAU TIEN khop thi chon cot do o hang 1. Don vi m.
+# Sai so do ~2-3 mm: kich thuoc sat nguong (vd rong 12.0 cm voi max_w 0.12) co the
+# roi sang loai ben canh.
+# Hang 1 chi dung cot 1-4 (o (1,5) sat vat can tren ban do that).
+classes:
+  - {name: "nho",  max_w: 0.12, max_h: 0.15, col: 1}
+  - {name: "vua",  max_w: 0.18, max_h: 0.15, col: 2}
+  - {name: "cao",  max_w: 0.18, max_h: 0.30, col: 3}
+  - {name: "rong", max_w: 0.33, max_h: 0.30, col: 4}

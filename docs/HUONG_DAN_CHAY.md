@@ -293,6 +293,39 @@ tools/fleet_sim.sh down          # tắt cả Gazebo của Terminal 4
 Quy tắc điều phối và kết quả kiểm thử:
 [SA_BAN_VA_TAI_LIEU.md — Phụ lục F](SA_BAN_VA_TAI_LIEU.md#f-quy-tắc-điều-phối-hai-xe).
 
+### Thêm: Đo Hàng Bằng Camera (mô phỏng, rộng × cao)
+
+Xe tới ô (5,c) quay Bắc → **LiDAR** khớp mặt trước hàng (khoảng cách Z, góc lệch) →
+**camera nhìn thẳng** chụp, tách hàng khỏi nền, tìm 4 mép → chiếu từng mép lên mặt
+phẳng mặt hàng → **rộng × cao** → bảng phân loại → xe tự chạy về ô (1,k). Xe không chở
+hàng. Cấu hình (camera, khoảng đặt hàng, bảng loại): `src/my_bot_bringup/config/cargo.yaml`.
+
+Bật Terminal 1 + 2 như trên (Terminal 1 thêm `FAKE_LIDAR_NOISE=0.01 FAKE_RAYS=320` cho
+LiDAR ảo nhiễu giống X2), rồi:
+
+```bash
+# Terminal 5: hàng hoá + camera ảo — "cột:rộng:cao:sâu[:xoay_độ[:lệch_ngang]]" (m)
+ROS_DOMAIN_ID=87 python3 tools/sim_cargo.py agv1 agv2 --goods "2:0.15:0.20:0.12, 4:0.10:0.12:0.10:5"
+# Terminal 6: nhiệm vụ đo hàng — nhập "1 2" = xe 1 đo hàng ở (5,2); "2 4" = xe 2 ở (5,4)
+ROS_DOMAIN_ID=87 python3 cargo_task.py agv1 agv2
+```
+Đổi hàng lúc đang chạy:
+`ROS_DOMAIN_ID=87 ros2 topic pub --once /sim/cargo_set std_msgs/msg/String "{data: '3:0.2:0.18:0.15'}"`.
+RViz (Terminal 3) thấy hộp hàng màu nâu ở phía Bắc hàng 5 và chữ kết quả trên ô hàng 1.
+Kết quả + ảnh có vẽ khung: `~/agv_logs/cargo/` (`results.csv`).
+
+| Đo trong mô phỏng (2026-10-12) | Kết quả |
+|---|---|
+| 9 lần đo, hàng 9–30 cm, xoay tới 21°, xe lệch 3 cm / 3° | sai **≤ 3,5 mm** |
+| Hai xe cùng loại hàng → cùng ô (1,1) | xe giao trước lùi lên hàng 2 nhường ô |
+| Hàng rộng 40 cm (quá khung hình) / ô không có hàng | báo **không đo được**, xe không giao |
+
+> [!WARNING]
+> Giới hạn (camera cao 11 cm, hàng cách tâm ô 35 cm): rộng ≤ ~33 cm, cao 11–25 cm. Hàng
+> thấp hơn camera thì thấy cả mặt trên → chiều cao sai vài mm (có cảnh báo). Kích thước
+> sát ngưỡng bảng loại (vd rộng 12,0 cm với ngưỡng 12 cm) có thể rơi sang loại bên cạnh.
+> Xe thật cần thêm ESP32-CAM + hiệu chuẩn camera — chưa làm.
+
 ---
 
 ## 4️⃣ Kịch Bản 4: Chạy Hai Xe Thật (Cần 3 Terminals)

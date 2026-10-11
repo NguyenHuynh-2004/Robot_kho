@@ -9,6 +9,10 @@
   xe thay nhau la vat can - va VAT CAN dat tu ngoai qua topic /sim/obstacles
   (std_msgs/String "x,y;x,y", moi vat la hinh tron duong kinh 20 cm; chuoi
   rong = bo het).
+- HOP (hang hoa, tools/sim_cargo.py) qua /sim/boxes (JSON [{x,y,yaw,w,d,h}],
+  hinh chu nhat xoay) - LiDAR thay mat hop nhu tuong.
+Bien moi truong: FAKE_LIDAR_NOISE (m, nhieu Gauss moi tia, mac dinh 0; X2 that
+~0.01), FAKE_RAYS (so tia/vong, mac dinh 360; X2 that 320).
 
     python3 tools/fleet_fake_robot.py X Y YAW_DO --other /agv2/odom \\
         --ros-args -r __ns:=/agv1 -r /tf:=/agv1/tf -r /tf_static:=/agv1/tf_static
@@ -45,7 +49,8 @@ DEAD_V, DEAD_W = 0.04, 0.25
 DELAY = float(os.environ.get('FAKE_DELAY', '0.3'))
 BODY_R = 0.09
 OBST_R = 0.10
-N_RAYS = 360
+N_RAYS = int(os.environ.get('FAKE_RAYS', '360'))
+NOISE = float(os.environ.get('FAKE_LIDAR_NOISE', '0'))
 
 
 class FakeRobot(Node):
@@ -60,8 +65,11 @@ class FakeRobot(Node):
         self.hist = []
         self.other_pose = {}
         self.obstacles = []
+        self.boxes = []
+        self.rng = np.random.default_rng()
         self.create_subscription(Twist, 'cmd_vel', self.cb_cmd, 10)
         self.create_subscription(String, '/sim/obstacles', self.cb_obst, 10)
+        self.create_subscription(String, '/sim/boxes', self.cb_boxes, 10)
         for topic in others:
             self.create_subscription(Odometry, topic,
                                      lambda m, t=topic: self.cb_other(t, m), 10)
@@ -101,6 +109,29 @@ class FakeRobot(Node):
                 x, y = (float(v) for v in item.split(','))
                 obs.append((x, y, OBST_R))
         self.obstacles = obs
+
+    def cb_boxes(self, m):
+        self.boxes = json.loads(m.data) if m.data.strip() else []
+
+    def box_ranges(self, s):
+        """Khoang cach tia -> hop gan nhat (inf neu khong cham). Hop: tam (x, y),
+        xoay yaw, canh w (truc x rieng) x d (truc y rieng)."""
+        a = s.angle_min + np.arange(N_RAYS) * s.angle_increment + self.th
+        out = np.full(N_RAYS, np.inf)
+        for b in self.boxes:
+            c, sn = math.cos(b['yaw']), math.sin(b['yaw'])
+            # goc tia va huong tia trong he hop
+            px, py = self.x - b['x'], self.y - b['y']
+            ox, oy = c * px + sn * py, -sn * px + c * py
+            dx, dy = c * np.cos(a) + sn * np.sin(a), -sn * np.cos(a) + c * np.sin(a)
+            with np.errstate(divide='ignore', invalid='ignore'):
+                t1x, t2x = (-b['w'] / 2 - ox) / dx, (b['w'] / 2 - ox) / dx
+                t1y, t2y = (-b['d'] / 2 - oy) / dy, (b['d'] / 2 - oy) / dy
+            tmin = np.maximum(np.minimum(t1x, t2x), np.minimum(t1y, t2y))
+            tmax = np.minimum(np.maximum(t1x, t2x), np.maximum(t1y, t2y))
+            hit = (tmax >= tmin) & (tmin > 0)
+            out = np.where(hit & (tmin < out), tmin, out)
+        return out
 
     def cb_other(self, topic, m):
         p = m.pose.pose.position          # map->odom la dong nhat nen odom = map
@@ -206,7 +237,14 @@ class FakeRobot(Node):
                     perp = d * math.sin(diff)
                     r = proj - math.sqrt(max(0.0, rad ** 2 - perp ** 2))
                     rng[k] = min(rng[k], max(r, s.range_min))
-        s.ranges = rng
+        if self.boxes:
+            rng = list(np.minimum(np.array(rng, dtype=float), self.box_ranges(s)))
+        if NOISE > 0:
+            r = np.array(rng, dtype=float)
+            fin = np.isfinite(r)
+            r[fin] = np.maximum(r[fin] + self.rng.normal(0, NOISE, int(fin.sum())), s.range_min)
+            rng = r.tolist()
+        s.ranges = [float(v) for v in rng]
         self.scan_pub.publish(s)
 
 

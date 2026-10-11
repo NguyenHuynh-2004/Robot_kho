@@ -1,0 +1,331 @@
+#!/usr/bin/env python3
+"""Do RONG x CAO hang truoc mat xe: LiDAR cho mat phang mat truoc hang, camera
+nhin thang cho cac mep.
+
+    python3 cargo_measure.py agv1 [--save anh.png]     # do mot lan (xe dang dung yen)
+
+Cach tinh (he base_footprint: x truoc, y trai, z len):
+ 1. LiDAR (cargo.yaml lidar.*): diem trong +-half_fov_deg phia truoc, gan hon
+    max_range, gop nhieu vong quet -> cum gan truc xe nhat -> RANSAC duong
+    thang = mat truoc hang: n.p = d (mat phang dung), goc lech, hai mut.
+ 2. Anh: khu meo (camera.dist) -> tach hang khoi nen theo DO BAO HOA (bia carton
+    co mau, tuong/san xam) -> thanh phan chua diem giua mat truoc (chieu tu LiDAR).
+ 3. Mep trai/phai (trung vi cac hang giua), mep tren/duoi (trung vi cac cot giua).
+    Neu mep lech > EDGE_TOL so voi mut LiDAR chieu len anh (hop xoay -> thay
+    them mat ben) thi lay vach doi do sang manh nhat gan mut LiDAR.
+ 4. Tia tu tam camera qua tung mep cat mat phang mat truoc -> diem 3D -> rong
+    (ngang), cao (doc). Day mat truoc phai o z ~ 0 (dung tren san).
+"""
+import math
+import os
+import sys
+import time
+
+import cv2
+import numpy as np
+import yaml
+
+WS = os.path.dirname(os.path.abspath(__file__))
+CFG = os.path.join(WS, 'src/my_bot_bringup/config/cargo.yaml')
+EDGE_TOL = 0.012        # m: mep anh lech mut LiDAR hon muc nay -> nghi thay mat ben
+
+
+def load_cfg(path=CFG):
+    with open(path) as f:
+        return yaml.safe_load(f)
+
+
+# ---------------------------------------------------------------------- LiDAR
+def lidar_points(scans, lidar_x, cfg):
+    """scans: [(angle_min, angle_increment, ranges)] -> diem (N,2) he base."""
+    half = math.radians(cfg['lidar']['half_fov_deg'])
+    if not scans:
+        return np.zeros((0, 2))
+    amin, inc, _ = scans[-1]
+    n = len(scans[-1][2])
+    same = [np.asarray(rr, float) for a0, i0, rr in scans
+            if len(rr) == n and abs(a0 - amin) < 1e-6 and abs(i0 - inc) < 1e-9]
+    # Xe dung yen: TRUNG VI tung tia qua cac vong quet (nhieu X2 ~1 cm/tia -> ~3 mm),
+    # bo tia khong phan hoi (0/inf) truoc khi lay trung vi
+    R = np.array(same)
+    R[~np.isfinite(R) | (R <= 0.05)] = np.nan
+    with np.errstate(all='ignore'), __import__('warnings').catch_warnings():
+        __import__('warnings').simplefilter('ignore', RuntimeWarning)
+        rr = np.nanmedian(R, axis=0)
+        hits = np.sum(np.isfinite(R), axis=0)
+    a = amin + np.arange(n) * inc
+    a = np.arctan2(np.sin(a), np.cos(a))
+    ok = (np.isfinite(rr) & (hits >= max(2, len(R) // 2)) & (rr < cfg['lidar']['max_range'])
+          & (np.abs(a) < half))
+    return np.c_[lidar_x + rr[ok] * np.cos(a[ok]), rr[ok] * np.sin(a[ok])]
+
+
+def fit_face(P, rng=np.random.default_rng(0)):
+    """Mat truoc hang tu diem LiDAR. Tra dict hoac raise ValueError."""
+    if len(P) < 5:
+        raise ValueError(f'LiDAR chi thay {len(P)} diem phia truoc - khong co hang?')
+    # cum gan truc xe nhat: chia theo goc nhin, tach khi khoang cach nhay > 4 cm
+    order = np.argsort(np.arctan2(P[:, 1], P[:, 0]))
+    Q = P[order]
+    near = np.argmin(np.abs(Q[:, 1]) + 0.3 * Q[:, 0])
+    # gom diem lien ke trong 4 cm (lan tu diem gan truc)
+    from scipy.spatial import cKDTree
+    tree = cKDTree(Q)
+    keep = np.zeros(len(Q), bool)
+    keep[near] = True
+    frontier = [near]
+    while frontier:
+        i = frontier.pop()
+        for j in tree.query_ball_point(Q[i], 0.04):
+            if not keep[j]:
+                keep[j] = True
+                frontier.append(j)
+    C = Q[keep]
+    if len(C) < 5:
+        raise ValueError('cum diem truoc xe qua it')
+    # RANSAC duong thang (nguong 8 mm) - mat truoc; diem mat ben (hop xoay) bi loai
+    best, best_in = -1, None
+    for _ in range(300):
+        i, j = rng.choice(len(C), 2, replace=False)
+        v = C[j] - C[i]
+        L = np.linalg.norm(v)
+        if L < 0.03:
+            continue
+        n = np.array([-v[1], v[0]]) / L
+        if abs(n[0]) < 0.7:                    # mat lech > 45 do: khong phai mat truoc
+            continue
+        inl = np.abs((C - C[i]) @ n) < 0.008
+        if inl.sum() > best:
+            best, best_in = inl.sum(), inl
+    if best_in is None:
+        raise ValueError('khong khop duoc mat truoc hang')
+    I = C[best_in]
+    for _ in range(2):                         # khop lai bang binh phuong toi thieu
+        m = I.mean(0)
+        _, _, vt = np.linalg.svd(I - m)
+        t = vt[0]                              # huong doc mat
+        n = np.array([-t[1], t[0]])
+        I = C[np.abs((C - m) @ n) < 0.008]
+    m = I.mean(0)
+    _, _, vt = np.linalg.svd(I - m)
+    t = vt[0]
+    n = np.array([-t[1], t[0]])
+    if n[0] > 0:
+        n = -n                                 # phap tuyen huong ve xe
+    d = float(n @ m)
+    s = (I - m) @ t
+    ends = [m + s.min() * t, m + s.max() * t]
+    ends.sort(key=lambda p: -p[1])             # [trai (y lon), phai]
+    return {'n': n, 'd': d, 'mid': m, 'left': ends[0], 'right': ends[1],
+            'yaw_deg': math.degrees(math.atan2(-n[1], -n[0])),
+            'width': float(s.max() - s.min()), 'points': int(len(I)),
+            'dist': float(-d)}   # khoang cach tu goc base toi mat (doc phap tuyen)
+
+
+# --------------------------------------------------------------------- camera
+class Camera:
+    def __init__(self, cfg):
+        c = cfg['camera']
+        self.K = np.array([[c['fx'], 0, c['cx']], [0, c['fy'], c['cy']], [0, 0, 1.0]])
+        self.D = np.array(c['dist'], float)
+        self.C = np.array([c['x'], c['y'], c['z']], float)
+
+    def project(self, p):
+        """Diem 3D he base -> pixel (anh da khu meo)."""
+        fwd, left, up = p[0] - self.C[0], p[1] - self.C[1], p[2] - self.C[2]
+        return np.array([self.K[0, 2] - self.K[0, 0] * left / fwd,
+                         self.K[1, 2] - self.K[1, 1] * up / fwd])
+
+    def ray_plane(self, u, v, n, d):
+        """Tia qua pixel (u, v) (anh khu meo) cat mat phang dung n.(x,y) = d -> diem 3D."""
+        dirv = np.array([1.0, -(u - self.K[0, 2]) / self.K[0, 0], -(v - self.K[1, 2]) / self.K[1, 1]])
+        den = n @ dirv[:2]
+        if abs(den) < 1e-6:
+            raise ValueError('tia song song mat hang')
+        t = (d - n @ self.C[:2]) / den
+        return self.C + t * dirv
+
+
+def segment(img):
+    """Mat na hang: do bao hoa cao (Otsu) - nen trang/xam it mau."""
+    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+    S = cv2.GaussianBlur(hsv[:, :, 1], (5, 5), 0)
+    thr, mask = cv2.threshold(S, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    if thr < 25:                     # anh gan nhu khong co gi co mau
+        mask[:] = 0
+    k = np.ones((5, 5), np.uint8)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, k)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, k)
+    return mask
+
+
+def runs_edges(row, c0):
+    """Hang/cot nhi phan, diem c0 nam trong -> (mep dau, mep cuoi) toa do pixel (bien o)."""
+    if not row[c0]:
+        return None
+    a = c0
+    while a > 0 and row[a - 1]:
+        a -= 1
+    b = c0
+    while b < len(row) - 1 and row[b + 1]:
+        b += 1
+    return a - 0.5, b + 0.5, a == 0 or b == len(row) - 1
+
+
+def refine_edge(gray_row, u_pred, u_mask, side):
+    """Hop xoay, camera thay ca mat ben: mep mat na la goc SAU. Goc truoc = vach
+    doi do sang (mat truoc / mat ben) manh nhat BEN TRONG mat na, tu mep mat na
+    toi qua mut LiDAR 12 px."""
+    g = np.abs(np.diff(cv2.GaussianBlur(gray_row.astype(float).reshape(1, -1), (5, 1), 0).ravel()))
+    if side == 'left':
+        lo, hi = int(u_mask + 0.5) + 2, int(round(u_pred)) + 12
+    else:
+        lo, hi = int(round(u_pred)) - 12, int(u_mask - 0.5) - 2
+    lo, hi = max(lo, 1), min(hi, len(g) - 1)
+    if hi - lo < 2:
+        return u_mask
+    return lo + int(np.argmax(g[lo:hi])) + 0.5    # g[k] = |I(k+1) - I(k)| -> bien k+0.5
+
+
+def measure(img_bgr, scans, cfg, lidar_x=None):
+    """Tra dict ket qua (m) + anh ve chu thich. raise ValueError neu khong do duoc."""
+    lx = cfg['lidar']['x'] if lidar_x is None else lidar_x
+    face = fit_face(lidar_points(scans, lx, cfg))
+    cam = Camera(cfg)
+    und = cv2.undistort(img_bgr, cam.K, cam.D)
+    mask = segment(und) > 0
+    H, W = mask.shape
+    n, d = face['n'], face['d']
+    warn = []
+    if abs(face['yaw_deg']) > 8:
+        warn.append(f'mat hang lech {face["yaw_deg"]:+.1f} do')
+    # diem giua mat truoc o do cao LiDAR -> pixel hat giong
+    zl = cfg['lidar']['z']
+    u_mid, v_ref = cam.project(np.r_[face['mid'], zl])
+    uL, _ = cam.project(np.r_[face['left'], zl])
+    uR, _ = cam.project(np.r_[face['right'], zl])
+    ui = int(round(u_mid))
+    if not (0 <= ui < W):
+        raise ValueError('mat hang ngoai khung anh')
+    col = mask[:, ui]
+    vs = int(round(v_ref))
+    if not col[min(max(vs, 0), H - 1)]:
+        # do cao LiDAR co the duoi khung/ngoai mat na: lay diem mat na gan nhat tren cot
+        ys = np.nonzero(col)[0]
+        if not len(ys):
+            raise ValueError('camera khong thay hang (mat na rong tai cot giua)')
+        vs = int(ys[np.argmin(np.abs(ys - v_ref))])
+    e = runs_edges(col, vs)
+    top0, bot0, touch_v = e
+    # mep trai/phai: trung vi tren cac hang 35-65% chieu cao mat
+    rows = np.linspace(top0 + 0.35 * (bot0 - top0), top0 + 0.65 * (bot0 - top0), 15).astype(int)
+    gray = cv2.cvtColor(und, cv2.COLOR_BGR2GRAY)
+    # Mat ben trai/phai lo ra khi camera nam ngoai mat phang mat ben do (hop xoay,
+    # xe lech ngang). t: huong doc mat truoc, sang trai.
+    t = np.array([-n[1], n[0]])
+    if t[1] < 0:
+        t = -t
+    see_left = (cam.C[:2] - face['left']) @ t > 0.005
+    see_right = (cam.C[:2] - face['right']) @ (-t) > 0.005
+    lefts, rights, touch_h = [], [], False
+    for r in rows:
+        e = runs_edges(mask[r], ui)
+        if e is None:
+            continue
+        a, b, tch = e
+        touch_h |= tch
+        if see_left and (uL - a) * face['dist'] / cam.K[0, 0] > EDGE_TOL / 3:
+            a = refine_edge(gray[r], uL, a, 'left')
+        if see_right and (b - uR) * face['dist'] / cam.K[0, 0] > EDGE_TOL / 3:
+            b = refine_edge(gray[r], uR, b, 'right')
+        lefts.append(a)
+        rights.append(b)
+    if len(lefts) < 5:
+        raise ValueError('khong tim duoc mep trai/phai')
+    ua, ub = float(np.median(lefts)), float(np.median(rights))
+    # mep tren/duoi: trung vi cac cot 30-70% be rong
+    tops, bots = [], []
+    for c in np.linspace(ua + 0.3 * (ub - ua), ua + 0.7 * (ub - ua), 15).astype(int):
+        e = runs_edges(mask[:, c], vs)
+        if e is not None:
+            tops.append(e[0])
+            bots.append(e[1])
+            touch_v |= e[2]
+    va, vb = float(np.median(tops)), float(np.median(bots))
+    vm = 0.5 * (va + vb)
+    PL, PR = cam.ray_plane(ua, vm, n, d), cam.ray_plane(ub, vm, n, d)
+    um = 0.5 * (ua + ub)
+    PT, PB = cam.ray_plane(um, va, n, d), cam.ray_plane(um, vb, n, d)
+    width = float(np.linalg.norm(PL[:2] - PR[:2]))
+    height = float(PT[2] - PB[2])
+    if touch_h or touch_v:
+        # rong/cao hon khung hinh: so do bi cat, khong duoc phan loai
+        raise ValueError('hang cham mep anh (rong/cao qua khung hinh) - khong do duoc; '
+                         'dat hang xa hon (place.gap) hoac hang nho hon')
+    if abs(PB[2]) > 0.015:
+        warn.append(f'day hang o z={PB[2] * 100:+.1f} cm (khong tren san? bong do?)')
+    if PT[2] < cam.C[2] + 0.005:
+        warn.append('mat tren hang thap hon camera - thay ca mat tren, chieu cao co the sai')
+    if abs(width - face['width']) > 0.03:
+        warn.append(f'rong camera {width * 100:.1f} cm khac LiDAR {face["width"] * 100:.1f} cm')
+    # anh chu thich
+    vis = und.copy()
+    cnts, _ = cv2.findContours(mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    cv2.drawContours(vis, cnts, -1, (0, 255, 255), 1)
+    cv2.rectangle(vis, (int(ua), int(va)), (int(ub), int(vb)), (0, 0, 255), 2)
+    for u in (uL, uR):
+        cv2.line(vis, (int(u), int(v_ref) - 8), (int(u), int(v_ref) + 8), (255, 0, 0), 2)
+    cv2.putText(vis, f'rong {width * 100:.1f} cm  cao {height * 100:.1f} cm  Z {(-d - cam.C[0]) * 100:.1f} cm',
+                (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+    return {'width': width, 'height': height, 'z_cam': float(-d - cam.C[0]),
+            'face_yaw_deg': face['yaw_deg'], 'lidar_width': face['width'],
+            'lidar_points': face['points'], 'bottom_z': float(PB[2]),
+            'edges_px': [ua, ub, va, vb], 'warnings': warn}, vis
+
+
+def classify(cfg, width, height):
+    for c in cfg['classes']:
+        if width <= c['max_w'] and height <= c['max_h']:
+            return c
+    return None
+
+
+# ------------------------------------------------------------- do mot lan (CLI)
+def main():
+    import rclpy
+    from rclpy.qos import qos_profile_sensor_data
+    from sensor_msgs.msg import Image, LaserScan
+    args = sys.argv[1:]
+    car = args[0] if args and not args[0].startswith('--') else 'agv1'
+    out = args[args.index('--save') + 1] if '--save' in args else None
+    cfg = load_cfg()
+    rclpy.init()
+    node = rclpy.create_node('cargo_measure_once')
+    scans, img = [], {}
+    node.create_subscription(LaserScan, f'/{car}/scan',
+                             lambda m: scans.append((m.angle_min, m.angle_increment, list(m.ranges))),
+                             qos_profile_sensor_data)
+    node.create_subscription(Image, f'/{car}/camera/image_raw', lambda m: img.__setitem__('m', m), 2)
+    t0 = time.time()
+    while time.time() - t0 < 10 and (len(scans) < cfg['lidar']['scans'] or 'm' not in img):
+        rclpy.spin_once(node, timeout_sec=0.1)
+    if 'm' not in img or not scans:
+        sys.exit(f'Khong nhan duoc anh /{car}/camera/image_raw hoac /{car}/scan')
+    m = img['m']
+    frame = np.frombuffer(bytes(m.data), np.uint8).reshape(m.height, m.width, 3)
+    lx = float(os.environ.get('LIDAR_X', cfg['lidar']['x']))
+    res, vis = measure(frame, scans[-cfg['lidar']['scans']:], cfg, lx)
+    c = classify(cfg, res['width'], res['height'])
+    print(f'{car}: rong {res["width"] * 100:.1f} cm, cao {res["height"] * 100:.1f} cm '
+          f'(Z camera {res["z_cam"] * 100:.1f} cm, mat lech {res["face_yaw_deg"]:+.1f} do, '
+          f'LiDAR rong {res["lidar_width"] * 100:.1f} cm) -> '
+          + (f'loai "{c["name"]}" -> o (1,{c["col"]})' if c else 'KHONG khop loai nao'))
+    for w in res['warnings']:
+        print('  canh bao:', w)
+    if out:
+        cv2.imwrite(out, vis)
+        print('  anh:', out)
+
+
+if __name__ == '__main__':
+    main()

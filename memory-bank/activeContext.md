@@ -24,15 +24,17 @@ Phần cứng đã chốt:
 - Chế độ 1 xe chưa chạy lại sau khi đổi URDF (base_footprint) — nên thử một lần.
 - Xe 2 vẫn dùng `wheel_radius`/`coast` của xe 1 (chạy thật thấy ổn).
 
-## Ý tưởng tiếp theo (chưa làm, 2026-10-11)
-Đo kích thước hàng ở hàng 5 rồi xe chạy về ô tương ứng ở hàng 1 (xe KHÔNG chở hàng).
-Người dùng chốt: **camera nhìn thẳng** (ESP32-CAM riêng, nguồn 5 V riêng), **Z lấy từ LiDAR**
-(khớp đường thẳng mặt trước hàng, ±15° phía trước). Camera nhìn thẳng chỉ cho rộng × cao;
-chiều sâu cần LiDAR nhìn chéo từ ô bên cạnh — **chờ người dùng chốt cần đo chiều nào**.
-Ràng buộc: hàng cao > ~10 cm (LiDAR ở 7,5 cm), cách nút hàng 5 khoảng 30–40 cm (gần hơn
-costmap chặn nút), nền trơn; hàng 1 chỉ dùng (1,1)–(1,4) vì (1,5) bị bỏ.
-Luồng: lệnh `do <xe> 5 <c>` trong traffic_manager → tới (5,c) hướng Bắc → LiDAR Z + ảnh →
-`rộng = w_px·Z/fx` → bảng phân loại → goal (1,k). Dự kiến ±3–5 mm.
+## Đo hàng bằng camera — ĐÃ CHẠY MÔ PHỎNG (2026-10-12), chưa làm xe thật
+Chỉ đo **rộng × cao**; camera nhìn thẳng (cao 11 cm, trước trục 6 cm), **Z + mặt phẳng mặt hàng
+từ LiDAR** (trung vị từng tia qua 10 vòng → RANSAC đường thẳng); xe KHÔNG chở hàng.
+- `cargo_measure.py` (thuật toán + đo 1 lần), `cargo_task.py` (lệnh "1 3": tới (5,3) quay Bắc →
+  đo → `cargo.yaml classes` → `/fleet/goal` về (1,k); ô có xe đã giao đỗ → xe đó lùi lên hàng 2),
+  `tools/sim_cargo.py` (hộp + camera ảo có méo/nhiễu/JPEG), `fleet_fake_robot` thấy hộp
+  (`FAKE_LIDAR_NOISE`, `FAKE_RAYS`). Hướng dẫn: HUONG_DAN_CHAY Kịch bản 3 → "Đo Hàng Bằng Camera".
+- Kết quả mô phỏng: sai ≤ 3,5 mm (hàng 9–30 cm, xoay ≤ 21°, xe lệch 3 cm/3°); hàng chạm mép ảnh
+  → báo lỗi, không giao. Giới hạn: rộng ≤ ~33 cm, cao 11–25 cm, hàng cách tâm ô 35 cm.
+- Xe thật còn thiếu: ESP32-CAM + nguồn 5 V riêng, firmware chụp (HTTP `/capture` → node phát
+  `/agvN/camera/image_raw`), hiệu chuẩn (thay `camera.*` trong cargo.yaml), đo vị trí lắp camera.
 
 ## Gợi ý khi người dùng quay lại
 - Chạy: `tools/fleet_real.sh up` → `python3 tools/fleet_localize.py` → `traffic_manager.py`.
