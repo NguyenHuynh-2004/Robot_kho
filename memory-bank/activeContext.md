@@ -24,17 +24,22 @@ Phần cứng đã chốt:
 - Chế độ 1 xe chưa chạy lại sau khi đổi URDF (base_footprint) — nên thử một lần.
 - Xe 2 vẫn dùng `wheel_radius`/`coast` của xe 1 (chạy thật thấy ổn).
 
-## Đo hàng bằng camera — ĐÃ CHẠY MÔ PHỎNG (2026-10-12), chưa làm xe thật
-Chỉ đo **rộng × cao**; camera nhìn thẳng (cao 11 cm, trước trục 6 cm), **Z + mặt phẳng mặt hàng
-từ LiDAR** (trung vị từng tia qua 10 vòng → RANSAC đường thẳng); xe KHÔNG chở hàng.
-- `cargo_measure.py` (thuật toán + đo 1 lần), `cargo_task.py` (lệnh "1 3": tới (5,3) quay Bắc →
-  đo → `cargo.yaml classes` → `/fleet/goal` về (1,k); ô có xe đã giao đỗ → xe đó lùi lên hàng 2),
-  `tools/sim_cargo.py` (hộp + camera ảo có méo/nhiễu/JPEG), `fleet_fake_robot` thấy hộp
-  (`FAKE_LIDAR_NOISE`, `FAKE_RAYS`). Hướng dẫn: HUONG_DAN_CHAY Kịch bản 3 → "Đo Hàng Bằng Camera".
-- Kết quả mô phỏng: sai ≤ 3,5 mm (hàng 9–30 cm, xoay ≤ 21°, xe lệch 3 cm/3°); hàng chạm mép ảnh
-  → báo lỗi, không giao. Giới hạn: rộng ≤ ~33 cm, cao 11–25 cm, hàng cách tâm ô 35 cm.
-- Xe thật còn thiếu: ESP32-CAM + nguồn 5 V riêng, firmware chụp (HTTP `/capture` → node phát
-  `/agvN/camera/image_raw`), hiệu chuẩn (thay `camera.*` trong cargo.yaml), đo vị trí lắp camera.
+## Đo hàng bằng camera — code xe thật XONG (2026-10-13), CHỜ phần cứng
+Chỉ đo **rộng × cao**; camera nhìn thẳng, **Z + mặt phẳng mặt hàng từ LiDAR**; xe KHÔNG chở hàng.
+**Lấy hàng phía Đông ô (2..5, 5)** (xe quay Đông; (1,5) bị bỏ), **trả về hàng 1** cột theo loại
+(`cargo.yaml place.*`, `classes`). Lệnh `cargo_task.py`: "<xe> <hàng>" (vd "1 3" → (3,5)).
+- ESP32-CAM: `firmware/esp32_cam` (`#define XE`, IP tĩnh .200/.201, `/capture` :80, `/stream` :81,
+  `/status`), biên dịch OK (board esp32cam); đã chép `D:\CTU\Ardunio ide\code\Cam_1`, `Cam_2`
+  (+ wifi_config.h). Người dùng có sẵn `CameraWebServer`, `code_camera` (QQVGA) — không dùng.
+- `tools/esp32_cam_node.py` (tham khảo esp32_cam_node.py người dùng gửi: luồng riêng giữ ảnh mới
+  nhất; thêm mode capture mặc định, tự nối lại, rotate) — `fleet_real.sh up` tự bật (`CAM=0` tắt).
+  Thử với ESP32-CAM giả: capture 5/s, stream 12/s, mất/nối lại OK.
+- `tools/cam_calib.py agvN` → `config/camera_agvN.yaml` (đè `camera:`; x,y,z đo tay). Thử bàn cờ
+  giả: fx 492,1/492,8, RMS 0,28. `cargo_task.py --sim` bỏ qua file hiệu chuẩn.
+- Mô phỏng bố trí mới: 4 hàng sai ≤ 1 mm, về đúng (1,1)–(1,4).
+- **Chờ người dùng:** lắp ESP32-CAM + nguồn 5 V riêng, nạp Cam_1/Cam_2, hiệu chuẩn, đo x,y,z.
+- Bẫy: thử phát hiện node bằng `timeout ros2 run ...` cho kết quả sai (chập chờn) — chạy
+  thẳng python, chờ ≥ 5 s.
 
 ## Gợi ý khi người dùng quay lại
 - Chạy: `tools/fleet_real.sh up` → `python3 tools/fleet_localize.py` → `traffic_manager.py`.

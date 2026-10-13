@@ -2,7 +2,8 @@
 """Do RONG x CAO hang truoc mat xe: LiDAR cho mat phang mat truoc hang, camera
 nhin thang cho cac mep.
 
-    python3 cargo_measure.py agv1 [--save anh.png]     # do mot lan (xe dang dung yen)
+    python3 cargo_measure.py agv1 [--save anh.png] [--sim]   # do mot lan (xe dung yen)
+    (--sim: dung camera mac dinh trong cargo.yaml, bo qua camera_agvN.yaml)
 
 Cach tinh (he base_footprint: x truoc, y trai, z len):
  1. LiDAR (cargo.yaml lidar.*): diem trong +-half_fov_deg phia truoc, gan hon
@@ -33,6 +34,22 @@ EDGE_TOL = 0.012        # m: mep anh lech mut LiDAR hon muc nay -> nghi thay mat
 def load_cfg(path=CFG):
     with open(path) as f:
         return yaml.safe_load(f)
+
+
+def calib_path(car):
+    return os.path.join(os.path.dirname(CFG), f'camera_{car}.yaml')
+
+
+def car_cfg(cfg, car, sim=False):
+    """cfg rieng mot xe: camera_<xe>.yaml (tools/cam_calib.py + vi tri lap do tay)
+    de len camera mac dinh. sim=True: giu camera mac dinh (camera ao dung so nay)."""
+    out = dict(cfg)
+    out['camera'] = dict(cfg['camera'])
+    p = calib_path(car)
+    if not sim and os.path.exists(p):
+        with open(p) as f:
+            out['camera'].update(yaml.safe_load(f) or {})
+    return out
 
 
 # ---------------------------------------------------------------------- LiDAR
@@ -192,6 +209,10 @@ def measure(img_bgr, scans, cfg, lidar_x=None):
     lx = cfg['lidar']['x'] if lidar_x is None else lidar_x
     face = fit_face(lidar_points(scans, lx, cfg))
     cam = Camera(cfg)
+    c = cfg['camera']
+    if img_bgr.shape[1] != c['width'] or img_bgr.shape[0] != c['height']:
+        raise ValueError(f'anh {img_bgr.shape[1]}x{img_bgr.shape[0]} khac kich thuoc hieu chuan '
+                         f'{c["width"]}x{c["height"]} (firmware ESP32-CAM phai de VGA 640x480)')
     und = cv2.undistort(img_bgr, cam.K, cam.D)
     mask = segment(und) > 0
     H, W = mask.shape
@@ -298,7 +319,7 @@ def main():
     args = sys.argv[1:]
     car = args[0] if args and not args[0].startswith('--') else 'agv1'
     out = args[args.index('--save') + 1] if '--save' in args else None
-    cfg = load_cfg()
+    cfg = car_cfg(load_cfg(), car, sim='--sim' in args)
     rclpy.init()
     node = rclpy.create_node('cargo_measure_once')
     scans, img = [], {}

@@ -17,6 +17,7 @@ gỡ kẹt).
 | 2 Một xe thật | `ros2 launch my_bot_bringup bringup_real.launch.py xe:=N` → `navigation.launch.py use_sim_time:=false` → `python3 tools/auto_initial_pose.py` → `python3 grid_navigator.py --real` |
 | 3 Hai xe mô phỏng | `tools/fleet_sim.sh up` (domain 87) → `ROS_DOMAIN_ID=87 python3 traffic_manager.py agv1 agv2`; RViz `tools/fleet.rviz`; Gazebo xem/đặt vật cản `tools/fleet_gazebo.py` |
 | 4 Hai xe thật | xe 1 ở (3,1)→Đông, xe 2 ở (3,5)→Tây; `tools/fleet_real.sh up` → `python3 traffic_manager.py agv1 agv2`; `tools/fleet_real.sh down` |
+| Đo hàng (camera) | lấy hàng Đông ô (2..5,5) → trả hàng 1; `fleet_real.sh up` (bật `esp32_cam_node`) → `python3 cargo_task.py agv1 agv2` ("1 3"); mô phỏng: `tools/sim_cargo.py` + `cargo_task.py --sim`; hiệu chuẩn `tools/cam_calib.py agvN` |
 | **Tự động (trợ lý chạy)** | `tools/agvctl up` (chờ xe bật nguồn → tự bật hết) → `agvctl status/errors/events` → `agvctl goal "..." --go` → `agvctl down`. Xem `docs/AGVCTL.md` |
 
 Tài liệu người dùng: `docs/HUONG_DAN_CHAY.md`, `docs/SA_BAN_VA_TAI_LIEU.md` (tra sự cố,

@@ -2,11 +2,12 @@
 """Hang hoa + camera AO cho mo phong do kich thuoc hang (chay kem tools/fleet_sim.sh).
 
     ROS_DOMAIN_ID=87 python3 tools/sim_cargo.py agv1 agv2 \\
-        --goods "2:0.15:0.20:0.12, 4:0.10:0.12:0.10:5"
+        --goods "3:0.15:0.20:0.12, 4:0.10:0.12:0.10:5"
 
-Moi hang "cot:rong:cao:sau[:xoay_do[:lech_ngang]]" (m): hop dat phia Bac o
-(5,cot), mat truoc cach o dich `place.gap` (cargo.yaml), xoay_do quanh truc
-dung, lech_ngang doc theo hang 5 (+ = sang Dong).
+Moi hang "hang:rong:cao:sau[:xoay_do[:lech_ngang]]" (m): hop dat o o LAY hang
+(hang, cargo.yaml place.pickup_col) ve phia place.pickup_heading (mac dinh Dong),
+mat truoc cach tam o `place.gap`; xoay_do quanh truc dung, lech_ngang doc mat
+truoc (+ = ben phai khi nhin tu xe).
 Doi hang luc dang chay: ros2 topic pub --once /sim/cargo_set std_msgs/msg/String
 "{data: '3:0.2:0.25:0.15'}"  (chuoi rong = bo het).
 
@@ -39,6 +40,7 @@ from visualization_msgs.msg import Marker, MarkerArray
 WS = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, WS)
 from grid_board import Board, config_path   # noqa: E402
+from grid_navigator import parse_heading     # noqa: E402
 
 CFG = os.path.join(WS, 'src/my_bot_bringup/config/cargo.yaml')
 MARGIN = 160                       # px: anh ve truoc khi meo phai rong hon anh that
@@ -54,8 +56,8 @@ def parse_goods(text):
         if not f:
             continue
         if len(f) < 4:
-            raise ValueError(f'"{item}": can cot:rong:cao:sau')
-        out.append({'col': int(f[0]), 'w': f[1], 'h': f[2], 'd': f[3],
+            raise ValueError(f'"{item}": can hang:rong:cao:sau')
+        out.append({'row': int(f[0]), 'w': f[1], 'h': f[2], 'd': f[3],
                     'rot': f[4] if len(f) > 4 else 0.0, 'off': f[5] if len(f) > 5 else 0.0})
     return out
 
@@ -93,20 +95,22 @@ class SimCargo(Node):
         except ValueError as e:
             self.get_logger().error(str(e))
             return
-        north = self.board.yaw + math.pi / 2
-        east = self.board.yaw
-        gap = self.cfg['place']['gap']
+        pl = self.cfg['place']
+        H = parse_heading(pl['pickup_heading'], self.board.yaw)[1]   # huong xe nhin vao hang
+        side = H - math.pi / 2          # truc rong cua hop (ben phai khi nhin tu xe)
+        gap, col = pl['gap'], int(pl['pickup_col'])
         self.boxes = []
         for g in goods:
-            nx, ny = self.board.xy(self.board.rows - 1, g['col'] - 1)
+            nx, ny = self.board.xy(g['row'] - 1, col - 1)
             dist = gap + g['d'] / 2
             self.boxes.append({
-                'x': nx + dist * math.cos(north) + g['off'] * math.cos(east),
-                'y': ny + dist * math.sin(north) + g['off'] * math.sin(east),
-                'yaw': east + math.radians(g['rot']),
-                'w': g['w'], 'd': g['d'], 'h': g['h'], 'col': g['col']})
-        self.get_logger().info('Hang: ' + ', '.join(
-            f'(5,{b["col"]}) {b["w"] * 100:.1f}x{b["h"] * 100:.1f} cm' for b in self.boxes) or 'khong co')
+                'x': nx + dist * math.cos(H) + g['off'] * math.cos(side),
+                'y': ny + dist * math.sin(H) + g['off'] * math.sin(side),
+                # truc x rieng = rong, truc y rieng = sau (mat -y quay ve xe)
+                'yaw': side + math.radians(g['rot']),
+                'w': g['w'], 'd': g['d'], 'h': g['h'], 'row': g['row']})
+        self.get_logger().info('Hang: ' + (', '.join(
+            f'({b["row"]},{col}) {b["w"] * 100:.1f}x{b["h"] * 100:.1f} cm' for b in self.boxes) or 'khong co'))
         self.publish_boxes()
 
     def publish_boxes(self):

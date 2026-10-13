@@ -1,14 +1,16 @@
 # Do kich thuoc hang (rong x cao) bang camera nhin thang + khoang cach tu LiDAR.
-# Doc boi cargo_measure.py / cargo_task.py, va tools/sim_cargo.py (camera ao).
+# Doc boi cargo_measure.py / cargo_task.py / tools/esp32_cam_node.py, va
+# tools/sim_cargo.py (camera ao).
 #
-# Xe toi o (5,c) quay Bac -> LiDAR khop duong thang mat truoc hang (Z, goc lech)
-# -> anh camera: tach hang khoi nen -> mep trai/phai/tren/duoi -> chieu tia qua
-# tung mep len mat phang mat truoc hang (tu LiDAR) -> rong, cao (m)
-# -> bang phan loai -> xe chay ve o (1,k).
+# Xe toi o lay hang (cot 5, quay Dong) -> LiDAR khop duong thang mat truoc hang
+# (Z, goc lech) -> anh camera: tach hang khoi nen -> mep trai/phai/tren/duoi ->
+# chieu tia qua tung mep len mat phang mat truoc hang -> rong, cao (m)
+# -> bang phan loai -> xe chay ve o tra hang (hang 1, cot theo loai).
 
 camera:
-  # ESP32-CAM OV2640 640x480, goc ngang ~66 do. Xe that: thay bang so hieu chuan
-  # (cv2.calibrateCamera, ~15 anh ban co).
+  # Mac dinh (mo phong + xe chua hieu chuan): ESP32-CAM OV2640 640x480, goc ngang
+  # ~66 do. Xe that: tools/cam_calib.py agvN ghi so do vao camera_agvN.yaml
+  # (cung thu muc) - file do DE LEN cac gia tri o day cho rieng xe do.
   width: 640
   height: 480
   fx: 492.8
@@ -24,8 +26,18 @@ camera:
   y: 0.0
   z: 0.11
 
+# ESP32-CAM tren xe that (tools/esp32_cam_node.py -> /agvN/camera/image_raw).
+# Firmware: firmware/esp32_cam (IP tinh .200 xe 1, .201 xe 2; anh /capture cong 80,
+# luong MJPEG /stream cong 81 - giong vi du CameraWebServer).
+#   mode capture: GET /capture moi 1/rate s (nhe Wi-Fi - micro-ROS cung chung song)
+#   mode stream : doc luong MJPEG lien tuc, luong rieng giu anh moi nhat
+cameras:
+  agv1: {host: 192.168.1.200, mode: capture, rate: 3.0, rotate: 0}
+  agv2: {host: 192.168.1.201, mode: capture, rate: 3.0, rotate: 0}
+
 lidar:
-  # LiDAR so voi base_footprint (truoc, cao). Xe that (URDF): 0.014; xe ao: 0.0.
+  # LiDAR so voi base_footprint (truoc, cao). Xe that: doc tu TF (URDF 0.014);
+  # xe ao: 0.0. So nay chi dung khi chua co TF.
   x: 0.014
   z: 0.075
   half_fov_deg: 35        # chi xet tia trong +-35 do phia truoc
@@ -33,14 +45,21 @@ lidar:
   scans: 10               # so vong quet lay trung binh
 
 place:
-  # Hang dat phia Bac o (5,c): mat truoc cach tam xe (o dich) gap m.
-  # < 0.25 m thi costmap chan luon nut (5,c) (node_clearance).
+  # O LAY hang: (hang r, cot pickup_col), r trong pickup_rows; xe quay pickup_heading
+  # (d Dong / t Tay / b Bac / n Nam), hang dat phia do, mat truoc cach tam o gap m.
+  # gap < 0.25 m thi costmap chan luon o lay hang (node_clearance).
+  # (1,5) bi bo tren ban do that (sat vat can) -> chi hang 2-5.
+  pickup_col: 5
+  pickup_rows: [2, 3, 4, 5]
+  pickup_heading: d
   gap: 0.35
+  # O TRA hang: hang deliver_row, cot = classes[].col
+  deliver_row: 1
 
 # Gioi han do (gap 0.35, camera cach mat hang ~0.29 m): rong toi ~0.33 m, cao toi
 # ~0.25 m (camera.z + 0.29 * 240 / fy) - hang cham mep anh thi bao loi, khong giao.
 # Cao phai > camera.z (0.11) neu khong se thay mat tren (co canh bao).
-# Bang phan loai: dong DAU TIEN khop thi chon cot do o hang 1. Don vi m.
+# Bang phan loai: dong DAU TIEN khop thi chon cot do o hang tra. Don vi m.
 # Sai so do ~2-3 mm: kich thuoc sat nguong (vd rong 12.0 cm voi max_w 0.12) co the
 # roi sang loai ben canh.
 # Hang 1 chi dung cot 1-4 (o (1,5) sat vat can tren ban do that).

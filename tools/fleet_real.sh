@@ -16,6 +16,7 @@
 # Hieu chinh RIENG tung xe (mac dinh = so do tren xe 1):
 #   WHEEL_R_agv2=0.0330 COAST_agv2=0.30 tools/fleet_real.sh up
 #   WHEEL_R_*: ban kinh lan banh (m, wheel_odometry); COAST_*: he so xoay tai cho (s)
+# CAM=0: khong bat tools/esp32_cam_node.py (anh ESP32-CAM cho cargo_task.py).
 # Da co agent chay rieng (vd bringup_real.launch.py) thi tu dung chung; AGENT=0
 # thi khong bat agent (thu voi ESP32 gia: tools/fleet_fake_robot.py --esp32,
 # them EMULATE=1: LiDAR gia khong co tuong -> inf_is_valid, xoay coast 0).
@@ -40,7 +41,7 @@ down() {
     for p in $(cat $L/pids); do kill -9 -"$p" 2>/dev/null; done
     rm -f $L/pids
   fi
-  pkill -9 -f "^python3 $WS/(fleet_agent|tools/fleet_viz)\.py" 2>/dev/null
+  pkill -9 -f "^python3 $WS/(fleet_agent|tools/fleet_viz|tools/esp32_cam_node)\.py" 2>/dev/null
   pkill -9 -f "fleet_(nav|real_robot)\.launch\.py" 2>/dev/null
   # Tien trinh bi kill -9 de lai cong bo nho chung (/dev/shm/fastrtps_*) bi khoa.
   # Container Nav2 bat sau ma vuong cong do thi KHONG ai do thay no (da gap:
@@ -170,4 +171,11 @@ echo "${PIDS[@]}" > $L/pids
 # Gop TF cac xe vao /tf chung cho RViz (tools/fleet.rviz): frame agvN/..., scan /fleet_viz/agvN/scan
 setsid python3 $WS/tools/fleet_viz.py ${NAMES[@]} > $L/fleet_viz.log 2>&1 & PIDS+=($!)
 echo "${PIDS[@]}" > $L/pids
+# ESP32-CAM tung xe -> /agvN/camera/image_raw (cargo.yaml cameras:). CAM=0: khong bat.
+# Camera chua bat nguon thi node tu thu lai moi 2 s - khong can bat lai he.
+if [ "${CAM:-1}" = 1 ] && [ "${EMULATE:-0}" != 1 ]; then
+  setsid python3 $WS/tools/esp32_cam_node.py ${NAMES[@]} > $L/camera.log 2>&1 & PIDS+=($!)
+  echo "${PIDS[@]}" > $L/pids
+  echo "Camera: log $L/camera.log"
+fi
 echo "Da bat. Log: $L. Dieu phoi: python3 traffic_manager.py ${NAMES[*]}"

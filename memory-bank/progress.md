@@ -3,6 +3,7 @@
 ## Đã xong (mới nhất trước)
 | Ngày | Việc | Commit |
 |---|---|---|
+| 2026-10-13 | **Camera thật (code)**: `firmware/esp32_cam`, `tools/esp32_cam_node.py`, `tools/cam_calib.py`, camera riêng từng xe; lấy hàng cột 5 (quay Đông) → trả hàng 1; `fleet_real.sh` bật camera. Chưa thử phần cứng | (HEAD) |
 | 2026-10-12 | **Đo hàng bằng camera (mô phỏng)**: `cargo_measure.py`, `cargo_task.py`, `tools/sim_cargo.py`, `cargo.yaml`; 9 lần đo sai ≤ 3,5 mm, hai xe chung ô đích, hàng quá khổ báo lỗi | (HEAD) |
 | 2026-10-10 | Local costmap hết ô "kẹt" (vật cản còn trên RViz dù LiDAR không thấy): ObstacleLayer + `observation_persistence 1.0` + `fleet_agent` xoá lớp vật cản mỗi 1 s (`clear_except`, giữ 0.5 m); `raytrace_max_range 10` | (HEAD) |
 | 2026-10-10 | **Hai xe thật chạy đủ 6 bước** theo logic mô phỏng, không va. Sửa: dây động cơ riêng từng xe, firmware tách `Xe_1`/`Xe_2`, ESTOP báo ngay về máy tính, URDF base_footprint tại trục bánh, xe không xoay vòng khi đích là ô đang đứng / chạy nốt khi Nav2 dừng sớm, `tools/fleet_localize.py` (ICP), `tools/wheel_test.py` | 7b1c103..(HEAD) |

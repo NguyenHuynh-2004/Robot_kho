@@ -295,36 +295,40 @@ Quy tắc điều phối và kết quả kiểm thử:
 
 ### Thêm: Đo Hàng Bằng Camera (mô phỏng, rộng × cao)
 
-Xe tới ô (5,c) quay Bắc → **LiDAR** khớp mặt trước hàng (khoảng cách Z, góc lệch) →
-**camera nhìn thẳng** chụp, tách hàng khỏi nền, tìm 4 mép → chiếu từng mép lên mặt
-phẳng mặt hàng → **rộng × cao** → bảng phân loại → xe tự chạy về ô (1,k). Xe không chở
-hàng. Cấu hình (camera, khoảng đặt hàng, bảng loại): `src/my_bot_bringup/config/cargo.yaml`.
+Xe tới ô **lấy hàng ở cột 5** (hàng 2–5, quay **Đông**) → **LiDAR** khớp mặt trước hàng
+(khoảng cách Z, góc lệch) → **camera nhìn thẳng** chụp, tách hàng khỏi nền, tìm 4 mép →
+chiếu từng mép lên mặt phẳng mặt hàng → **rộng × cao** → bảng phân loại → xe tự chạy về
+ô **trả hàng ở hàng 1** (cột theo loại). Xe không chở hàng. Cấu hình (ô lấy/trả, camera,
+khoảng đặt hàng, bảng loại): `src/my_bot_bringup/config/cargo.yaml`.
 
 Bật Terminal 1 + 2 như trên (Terminal 1 thêm `FAKE_LIDAR_NOISE=0.01 FAKE_RAYS=320` cho
-LiDAR ảo nhiễu giống X2), rồi:
+LiDAR ảo nhiễu giống X2), rồi (mỗi terminal `cd ~/robot_ws_3` + `source install/setup.bash`):
 
 ```bash
-# Terminal 5: hàng hoá + camera ảo — "cột:rộng:cao:sâu[:xoay_độ[:lệch_ngang]]" (m)
-ROS_DOMAIN_ID=87 python3 tools/sim_cargo.py agv1 agv2 --goods "2:0.15:0.20:0.12, 4:0.10:0.12:0.10:5"
-# Terminal 6: nhiệm vụ đo hàng — nhập "1 2" = xe 1 đo hàng ở (5,2); "2 4" = xe 2 ở (5,4)
-ROS_DOMAIN_ID=87 python3 cargo_task.py agv1 agv2
+# Terminal 5: hàng hoá + camera ảo — "hàng:rộng:cao:sâu[:xoay_độ[:lệch_ngang]]" (m),
+# hàng đặt phía Đông ô (hàng, 5)
+ROS_DOMAIN_ID=87 python3 tools/sim_cargo.py agv1 agv2 --goods "3:0.15:0.20:0.12, 4:0.10:0.12:0.10:5, 2:0.17:0.13:0.12:-6, 5:0.25:0.22:0.18"
+# Terminal 6: nhiệm vụ đo hàng — "1 3" = xe 1 đo hàng ở (3,5); "2 4" = xe 2 ở (4,5)
+ROS_DOMAIN_ID=87 python3 cargo_task.py agv1 agv2 --sim
 ```
 Đổi hàng lúc đang chạy:
 `ROS_DOMAIN_ID=87 ros2 topic pub --once /sim/cargo_set std_msgs/msg/String "{data: '3:0.2:0.18:0.15'}"`.
-RViz (Terminal 3) thấy hộp hàng màu nâu ở phía Bắc hàng 5 và chữ kết quả trên ô hàng 1.
+Xem ảnh camera ảo: `ROS_DOMAIN_ID=87 ros2 run rqt_image_view rqt_image_view /agv1/camera/image_raw`.
+RViz (Terminal 3) thấy hộp hàng màu nâu bên phải cột 5 và chữ kết quả trên ô hàng 1.
 Kết quả + ảnh có vẽ khung: `~/agv_logs/cargo/` (`results.csv`).
 
-| Đo trong mô phỏng (2026-10-12) | Kết quả |
+| Đo trong mô phỏng | Kết quả |
 |---|---|
-| 9 lần đo, hàng 9–30 cm, xoay tới 21°, xe lệch 3 cm / 3° | sai **≤ 3,5 mm** |
-| Hai xe cùng loại hàng → cùng ô (1,1) | xe giao trước lùi lên hàng 2 nhường ô |
+| 2026-10-12, lấy ở hàng 5: 9 lần, hàng 9–30 cm, xoay tới 21°, xe lệch 3 cm / 3° | sai **≤ 3,5 mm** |
+| 2026-10-13, lấy ở cột 5: 4 hàng (10×12, 15×20, 17×13 xoay −6°, 25×22) | sai **≤ 1 mm**, về đúng (1,1)–(1,4) |
+| Hai xe cùng loại hàng → cùng ô (1,1) | xe giao trước lùi sang hàng 2 nhường ô |
 | Hàng rộng 40 cm (quá khung hình) / ô không có hàng | báo **không đo được**, xe không giao |
 
 > [!WARNING]
 > Giới hạn (camera cao 11 cm, hàng cách tâm ô 35 cm): rộng ≤ ~33 cm, cao 11–25 cm. Hàng
 > thấp hơn camera thì thấy cả mặt trên → chiều cao sai vài mm (có cảnh báo). Kích thước
 > sát ngưỡng bảng loại (vd rộng 12,0 cm với ngưỡng 12 cm) có thể rơi sang loại bên cạnh.
-> Xe thật cần thêm ESP32-CAM + hiệu chuẩn camera — chưa làm.
+> `--sim` = dùng thông số camera ảo; xe thật bỏ `--sim` (dùng `camera_agvN.yaml`).
 
 ---
 
@@ -466,6 +470,53 @@ WHEEL_R_agv2=0.0330 COAST_agv2=0.30 tools/fleet_real.sh up
 - `COAST_agvN`: hệ số xoay tại chỗ (s) — xe xoay **vượt** góc thì tăng, **thiếu** thì giảm.
 
 Terminal 1 in lại `Xe agv2: wheel_radius ... m, coast ...` để xác nhận.
+
+### Đo Hàng Bằng Camera (xe thật, ESP32-CAM)
+
+Giống mô phỏng (mục trên): lấy hàng phía **Đông ô (2..5, 5)**, trả về **hàng 1**. Mỗi xe
+thêm một **ESP32-CAM** riêng (không đụng ESP32 của xe), gửi ảnh qua Wi-Fi; laptop chạy
+`tools/esp32_cam_node.py` → `/agvN/camera/image_raw`.
+
+**1. Lắp camera** (mỗi xe):
+- ESP32-CAM AI-Thinker (OV2640). Nguồn **5 V riêng ≥ 1 A** (mạch hạ áp từ pin xe) + tụ
+  470 µF sát chân 5 V — nguồn yếu thì sụt áp, khởi động lại giữa chừng.
+- Gắn **nhìn thẳng ra trước, không nghiêng**, cao ~11 cm (phải **thấp hơn** mặt trên hàng thấp
+  nhất), ở đầu xe. Cáp FPC ở dưới; lắp ngược thì đặt `rotate: 180` trong `cargo.yaml`.
+- Đo bằng thước: tâm ống kính cách **tâm trục bánh** bao nhiêu (x: ra trước, y: sang trái,
+  z: cao từ sàn) — dùng ở bước 3.
+
+**2. Nạp firmware** `firmware/esp32_cam/esp32_cam.ino` (bạn nạp):
+- Chép `firmware/esp32_agv_base/wifi_config.h` vào `firmware/esp32_cam/` (cùng Wi-Fi).
+- Arduino IDE: board **AI Thinker ESP32-CAM**; sửa `#define XE 1` (xe 1) / `2` (xe 2);
+  nối GPIO0–GND khi nạp, bỏ nối rồi nhấn RESET.
+- IP tĩnh: xe 1 **192.168.1.200**, xe 2 **192.168.1.201** (phải nằm ngoài dải DHCP của router).
+- Thử bằng trình duyệt: `http://192.168.1.200/capture` (một ảnh), `http://192.168.1.200:81/stream`
+  (video), `http://192.168.1.200/status` (`"reset":"BROWNOUT"` = nguồn yếu).
+
+**3. Hiệu chuẩn camera** (mỗi xe một lần, xe đứng yên):
+```bash
+python3 tools/esp32_cam_node.py agv1          # Terminal A: ảnh xe 1 lên ROS
+python3 tools/cam_calib.py agv1 --square 0.025 # Terminal B
+```
+In bàn cờ **10×7 ô (9×6 góc trong)** lên A4, dán phẳng lên bìa cứng, đo cạnh ô (`--square`,
+mét). Cầm bàn cờ trước camera, đổi vị trí/nghiêng/đưa ra các góc ảnh, mỗi chỗ giữ yên ~1 s:
+script tự lấy 15 ảnh rồi ghi `src/my_bot_bringup/config/camera_agv1.yaml`. **RMS < 0,5 px**
+là tốt. Mở file đó, sửa `x`, `y`, `z` theo số đo ở bước 1. Làm lại cho `agv2`.
+
+**4. Đặt hàng**: hộp phía Đông ô (hàng 2–5, cột 5), **mặt trước cách tâm ô 35 cm** (đo
+thước), vuông với hướng Đông. Cao 12–25 cm, rộng ≤ 33 cm. Phía sau hàng là nền trơn (tấm
+bìa trắng/xám), sàn khác màu hàng — bộ đo tách hàng theo **độ đậm màu** (bìa carton nâu).
+
+**5. Chạy** (Terminal 1–3 như trên; `fleet_real.sh up` tự bật camera, `CAM=0` để tắt):
+```bash
+# kiểm tra một lần, xe đã đứng ở (3,5) quay Đông, hàng phía trước (xe không chạy):
+python3 cargo_measure.py agv1 --save /tmp/do_thu.png
+# Terminal 4: nhiệm vụ — "1 3" = xe 1 đo hàng ở (3,5) rồi về hàng 1; "2 4" = xe 2 ở (4,5)
+python3 cargo_task.py agv1 agv2
+```
+Log camera: `/tmp/fleet_real/camera.log` (mỗi 10 s: ảnh/s, KB/s, hay `MAT KET NOI`). Đầu
+`cargo_task.py` in xe nào **CHUA HIEU CHUAN**. Kết quả + ảnh: `~/agv_logs/cargo/`; đo hỏng thì
+ảnh gốc lưu đuôi `_LOI.png`.
 
 ### Tắt
 ```bash
