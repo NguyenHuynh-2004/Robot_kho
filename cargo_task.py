@@ -53,7 +53,7 @@ OUT = os.path.expanduser('~/agv_logs/cargo')
 ARRIVE_D = 0.05            # m: coi la da toi o
 ARRIVE_YAW = math.radians(5)
 SETTLE = 1.0               # s dung yen truoc khi do
-TIMEOUT = 180.0            # s cho moi chang
+TIMEOUT = 300.0            # s cho moi chang (cho xe kia nhuong + di vong: 2026-10-14 > 180 s)
 # O lay hang (xe dung yen): khop anh quet voi /map (ICP nhu tools/fleet_localize.py);
 # AMCL lech hon muc nay thi gui lai /agvN/initialpose -> chang ve o tra di dung.
 # (2026-10-14: phong co xe may / do dac ngoai ban do, AMCL troi 5 cm, 4-7 do sau 1.8 m.)
@@ -274,8 +274,10 @@ class CargoTask(Node):
             if tk.state in ('pickup', 'deliver'):
                 if tk.reject:
                     self.fail(tk, f'traffic_manager tu choi: {tk.reject}')
-                elif s.get('state') in ('failed', 'estop'):
-                    self.fail(tk, f'xe bao {s.get("state")}')
+                elif s.get('state') == 'estop':
+                    # 'failed' thoang qua (Nav2 tu choi mot doan) thi traffic_manager tu lap lai
+                    # duong (toi 5 lan); bo han thi no bao ERROR "[agvN] dung: ..." -> cb_rosout.
+                    self.fail(tk, 'xe bao ESTOP')
                 elif now - tk.t > TIMEOUT:
                     self.fail(tk, f'qua {TIMEOUT:.0f} s chua toi {self.lbl(tk.target)}')
                 elif tk.state == 'pickup' and self.arrived(tk, self.pick_yaw):

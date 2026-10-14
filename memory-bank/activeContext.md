@@ -64,6 +64,12 @@ Chỉ đo **rộng × cao**; camera nhìn thẳng, **Z + mặt phẳng mặt hà
   hàng phải cao hơn LiDAR, hoặc làm đo chỉ bằng camera (chân hộp chạm sàn + bù góc ngóc). Chờ người
   dùng đo chiều cao LiDAR + chọn hướng. Xe 2 ESTOP "bánh kẹt / mất encoder" ngay khi chạy (đứng giữa
   (2,2)-(2,3)) → xe 1 không lập được đường về (1,3). Xe đặt (1,2)Đ, (2,2)Đ (không phải mặc định).
+- **Vòng đo hàng thật trọn vẹn (xe 1) 2026-10-14 ~22h:** hộp (3,5) thật rộng 18,5 × cao 32,0 cm → đo
+  19,3 × 31,2 (+8/−8 mm), loại "rộng" → tự về (1,4). 320×240 ở 75 cm: 1 px ≈ 2,5 mm → sai ±3 px mép.
+  Cải thiện: camera VGA (CameraWebServer /control?var=framesize, không nạp lại) + hiệu chuẩn lại.
+  `cargo_task`: bỏ hủy khi 'failed' thoáng qua, TIMEOUT 300 s. Bảng loại: cao/rộng tới 45 cm.
+  **Xe 2 hỏng:** bánh không quay (ESTOP "bánh kẹt / mất encoder"), `/agv2/diag` KHÔNG về (0 Hz) nên
+  laptop không biết ESTOP; người dùng báo vị trí xe 1 "(2,3)" nhưng thật là (3,2) (ghi cột trước?).
 - **DDS 2026-10-14:** gói UDP > 1472 B trên 127.0.0.1 bị rơi → `tools/fastdds_localhost.xml`
   (bashrc + fleet_real.sh + fleet_sim.sh; bashrc cũ: ~/.bashrc.bak_xml). Đã thử: mô phỏng 2 xe +
   đo hàng OK; fleet_real.sh với ESP32 giả OK (Nav2 ~50 s, chờ tối đa 120 s). **Chưa thử với
