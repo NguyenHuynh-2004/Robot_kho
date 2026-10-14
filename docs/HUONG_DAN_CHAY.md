@@ -519,16 +519,44 @@ Laptop chụp `/capture` 3 ảnh/s mỗi xe (~30 KB/s, nhẹ Wi-Fi) → `/agvN/c
 2. **Đo vị trí camera** (thước): tâm ống kính cách **tâm trục bánh** x cm ra trước, y cm sang
    trái, z cm cao từ sàn → `src/my_bot_bringup/config/camera_agvN.yaml` (đã ghi: x 0,0967,
    z 0,235 cho cả 2 xe).
-3. **Hiệu chuẩn** (mỗi xe, xe đứng yên). Bàn cờ calib.io **8×10 ô, ô 20 mm** (A4, in
-   **100 % / Actual size**, không "Fit to page") → **9×7 góc trong**, `--square 0.020`. Đo lại
-   cạnh ô bằng thước (in co giãn thì sửa `--square`). Dán phẳng lên bìa cứng:
+3. **Hiệu chuẩn** (mỗi xe một lần) — theo
+   [Nav2 Camera Calibration](https://docs.nav2.org/rolling/tutorials/general_tutorials/camera_calibration/camera_calibration/),
+   dùng gói `camera_calibration` của ROS. Bàn cờ calib.io **8×10 ô, ô 20 mm** → `--size 7x9
+   --square 0.02` (đếm **góc trong**). In 100 % (không "Fit to page"), đo lại ô bằng thước
+   (khác 20 mm thì sửa `--square`), dán phẳng lên bìa cứng.
+
+   Cài một lần: `sudo apt install ros-jazzy-camera-calibration`
+
    ```bash
-   python3 tools/esp32_cam_node.py agv1             # Terminal A (bỏ qua nếu fleet_real.sh up đang chạy)
-   python3 tools/cam_calib.py agv1 --board 9x7 --square 0.020   # Terminal B
+   # Terminal A: ảnh 2 camera lên ROS, 10 ảnh/s cho nhanh (fleet_real.sh up đang chạy thì tắt camera của nó: CAM=0)
+   python3 tools/esp32_cam_node.py --rate 10
+   # Terminal B: cửa sổ hiệu chuẩn cho xe 1
+   ros2 run camera_calibration cameracalibrator --size 7x9 --square 0.02 --no-service-check \
+     --ros-args -r image:=/agv1/camera/image_raw -p camera:=/agv1/camera
    ```
-   Cầm bàn cờ trước camera, đổi chỗ / nghiêng / đưa ra 4 góc ảnh, mỗi chỗ giữ yên ~1 s:
-   tự lấy 15 ảnh → ghi `src/my_bot_bringup/config/camera_agv1.yaml`. **RMS < 0,5 px** là tốt.
-   `x`, `y`, `z` đã ghi ở bước 2 được giữ nguyên. Làm lại cho `agv2`.
+   Trong cửa sổ: cầm bàn cờ trước camera xe 1 (cách 30–70 cm, thấy **trọn** bàn cờ — có
+   vạch màu nối các góc là đã nhận), di chuyển chậm cho 4 thanh bên phải dài ra:
+
+   | Thanh | Làm |
+   |---|---|
+   | **X** | đưa bàn cờ sang trái, sang phải khung hình |
+   | **Y** | đưa lên trên, xuống dưới khung hình |
+   | **Size** | đưa lại gần (gần kín khung) và ra xa |
+   | **Skew** | nghiêng bàn cờ sang trái/phải/lên/xuống ~30° |
+
+   Cả 4 thanh **xanh lá** → nút **CALIBRATE** sáng → bấm, chờ ~1 phút (cửa sổ đứng là bình
+   thường) → bấm **SAVE** (ghi `/tmp/calibrationdata.tar.gz`). **Không** bấm COMMIT.
+   Đóng cửa sổ, nhập kết quả vào dự án:
+   ```bash
+   python3 tools/cam_calib.py agv1 --ost /tmp/calibrationdata.tar.gz
+   ```
+   → ghi `src/my_bot_bringup/config/camera_agv1.yaml` (giữ nguyên `x, y, z` của bước 2), in
+   `fx`, `fy`, góc ngang (~60–70° là hợp lý). Terminal B in thêm sai số chiếu **`epi`/RMS** —
+   dưới ~0,5 px là tốt. Làm lại cho **xe 2**: đổi `agv1` → `agv2` ở cả hai lệnh (lệnh SAVE
+   ghi đè file `/tmp/calibrationdata.tar.gz`, nên nhập xe 1 xong rồi mới hiệu chuẩn xe 2).
+
+   Cách khác (không cần cài gói, tự chụp 15 ảnh):
+   `python3 tools/cam_calib.py agv1 --board 9x7 --square 0.020`.
 
 **B. Đặt hàng:** hộp phía Đông ô (hàng 2–5, cột 5), **mặt trước cách tâm ô 65 cm** (camera
 cao 23,5 cm: gần hơn thì camera không thấy chân hộp), vuông

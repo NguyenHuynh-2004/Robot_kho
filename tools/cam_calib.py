@@ -4,6 +4,8 @@
     python3 tools/cam_calib.py agv1                      # can tools/esp32_cam_node.py dang chay
     python3 tools/cam_calib.py agv1 --board 9x6 --square 0.025 --n 15
     python3 tools/cam_calib.py agv1 --dir ~/agv_logs/calib/agv1     # tinh lai tu anh da luu
+    python3 tools/cam_calib.py agv1 --ost /tmp/calibrationdata.tar.gz # nhap ket qua cua
+        ros2 run camera_calibration cameracalibrator (giao dien ROS, nut SAVE -> ost.yaml)
 
 Ban co: in trang "9x6 inner corners" (10x7 o vuong) len A4, dan phang len bia
 cung, DO canh o vuong bang thuoc (--square, m). Cam ban co truoc camera, xoay /
@@ -50,6 +52,27 @@ def calibrate(views, size, square, wh):
     return rms, K, D.ravel(), errs
 
 
+def read_ost(path):
+    """ost.yaml cua camera_calibration (file .yaml hoac /tmp/calibrationdata.tar.gz)
+    -> (K 3x3, D, (w, h))."""
+    path = os.path.expanduser(path)
+    if path.endswith(('.tar.gz', '.tgz')):
+        import tarfile
+        with tarfile.open(path) as t:
+            name = next((m for m in t.getnames() if m.endswith('ost.yaml')), None)
+            if name is None:
+                sys.exit(f'{path}: khong co ost.yaml (da bam CALIBRATE roi SAVE chua?)')
+            d = yaml.safe_load(t.extractfile(name).read())
+    else:
+        with open(path) as f:
+            d = yaml.safe_load(f)
+    K = np.array(d['camera_matrix']['data'], float).reshape(3, 3)
+    D = np.array(d['distortion_coefficients']['data'], float)
+    if d.get('distortion_model', 'plumb_bob') != 'plumb_bob':
+        sys.exit(f'distortion_model {d.get("distortion_model")} khong ho tro (can plumb_bob)')
+    return K, D, (int(d['image_width']), int(d['image_height']))
+
+
 def write_yaml(car, K, D, wh, rms, n):
     path = cm.calib_path(car)
     old, text = {}, ''
@@ -62,8 +85,8 @@ def write_yaml(car, K, D, wh, rms, n):
     measured = bool(old) and '!!! CHUA DO' not in text
     d = [float(v) for v in D[:5]] + [0.0] * max(0, 5 - len(D))
     with open(path, 'w') as f:
-        f.write(f'# Camera {car} - tools/cam_calib.py {time.strftime("%Y-%m-%d %H:%M")}, '
-                f'{n} anh, RMS {rms:.2f} px.\n')
+        src = f'{n} anh, RMS {rms:.2f} px' if rms is not None else 'nhap tu ost.yaml (camera_calibration)'
+        f.write(f'# Camera {car} - tools/cam_calib.py {time.strftime("%Y-%m-%d %H:%M")}, {src}.\n')
         f.write('# De len camera: trong cargo.yaml cho rieng xe nay (cargo_measure.car_cfg).\n')
         f.write(f'width: {wh[0]}\nheight: {wh[1]}\n')
         f.write(f'fx: {K[0, 0]:.2f}\nfy: {K[1, 1]:.2f}\ncx: {K[0, 2]:.2f}\ncy: {K[1, 2]:.2f}\n')
@@ -82,7 +105,16 @@ def main():
     ap.add_argument('--square', type=float, default=0.025, help='canh o vuong (m), do bang thuoc')
     ap.add_argument('--n', type=int, default=15)
     ap.add_argument('--dir', help='tinh tu anh da luu, khong can ROS')
+    ap.add_argument('--ost', help='nhap ost.yaml / calibrationdata.tar.gz cua camera_calibration')
     a = ap.parse_args()
+    if a.ost:
+        K, D, wh = read_ost(a.ost)
+        hfov = 2 * np.degrees(np.arctan(wh[0] / 2 / K[0, 0]))
+        print(f'{a.ost}: {wh[0]}x{wh[1]}, fx {K[0, 0]:.1f} fy {K[1, 1]:.1f} cx {K[0, 2]:.1f} '
+              f'cy {K[1, 2]:.1f}, dist [{", ".join(f"{v:.4f}" for v in D[:5])}], goc ngang {hfov:.1f} do')
+        path, measured = write_yaml(a.car, K, D, wh, None, 0)
+        print(f'Da ghi {path}' + ('' if measured else ' - !!! sua x, y, z (vi tri camera) trong file do'))
+        return
     size = tuple(int(v) for v in a.board.lower().split('x'))
     out = os.path.expanduser(f'~/agv_logs/calib/{a.car}')
     views, wh = [], None
