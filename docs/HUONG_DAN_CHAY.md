@@ -332,7 +332,7 @@ Kết quả + ảnh có vẽ khung: `~/agv_logs/cargo/` (`results.csv`).
 | Hàng rộng 40 cm (quá khung hình) / ô không có hàng | báo **không đo được**, xe không giao |
 
 > [!WARNING]
-> Giới hạn (camera cao 11 cm, hàng cách tâm ô 65 cm): rộng ≤ ~70 cm, cao ≤ ~40 cm. Hàng
+> Giới hạn (camera ảo cao 11 cm, hàng cách tâm ô 85 cm): rộng ≤ ~80 cm, cao ≤ ~40 cm. Hàng
 > thấp hơn camera thì thấy cả mặt trên → mép trên lấy theo vạch sáng mặt trên/mặt trước. Kích thước
 > sát ngưỡng bảng loại (vd rộng 12,0 cm với ngưỡng 12 cm) có thể rơi sang loại bên cạnh.
 > `--sim` = dùng thông số camera ảo; xe thật bỏ `--sim` (dùng `camera_agvN.yaml`).
@@ -558,8 +558,8 @@ Laptop chụp `/capture` 3 ảnh/s mỗi xe (~30 KB/s, nhẹ Wi-Fi) → `/agvN/c
    Cách khác (không cần cài gói, tự chụp 15 ảnh):
    `python3 tools/cam_calib.py agv1 --board 9x7 --square 0.020`.
 
-**B. Đặt hàng:** hộp phía Đông ô (hàng 2–5, cột 5), **mặt trước cách tâm ô 65 cm** (camera
-cao 23,5 cm: gần hơn thì camera không thấy chân hộp), vuông
+**B. Đặt hàng:** hộp phía Đông ô (hàng 2–5, cột 5), **mặt trước cách tâm ô 85 cm** (camera
+cao 23,5 cm, nhìn xuống được 19,7°: gần hơn thì không thấy chân hộp), vuông
 với hướng Đông. Cao 10–45 cm, rộng ≤ 33 cm (theo bảng loại). Hộp **có màu** (bìa carton nâu), nền phía sau và
 sàn **trắng/xám** — bộ đo tách hàng theo độ đậm màu.
 

@@ -53,7 +53,9 @@ Chỉ đo **rộng × cao**; camera nhìn thẳng, **Z + mặt phẳng mặt hà
   đúng. **Nên vẽ lại bản đồ** (Kịch bản 1). Chờ: đặt hàng, hiệu chuẩn camera, đo x,z camera.
 - **Camera xe thật cao 23,5 cm**, cách tâm xe 82,7 mm (giả định đo từ tâm xe/LiDAR → x = 0,0967 từ
   trục; CHỜ người dùng xác nhận, và 2 xe lắp giống nhau?) → `camera_agv1/2.yaml`. `place.gap`
-  0,35 → **0,65** (gần hơn thì không thấy chân hộp). Hộp thấp hơn camera: `front_top_edge`
+  0,35 → 0,65 → **0,85** (sau hiệu chuẩn xe 1: nhìn xuống chỉ 19,7°; lidar.max_range 1,2).
+  Hiệu chuẩn xe 1 (ROS camera_calibration, 53 ảnh): fx 302,4 fy 310,2 (pixel KHÔNG vuông,
+  ép fx=fy thì RMS 0,23→0,44 px), góc ngang 55,8°. Xe 2 chưa. Hộp thấp hơn camera: `front_top_edge`
   (vạch sáng mặt trên/trước), offline 320×240 sai ≤ 3,5 mm. Bàn cờ: calib.io 8×10 ô 20 mm →
   `tools/cam_calib.py agvN --board 9x7 --square 0.020`.
 - **DDS 2026-10-14:** gói UDP > 1472 B trên 127.0.0.1 bị rơi → `tools/fastdds_localhost.xml`
