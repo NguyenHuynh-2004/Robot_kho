@@ -58,6 +58,12 @@ Chỉ đo **rộng × cao**; camera nhìn thẳng, **Z + mặt phẳng mặt hà
   ép fx=fy thì RMS 0,23→0,44 px), góc ngang 55,8°. Xe 2: fx 297,6 fy 305,1, góc ngang 56,5°, RMS 0,28 px (bản sao ~/agv_logs/calib/). Hộp thấp hơn camera: `front_top_edge`
   (vạch sáng mặt trên/trước), offline 320×240 sai ≤ 3,5 mm. Bàn cờ: calib.io 8×10 ô 20 mm →
   `tools/cam_calib.py agvN --board 9x7 --square 0.020`.
+- **Đo hàng thật đầu tiên 2026-10-14 tối:** hộp xanh (4,5) thật 12,0×23,9 cm → xe 1 đo **12,3×24,1**
+  (+3/+2 mm), Z 75,6 cm, loại "cao" đúng. Cảnh báo "đáy hàng z=+1,6 cm" → camera có thể ngóc ~1,2°.
+  **LiDAR thật quét ở ~21–24 cm** (thấy hộp 23,9 cm, KHÔNG thấy hộp nâu 21,1 cm) — URDF ghi 0,075 sai;
+  hàng phải cao hơn LiDAR, hoặc làm đo chỉ bằng camera (chân hộp chạm sàn + bù góc ngóc). Chờ người
+  dùng đo chiều cao LiDAR + chọn hướng. Xe 2 ESTOP "bánh kẹt / mất encoder" ngay khi chạy (đứng giữa
+  (2,2)-(2,3)) → xe 1 không lập được đường về (1,3). Xe đặt (1,2)Đ, (2,2)Đ (không phải mặc định).
 - **DDS 2026-10-14:** gói UDP > 1472 B trên 127.0.0.1 bị rơi → `tools/fastdds_localhost.xml`
   (bashrc + fleet_real.sh + fleet_sim.sh; bashrc cũ: ~/.bashrc.bak_xml). Đã thử: mô phỏng 2 xe +
   đo hàng OK; fleet_real.sh với ESP32 giả OK (Nav2 ~50 s, chờ tối đa 120 s). **Chưa thử với
