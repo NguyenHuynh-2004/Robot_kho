@@ -11,6 +11,13 @@ Mở các terminal **lần lượt** — terminal trước khởi động xong m
 | 2️⃣ Chạy một xe thật trên sa bàn | **dùng hằng ngày** | 4 |
 | 3️⃣ Chạy hai xe (mô phỏng) | thử điều phối hai xe | 4 |
 | 4️⃣ Chạy hai xe thật | **hai xe cùng chạy** trên sa bàn thật | 3 |
+| 4️⃣ + đo hàng | xe lấy hàng ở cột 5, **camera đo rộng × cao**, trả về hàng 1 | 4 (+1 xem camera) |
+
+> [!IMPORTANT]
+> **Mở terminal MỚI** sau ngày 2026-10-14: `~/.bashrc` đã thêm cấu hình DDS
+> (`FASTRTPS_DEFAULT_PROFILES_FILE=.../tools/fastdds_localhost.xml`). Thiếu dòng này thì các
+> chương trình ROS **không thấy nhau** (WSL làm rơi gói dữ liệu lớn). Kiểm tra:
+> `echo $FASTRTPS_DEFAULT_PROFILES_FILE` phải in đường dẫn tới file đó.
 
 > [!IMPORTANT]
 > **Mỗi xe một file firmware riêng**: xe 1 nạp `Xe_1\Xe_1.ino`, xe 2 nạp `Xe_2\Xe_2.ino`
@@ -343,11 +350,14 @@ và Nav2 riêng, dùng chung bản đồ và một micro-ROS agent.
 > - **Firmware:** xe 1 nạp `Xe_1\Xe_1.ino`, xe 2 nạp `Xe_2\Xe_2.ino` (đã nạp ngày
 >   2026-10-10; chỉ nạp lại khi firmware thay đổi —
 >   [cách nạp](SA_BAN_VA_TAI_LIEU.md#h3-nạp-firmware-xe-thật)).
-> - **Pin đầy**, công tắc nguồn động cơ bật.
+> - **Pin đầy**, công tắc nguồn động cơ bật. ESP32-CAM (nếu có) dùng **nguồn riêng** — chung
+>   nguồn với ESP32 xe thì xe **tự khởi động lại liên tục** (BROWNOUT, xem
+>   [Kiểm tra nguồn](#kiểm-tra-nguồn-sụt-áp)).
 > - **Tắt hết** các terminal của Kịch bản 1 và 2 (cầu nối ESP32, Nav2, `grid_navigator`):
 >   chạy song song thì hai bản đồ, hai agent đè nhau.
 > - **Đặt xe:** xe 1 ở **(hàng 3, cột 1) mũi hướng Đông**, xe 2 ở **(hàng 3, cột 5) mũi
->   hướng Tây**. Tâm xe trên nút, mũi xe dọc vạch.
+>   hướng Tây**. Tâm xe trên nút, mũi xe dọc vạch. Đặt chỗ khác thì khai báo `AGV1`/`AGV2`
+>   (dưới) — đặt sai mà không khai báo thì xe sẽ chạy sai đường.
 
 ### Terminal 1: Bật Hệ Hai Xe
 Bật nguồn **cả hai xe**, để yên 2 giây, rồi:
@@ -356,29 +366,44 @@ cd ~/robot_ws_3
 source install/setup.bash
 tools/fleet_real.sh up
 ```
-Chờ tới khi in đủ (30 giây – 2 phút; Nav2 một xe có lúc không lên lần đầu, script tự bật lại):
+Chờ tới khi in đủ (**khoảng 2 phút** — mỗi Nav2 mất 40–60 s; không lên sau 120 s thì
+script tự bật lại):
 ```
 Cho xe agv1 (/agv1/scan) co
 Cho xe agv2 (/agv2/scan) co
 Nav2 agv1 (lan 1)...... san sang
 Nav2 agv2 (lan 1)...... san sang
+Camera: log /tmp/fleet_real/camera.log
 Da bat. ...
 ```
-Báo `KHONG THAY` → xe đó chưa bật nguồn hoặc nạp nhầm file.
+Báo `KHONG THAY` → xe đó chưa bật nguồn hoặc nạp nhầm file. Script cũng bật luôn
+`tools/esp32_cam_node.py` (ảnh 2 camera); không có camera thì thêm `CAM=0` trước lệnh.
 
 **Định vị chính xác** (cùng terminal, sau khi `Da bat`):
 ```bash
 python3 tools/fleet_localize.py
 ```
 Mỗi xe phải in `da gui cho AMCL`, độ dời thường vài cm. Xe không đứng ở chỗ đã khai báo
-(`AGV1`/`AGV2`) thì công cụ **tự dò cả sa bàn** (25 nút × 4 hướng, vài giây) và in
-`xe dang o (hàng,cột) huong ...` — kiểm tra đúng chỗ bạn đặt xe. Vẫn báo `KHONG GUI` → xe
-không đứng trên nút nào, hoặc quanh xe có nhiều đồ đạc không có trên bản đồ.
+thì công cụ **tự dò cả sa bàn** (25 nút × 4 hướng, vài giây) và in
+`xe dang o (hàng,cột) huong ...` — **kiểm tra đúng chỗ bạn đặt xe**. Báo `KHONG GUI` → xe
+không đứng trên nút nào, hoặc quanh xe có nhiều đồ đạc không có trên bản đồ (xem cảnh báo
+bản đồ bên dưới).
 
-Đặt xe ở chỗ khác thì khai báo khi bật:
+Đặt xe ở chỗ khác thì khai báo khi bật (hàng cột hướng_độ: 0 Đông, 90 Bắc, 180 Tây, -90 Nam):
 ```bash
-AGV1="3 1 0" AGV2="3 5 180" tools/fleet_real.sh up     # hàng cột hướng_độ
+AGV1="3 2 0" AGV2="2 2 0" tools/fleet_real.sh up      # vd hai xe ở (3,2) và (2,2), cùng quay Đông
 ```
+
+### Kiểm Tra Nguồn (sụt áp)
+Mỗi xe gửi `/agvN/diag` mỗi giây. Xem (terminal mới):
+```bash
+ros2 topic echo --qos-reliability best_effort /agv1/diag --field data
+```
+`"reset":"POWERON"` và `up_s` **tăng đều** là tốt. `"reset":"BROWNOUT"` hoặc `up_s` cứ về
+số nhỏ = **xe tự khởi động lại vì sụt áp** (mất định vị, Nav2 chạy sai). Đồng hồ vạn năng
+vẫn thấy 5 V vì sụt rất ngắn (lúc Wi-Fi phát). Sửa: camera nguồn riêng, tụ 1000 µF ở 5 V
+gần ESP32, mạch hạ áp ≥ 2 A thay ổn áp trên L298N, pin đầy. (2026-10-14: hai xe sụt áp
+mỗi 15–50 s khi ESP32-CAM chung nguồn; sửa nguồn xong chạy ổn định.)
 
 ### Terminal 2: Bộ Điều Phối
 ```bash
@@ -437,8 +462,10 @@ Lần đầu trong ngày nên chạy lại vài bước này. Mỗi bước đ�
 > [!WARNING]
 > **Độ chính xác phụ thuộc bản đồ.** Ngày 2026-10-10, phía **tây** sa bàn (quanh cột 1) có
 > nhiều đồ đạc mới không có trên bản đồ (cách (3,1) ~48 cm, (4,1) ~26 cm, (5,1) ~45 cm):
-> xe đứng ở cột 1 lệch 4–6 cm, phía đông thì < 1 cm. Dọn các vật đó, hoặc vẽ lại bản đồ
-> (Kịch bản 1) rồi căn lại sa bàn, thì cột 1 cũng sẽ < 3 cm.
+> xe đứng ở cột 1 lệch 4–6 cm, phía đông thì < 1 cm. Ngày 2026-10-14 phòng có thêm **xe máy**
+> phía Đông: LiDAR chỉ khớp bản đồ 40–56% (trước ~70%), AMCL trôi ~5 cm / 4–7° sau 1,8 m.
+> **Vẽ lại bản đồ** (Kịch bản 1) đúng như phòng lúc chạy rồi căn lại sa bàn
+> (`tools/set_grid_center.py`), hoặc dời đồ ra khỏi quanh sa bàn.
 
 ### Khi Xe Báo ESTOP
 ESP32 tự dừng khẩn khi **bánh kẹt / mất encoder / hết pin** hoặc **bánh quay ngược chiều**,
@@ -473,62 +500,80 @@ Terminal 1 in lại `Xe agv2: wheel_radius ... m, coast ...` để xác nhận.
 
 ### Đo Hàng Bằng Camera (xe thật, ESP32-CAM)
 
-Giống mô phỏng (mục trên): lấy hàng phía **Đông ô (2..5, 5)**, trả về **hàng 1**. Mỗi xe
-có một **ESP32-CAM** riêng chạy **firmware stream có sẵn** (không nạp lại): laptop đọc luồng
-MJPEG của từng camera (`tools/esp32_cam_node.py`, cách làm giống `esp32_cam_node.py` cũ:
-mỗi camera một luồng giữ ảnh mới nhất) → `/agvN/camera/image_raw`.
+Xe tới ô **lấy hàng phía Đông cột 5** (ô (2..5, 5), quay Đông) → LiDAR đo khoảng cách + góc
+mặt hàng, **camera** tìm 4 mép → **rộng × cao** → bảng loại trong `cargo.yaml` → xe tự chạy
+về ô **trả hàng ở hàng 1** (cột theo loại). Xe không chở hàng. Ô (1,5) không dùng (sát vật
+cản trên bản đồ).
 
-| Xe | Luồng (sửa trong `cargo.yaml` → `cameras:` nếu khác) |
+| Xe | Camera (ESP32-CAM, firmware CameraWebServer có sẵn — **không nạp lại**) |
 |---|---|
-| 1 | `http://192.168.1.201/capture` (luồng: `http://192.168.1.201:81/stream`) |
-| 2 | `http://192.168.1.200/capture` (luồng: `http://192.168.1.200:81/stream`) |
+| 1 | `http://192.168.1.201` (ảnh `/capture`, video `:81/stream`) |
+| 2 | `http://192.168.1.200` |
 
-**1. Camera**:
-- Phải **nhìn thẳng ra trước, nằm ngang** (không chúc xuống sàn), ở đầu xe, cao ~11 cm —
-  **thấp hơn** mặt trên hàng thấp nhất. Lắp ngược thì đặt `rotate: 180` trong `cargo.yaml`.
-- Đo bằng thước: tâm ống kính cách **tâm trục bánh** bao nhiêu (x: ra trước, y: sang trái,
-  z: cao từ sàn) — dùng ở bước 3.
-- Nguồn ESP32-CAM nên **riêng, ≥ 1 A** — nguồn yếu thì camera tự khởi động lại, luồng đứt.
-- Thử: mở `http://192.168.1.201:81/stream` (xe 1) / `.200` (xe 2) bằng trình duyệt thấy video là được.
+Laptop chụp `/capture` 3 ảnh/s mỗi xe (~30 KB/s, nhẹ Wi-Fi) → `/agvN/camera/image_raw`,
+320×240. Đổi IP / cách lấy ảnh: `src/my_bot_bringup/config/cargo.yaml` → `cameras:`.
 
-**2. Kiểm tra luồng về ROS**:
+**A. Chuẩn bị (một lần):**
+1. **Camera:** nhìn **thẳng ra trước, nằm ngang**, ở đầu xe, **thấp hơn** mặt trên hàng thấp
+   nhất (~11 cm); nguồn **riêng**. Thử: mở `http://192.168.1.201/capture` bằng trình duyệt.
+2. **Đo vị trí camera** (thước): tâm ống kính cách **tâm trục bánh** x cm ra trước, y cm sang
+   trái, z cm cao từ sàn.
+3. **Hiệu chuẩn** (mỗi xe, xe đứng yên). In bàn cờ **10×7 ô (9×6 góc trong)** lên A4, dán
+   phẳng lên bìa cứng, đo cạnh ô (m):
+   ```bash
+   python3 tools/esp32_cam_node.py agv1             # Terminal A (bỏ qua nếu fleet_real.sh up đang chạy)
+   python3 tools/cam_calib.py agv1 --square 0.025   # Terminal B
+   ```
+   Cầm bàn cờ trước camera, đổi chỗ / nghiêng / đưa ra 4 góc ảnh, mỗi chỗ giữ yên ~1 s:
+   tự lấy 15 ảnh → ghi `src/my_bot_bringup/config/camera_agv1.yaml`. **RMS < 0,5 px** là tốt.
+   Mở file đó, sửa `x`, `y`, `z` (mét) theo bước 2. Làm lại cho `agv2`.
+
+**B. Đặt hàng:** hộp phía Đông ô (hàng 2–5, cột 5), **mặt trước cách tâm ô 35 cm**, vuông
+với hướng Đông. Cao 12–25 cm, rộng ≤ 33 cm. Hộp **có màu** (bìa carton nâu), nền phía sau và
+sàn **trắng/xám** — bộ đo tách hàng theo độ đậm màu.
+
+**C. Chạy** — Terminal 1–3 như trên (`fleet_real.sh up` + `fleet_localize.py`, `traffic_manager.py`,
+RViz), thêm:
 ```bash
-python3 tools/esp32_cam_node.py                # đọc cả 2 luồng (fleet_real.sh up tự bật cái này)
-ros2 run rqt_image_view rqt_image_view /agv1/camera/image_raw
-```
-Mỗi 10 s in `Camera: agv1 x anh/s WxH | agv2 ...` (hoặc `MAT KET NOI`). Độ phân giải lấy
-theo luồng; 640×480 tốt nhất, 320×240 vẫn dùng được.
-
-**3. Hiệu chuẩn camera** (mỗi xe một lần, xe đứng yên, **cùng độ phân giải luồng** sẽ dùng):
-```bash
-python3 tools/esp32_cam_node.py agv1          # Terminal A: ảnh xe 1 lên ROS
-python3 tools/cam_calib.py agv1 --square 0.025 # Terminal B
-```
-In bàn cờ **10×7 ô (9×6 góc trong)** lên A4, dán phẳng lên bìa cứng, đo cạnh ô (`--square`,
-mét). Cầm bàn cờ trước camera, đổi vị trí/nghiêng/đưa ra các góc ảnh, mỗi chỗ giữ yên ~1 s:
-script tự lấy 15 ảnh rồi ghi `src/my_bot_bringup/config/camera_agv1.yaml`. **RMS < 0,5 px**
-là tốt. Mở file đó, sửa `x`, `y`, `z` theo số đo ở bước 1. Làm lại cho `agv2`.
-
-**4. Đặt hàng**: hộp phía Đông ô (hàng 2–5, cột 5), **mặt trước cách tâm ô 35 cm** (đo
-thước), vuông với hướng Đông. Cao 12–25 cm, rộng ≤ 33 cm. Phía sau hàng là nền trơn (tấm
-bìa trắng/xám), sàn khác màu hàng — bộ đo tách hàng theo **độ đậm màu** (bìa carton nâu).
-
-**5. Chạy** (Terminal 1–3 như trên; `fleet_real.sh up` tự bật camera, `CAM=0` để tắt):
-```bash
-# kiểm tra một lần, xe đã đứng ở (3,5) quay Đông, hàng phía trước (xe không chạy):
-python3 cargo_measure.py agv1 --save /tmp/do_thu.png
-# Terminal 4: nhiệm vụ — "1 3" = xe 1 đo hàng ở (3,5) rồi về hàng 1; "2 4" = xe 2 ở (4,5)
+# Terminal 4: nhiệm vụ đo hàng
+cd ~/robot_ws_3
+source install/setup.bash
 python3 cargo_task.py agv1 agv2
 ```
-Log camera: `/tmp/fleet_real/camera.log` (mỗi 10 s: ảnh/s, KB/s, hay `MAT KET NOI`). Đầu
-`cargo_task.py` in xe nào **CHUA HIEU CHUAN**. Kết quả + ảnh: `~/agv_logs/cargo/`; đo hỏng thì
-ảnh gốc lưu đuôi `_LOI.png`.
+Nhập `<xe> <hàng>`: `1 3` = xe 1 tới (3,5), đo, về hàng 1; `2 4` = xe 2 ở (4,5) (hai xe làm
+song song được). Terminal 2 (traffic_manager) cứ để yên — không cần nhập gì.
+Xem camera (tùy chọn, Terminal 5): `ros2 run rqt_image_view rqt_image_view /agv1/camera/image_raw`.
+
+Terminal 4 in, ví dụ:
+```
+[agv1] -> (3,5) quay Đông
+[agv1] sua AMCL theo ban do: lech 2.8 cm, -5.6 do (56% tia khop)
+[agv1] Hang o (3,5): rong 15.1 cm, cao 20.1 cm (...) -> loai "cao" -> o (1,3)
+[agv1] XONG: hang (3,5) -> da ve o (1,3)
+```
+- Dòng `sua AMCL theo ban do`: tới ô lấy hàng, xe đứng yên thì tự khớp LiDAR với bản đồ và
+  sửa định vị (AMCL hay trôi vài cm khi phòng khác bản đồ) — chặng về hàng 1 đi đúng hơn.
+- Đầu Terminal 4 in `CHUA HIEU CHUAN` cho xe chưa làm bước A3 — vẫn chạy được nhưng số đo
+  sai vài mm tới vài cm.
+- Hai xe cùng loại hàng → cùng ô: xe tới sau chờ, xe đã giao lùi sang hàng 2 nhường ô.
+- Không có hàng / hàng quá to / chạm mép ảnh → `THAT BAI`, xe đứng yên tại ô lấy hàng.
+- Kết quả + ảnh có vẽ khung: `~/agv_logs/cargo/` (`results.csv`; đo hỏng thì ảnh `_LOI.png`).
+- Đo thử một lần không cho xe chạy (xe đã đứng ở ô lấy hàng, quay Đông):
+  `python3 cargo_measure.py agv1 --save /tmp/do_thu.png`.
+
+| Chạy thật 2026-10-14 | Kết quả |
+|---|---|
+| 2 camera vào ROS | 3 ảnh/s mỗi xe, 320×240 |
+| `1 3`: (3,2) → (3,5) quay Đông; `1 4`: (3,5) → (4,5) | đi đúng đường; chưa đặt hàng → báo `khong co hang` đúng |
+| Sửa định vị tại ô lấy hàng | AMCL lệch 2,8 cm / −5,6° → sau sửa trùng LiDAR 0,3 cm |
+| Chưa làm | đặt hàng thật, hiệu chuẩn camera → đo sai số thật |
 
 ### Tắt
 ```bash
 cd ~/robot_ws_3
-tools/fleet_real.sh down      # gửi lệnh dừng cho cả hai xe rồi tắt hết
+tools/fleet_real.sh down      # gửi lệnh dừng cho cả hai xe rồi tắt hết (cả camera)
 ```
+Ctrl-C trước ở Terminal 2 (traffic_manager), 4 (cargo_task), 5 (xem camera), RViz.
 
 > [!CAUTION]
 > **Dừng khẩn:** Ctrl-C Terminal 2 (mất lệnh điều phối quá 1 giây thì từng xe tự dừng),
