@@ -8,6 +8,7 @@ cx: 162.56
 cy: 128.76
 dist: [-0.01105, -0.02389, 0.00058, -0.00107, 0.00000]
 # Vi tri tam ong kinh so voi TAM TRUC BANH (m): x truoc, y trai, z cao tu san.
+# Do 2026-10-14: ong kinh truoc TAM THAN XE 82.7 mm (than xe truoc truc 14 mm), cao 23.5 cm.
 x: 0.0967
 y: 0.0
 z: 0.235

@@ -51,8 +51,8 @@ Chỉ đo **rộng × cao**; camera nhìn thẳng, **Z + mặt phẳng mặt hà
   ngoài bản đồ: ICP chỉ khớp 40–56%, AMCL trôi ~5 cm/4–7° sau 1,8 m →  tự ICP + sửa AMCL
   ở ô lấy hàng (đã chạy: sửa 2,8 cm/−5,6°). Lệnh 1 3, 1 4 chạy đúng đường; chưa có hàng → báo lỗi
   đúng. **Nên vẽ lại bản đồ** (Kịch bản 1). Chờ: đặt hàng, hiệu chuẩn camera, đo x,z camera.
-- **Camera xe thật cao 23,5 cm**, cách tâm xe 82,7 mm (giả định đo từ tâm xe/LiDAR → x = 0,0967 từ
-  trục; CHỜ người dùng xác nhận, và 2 xe lắp giống nhau?) → `camera_agv1/2.yaml`. `place.gap`
+- **Camera xe thật cao 23,5 cm**, cách **tâm thân xe** 82,7 mm (người dùng xác nhận 2026-10-14; tâm thân
+  = LiDAR, trước trục 14 mm → x = 0,0967 từ trục); **2 xe lắp giống nhau** → `camera_agv1/2.yaml`. `place.gap`
   0,35 → 0,65 → **0,85** (sau hiệu chuẩn xe 1: nhìn xuống chỉ 19,7°; lidar.max_range 1,2).
   Hiệu chuẩn xe 1 (ROS camera_calibration, 53 ảnh): fx 302,4 fy 310,2 (pixel KHÔNG vuông,
   ép fx=fy thì RMS 0,23→0,44 px), góc ngang 55,8°. Xe 2: fx 297,6 fy 305,1, góc ngang 56,5°, RMS 0,28 px (bản sao ~/agv_logs/calib/). Hộp thấp hơn camera: `front_top_edge`
