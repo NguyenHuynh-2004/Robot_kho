@@ -474,26 +474,32 @@ Terminal 1 in lại `Xe agv2: wheel_radius ... m, coast ...` để xác nhận.
 ### Đo Hàng Bằng Camera (xe thật, ESP32-CAM)
 
 Giống mô phỏng (mục trên): lấy hàng phía **Đông ô (2..5, 5)**, trả về **hàng 1**. Mỗi xe
-thêm một **ESP32-CAM** riêng (không đụng ESP32 của xe), gửi ảnh qua Wi-Fi; laptop chạy
-`tools/esp32_cam_node.py` → `/agvN/camera/image_raw`.
+có một **ESP32-CAM** riêng chạy **firmware stream có sẵn** (không nạp lại): laptop đọc luồng
+MJPEG của từng camera (`tools/esp32_cam_node.py`, cách làm giống `esp32_cam_node.py` cũ:
+mỗi camera một luồng giữ ảnh mới nhất) → `/agvN/camera/image_raw`.
 
-**1. Lắp camera** (mỗi xe):
-- ESP32-CAM AI-Thinker (OV2640). Nguồn **5 V riêng ≥ 1 A** (mạch hạ áp từ pin xe) + tụ
-  470 µF sát chân 5 V — nguồn yếu thì sụt áp, khởi động lại giữa chừng.
-- Gắn **nhìn thẳng ra trước, không nghiêng**, cao ~11 cm (phải **thấp hơn** mặt trên hàng thấp
-  nhất), ở đầu xe. Cáp FPC ở dưới; lắp ngược thì đặt `rotate: 180` trong `cargo.yaml`.
+| Xe | Luồng (sửa trong `cargo.yaml` → `cameras:` nếu khác) |
+|---|---|
+| 1 | `http://192.168.1.200:81/stream` |
+| 2 | `http://192.168.1.201:81/stream` |
+
+**1. Camera**:
+- Phải **nhìn thẳng ra trước, nằm ngang** (không chúc xuống sàn), ở đầu xe, cao ~11 cm —
+  **thấp hơn** mặt trên hàng thấp nhất. Lắp ngược thì đặt `rotate: 180` trong `cargo.yaml`.
 - Đo bằng thước: tâm ống kính cách **tâm trục bánh** bao nhiêu (x: ra trước, y: sang trái,
   z: cao từ sàn) — dùng ở bước 3.
+- Nguồn ESP32-CAM nên **riêng, ≥ 1 A** — nguồn yếu thì camera tự khởi động lại, luồng đứt.
+- Thử: mở `http://192.168.1.200:81/stream` bằng trình duyệt thấy video là được.
 
-**2. Nạp firmware** `firmware/esp32_cam/esp32_cam.ino` (bạn nạp):
-- Chép `firmware/esp32_agv_base/wifi_config.h` vào `firmware/esp32_cam/` (cùng Wi-Fi).
-- Arduino IDE: board **AI Thinker ESP32-CAM**; sửa `#define XE 1` (xe 1) / `2` (xe 2);
-  nối GPIO0–GND khi nạp, bỏ nối rồi nhấn RESET.
-- IP tĩnh: xe 1 **192.168.1.200**, xe 2 **192.168.1.201** (phải nằm ngoài dải DHCP của router).
-- Thử bằng trình duyệt: `http://192.168.1.200/capture` (một ảnh), `http://192.168.1.200:81/stream`
-  (video), `http://192.168.1.200/status` (`"reset":"BROWNOUT"` = nguồn yếu).
+**2. Kiểm tra luồng về ROS**:
+```bash
+python3 tools/esp32_cam_node.py                # đọc cả 2 luồng (fleet_real.sh up tự bật cái này)
+ros2 run rqt_image_view rqt_image_view /agv1/camera/image_raw
+```
+Mỗi 10 s in `Camera: agv1 x anh/s WxH | agv2 ...` (hoặc `MAT KET NOI`). Độ phân giải lấy
+theo luồng; 640×480 tốt nhất, 320×240 vẫn dùng được.
 
-**3. Hiệu chuẩn camera** (mỗi xe một lần, xe đứng yên):
+**3. Hiệu chuẩn camera** (mỗi xe một lần, xe đứng yên, **cùng độ phân giải luồng** sẽ dùng):
 ```bash
 python3 tools/esp32_cam_node.py agv1          # Terminal A: ảnh xe 1 lên ROS
 python3 tools/cam_calib.py agv1 --square 0.025 # Terminal B

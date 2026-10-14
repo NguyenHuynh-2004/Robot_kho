@@ -32,6 +32,9 @@ export ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST
 # cua mot xe VO HINH (2026-10-10: xe 2 khong co costmap, khong follow_path) ma tien
 # trinh van song. Luu luong o day nho, UDP thua suc.
 export FASTDDS_BUILTIN_TRANSPORTS=UDPv4
+# Goi DDS <= 1400 byte, chi unicast 127.0.0.1: WSL mirrored lam roi goi UDP > 1472 B tren
+# loopback -> node khong thay nhau (tools/fastdds_localhost.xml)
+export FASTRTPS_DEFAULT_PROFILES_FILE=$WS/tools/fastdds_localhost.xml
 NAMES=(${ROBOTS:-agv1 agv2})
 
 down() {
@@ -150,7 +153,7 @@ for n in "${NAMES[@]}"; do
     setsid ros2 launch $WS/tools/fleet_nav.launch.py namespace:=$n \
       params_file:=$L/navigation_$n.yaml > $L/nav_$n.log 2>&1 &
     NP=$!
-    for k in $(seq 1 60); do
+    for k in $(seq 1 120); do
       grep -q "Managed nodes are active" $L/nav_$n.log && break
       echo -n "."; sleep 1
     done

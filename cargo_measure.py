@@ -210,14 +210,21 @@ def measure(img_bgr, scans, cfg, lidar_x=None):
     face = fit_face(lidar_points(scans, lx, cfg))
     cam = Camera(cfg)
     c = cfg['camera']
-    if img_bgr.shape[1] != c['width'] or img_bgr.shape[0] != c['height']:
-        raise ValueError(f'anh {img_bgr.shape[1]}x{img_bgr.shape[0]} khac kich thuoc hieu chuan '
-                         f'{c["width"]}x{c["height"]} (firmware ESP32-CAM phai de VGA 640x480)')
+    h0, w0 = img_bgr.shape[:2]
+    warn = []
+    if (w0, h0) != (c['width'], c['height']):
+        # Luong ESP32-CAM co san co the khac co anh luc hieu chuan (vd QVGA 320x240):
+        # cung ti le 4:3 thi phong anh ve co hieu chuan (cung khung nhin, chi thua pixel).
+        if abs(w0 / h0 - c['width'] / c['height']) > 0.01:
+            raise ValueError(f'anh {w0}x{h0} khac ti le co hieu chuan {c["width"]}x{c["height"]} - '
+                             'hieu chuan lai: tools/cam_calib.py')
+        img_bgr = cv2.resize(img_bgr, (c['width'], c['height']), interpolation=cv2.INTER_LINEAR)
+        warn.append(f'anh {w0}x{h0} phong len {c["width"]}x{c["height"]} (hieu chuan o co khac) - '
+                    f'1 px anh goc ~{face["dist"] / c["fx"] * c["width"] / w0 * 1000:.1f} mm')
     und = cv2.undistort(img_bgr, cam.K, cam.D)
     mask = segment(und) > 0
     H, W = mask.shape
     n, d = face['n'], face['d']
-    warn = []
     if abs(face['yaw_deg']) > 8:
         warn.append(f'mat hang lech {face["yaw_deg"]:+.1f} do')
     # diem giua mat truoc o do cao LiDAR -> pixel hat giong

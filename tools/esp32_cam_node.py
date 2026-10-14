@@ -3,14 +3,16 @@
 
     python3 tools/esp32_cam_node.py                  # ca 2 xe theo cargo.yaml cameras:
     python3 tools/esp32_cam_node.py agv1             # mot xe
-    python3 tools/esp32_cam_node.py agv1 --host agv1=192.168.1.210 --mode stream
+    python3 tools/esp32_cam_node.py agv1 --url agv1=http://192.168.1.210:81/stream
 
 Moi camera MOT luong rieng chi giu anh MOI NHAT (giong esp32_cam_node.py cua do an
-truoc), timer phat ra ROS theo `rate`. Hai che do (cargo.yaml cameras.<xe>.mode):
-  capture: GET http://<host>/capture (mot anh JPEG) moi 1/rate s - Wi-Fi nhe, micro-ROS
-           cua LiDAR van chay chung song. Mac dinh.
-  stream : doc luong MJPEG http://<host>:81/stream lien tuc (OpenCV/FFmpeg) - anh moi
-           hon nhung ton Wi-Fi ~2-4 Mbit/s moi xe.
+truoc), timer phat ra ROS theo `rate`. Hai che do (cargo.yaml cameras.<xe>):
+  url: ...     : doc LUONG MJPEG o dung dia chi do (firmware stream co san tren
+                 ESP32-CAM, vd http://192.168.1.200:81/stream). Dang dung.
+  mode capture : GET http://<host>/capture moi 1/rate s (can firmware/esp32_cam) - nhe Wi-Fi.
+  mode stream  : luong http://<host>:81/stream.
+Doc luong thi ESP32-CAM gui lien tuc (~1-4 Mbit/s moi xe tuy co anh) - chung Wi-Fi voi
+micro-ROS cua LiDAR; thay LiDAR/odom giat thi giam do phan giai/chat luong o camera.
 Mat ket noi (xe tat nguon, ESP32-CAM sut ap) thi tu ket noi lai moi 2 s, bao mot lan.
 rotate: 0/90/180/270 - camera lap nguoc thi dat 180 (hoac bat vflip+hmirror trong firmware).
 port / stream_port: mac dinh 80 / 81 (doi khi thu voi ESP32-CAM gia tren laptop).
@@ -40,8 +42,11 @@ ROT = {90: cv2.ROTATE_90_CLOCKWISE, 180: cv2.ROTATE_180, 270: cv2.ROTATE_90_COUN
 
 
 class Camera:
-    def __init__(self, node, car, host, mode='capture', rate=3.0, rotate=0, port=80, stream_port=81):
-        self.node, self.car, self.host = node, car, host
+    def __init__(self, node, car, host=None, mode='capture', rate=3.0, rotate=0, port=80, stream_port=81,
+                 url=None):
+        self.node, self.car, self.host, self.full_url = node, car, host, url
+        if url:
+            mode = 'capture' if url.rstrip('/').endswith('/capture') else 'stream'
         self.port, self.stream_port = int(port), int(stream_port)
         self.mode, self.rate, self.rotate = mode, float(rate), int(rotate)
         self.pub = node.create_publisher(Image, f'/{car}/camera/image_raw', 2)
@@ -54,6 +59,8 @@ class Camera:
         threading.Thread(target=target, daemon=True).start()
 
     def url(self):
+        if self.full_url:
+            return self.full_url
         if self.mode == 'capture':
             return f'http://{self.host}:{self.port}/capture'
         return f'http://{self.host}:{self.stream_port}/stream'
@@ -170,7 +177,7 @@ def main():
     argv = remove_ros_args(sys.argv)[1:]
     conf = cm.load_cfg().get('cameras', {})
     over = {}
-    for flag in ('--host', '--mode', '--rate', '--rotate', '--port', '--stream_port'):
+    for flag in ('--host', '--url', '--mode', '--rate', '--rotate', '--port', '--stream_port'):
         while flag in argv:
             i = argv.index(flag)
             val = argv[i + 1]
@@ -186,9 +193,9 @@ def main():
         c = dict(conf.get(car, {}))
         c.update(over.get('*', {}))
         c.update(over.get(car, {}))
-        if 'host' not in c:
-            sys.exit(f'{car}: chua co host trong cargo.yaml cameras: (hoac --host {car}=IP)')
-        cams.append({'car': car, 'host': c['host'], 'mode': c.get('mode', 'capture'),
+        if 'host' not in c and 'url' not in c:
+            sys.exit(f'{car}: chua co url/host trong cargo.yaml cameras: (hoac --url {car}=http://...)')
+        cams.append({'car': car, 'host': c.get('host'), 'url': c.get('url'), 'mode': c.get('mode', 'capture'),
                      'rate': float(c.get('rate', 3.0)), 'rotate': int(c.get('rotate', 0)),
                      'port': int(c.get('port', 80)), 'stream_port': int(c.get('stream_port', 81))})
     node = Esp32CamNode(cams)

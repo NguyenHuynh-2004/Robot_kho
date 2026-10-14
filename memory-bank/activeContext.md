@@ -37,7 +37,15 @@ Chỉ đo **rộng × cao**; camera nhìn thẳng, **Z + mặt phẳng mặt hà
 - `tools/cam_calib.py agvN` → `config/camera_agvN.yaml` (đè `camera:`; x,y,z đo tay). Thử bàn cờ
   giả: fx 492,1/492,8, RMS 0,28. `cargo_task.py --sim` bỏ qua file hiệu chuẩn.
 - Mô phỏng bố trí mới: 4 hàng sai ≤ 1 mm, về đúng (1,1)–(1,4).
-- **Chờ người dùng:** lắp ESP32-CAM + nguồn 5 V riêng, nạp Cam_1/Cam_2, hiệu chuẩn, đo x,y,z.
+- **2026-10-14: người dùng KHÔNG nạp lại được ESP32-CAM** — chỉ có firmware stream sẵn
+  (`http://192.168.1.200:81/stream`, `.201`). `cargo.yaml cameras.agvN.url` = luồng đó; node đọc
+  luồng (OpenCV/FFmpeg). Ảnh khác cỡ hiệu chuẩn (cùng 4:3) → phóng lên, cảnh báo. `firmware/esp32_cam`,
+  `Cam_1/Cam_2` để dự phòng, không dùng. Camera phải nhìn thẳng ngang (code cũ của họ nhìn sàn?).
+- **Chờ người dùng:** bật 2 camera (lúc kiểm tra chưa online), hiệu chuẩn, đo x,y,z.
+- **DDS 2026-10-14:** gói UDP > 1472 B trên 127.0.0.1 bị rơi → `tools/fastdds_localhost.xml`
+  (bashrc + fleet_real.sh + fleet_sim.sh; bashrc cũ: ~/.bashrc.bak_xml). Đã thử: mô phỏng 2 xe +
+  đo hàng OK; fleet_real.sh với ESP32 giả OK (Nav2 ~50 s, chờ tối đa 120 s). **Chưa thử với
+  micro-ROS agent thật** — lần chạy xe thật tới: kiểm tra /agvN/scan, joint_states về đủ.
 - Bẫy: thử phát hiện node bằng `timeout ros2 run ...` cho kết quả sai (chập chờn) — chạy
   thẳng python, chờ ≥ 5 s.
 

@@ -3,6 +3,7 @@
 ## Đã xong (mới nhất trước)
 | Ngày | Việc | Commit |
 |---|---|---|
+| 2026-10-14 | ESP32-CAM dùng firmware stream sẵn (`cameras.agvN.url`), ảnh khác cỡ hiệu chuẩn → phóng lên; **sửa DDS**: WSL rơi gói UDP > 1472 B trên loopback → `tools/fastdds_localhost.xml` (gói 1400) | (HEAD) |
 | 2026-10-13 | **Camera thật (code)**: `firmware/esp32_cam`, `tools/esp32_cam_node.py`, `tools/cam_calib.py`, camera riêng từng xe; lấy hàng cột 5 (quay Đông) → trả hàng 1; `fleet_real.sh` bật camera. Chưa thử phần cứng | (HEAD) |
 | 2026-10-12 | **Đo hàng bằng camera (mô phỏng)**: `cargo_measure.py`, `cargo_task.py`, `tools/sim_cargo.py`, `cargo.yaml`; 9 lần đo sai ≤ 3,5 mm, hai xe chung ô đích, hàng quá khổ báo lỗi | (HEAD) |
 | 2026-10-10 | Local costmap hết ô "kẹt" (vật cản còn trên RViz dù LiDAR không thấy): ObstacleLayer + `observation_persistence 1.0` + `fleet_agent` xoá lớp vật cản mỗi 1 s (`clear_except`, giữ 0.5 m); `raytrace_max_range 10` | (HEAD) |

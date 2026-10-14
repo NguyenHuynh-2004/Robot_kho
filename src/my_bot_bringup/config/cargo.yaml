@@ -27,13 +27,14 @@ camera:
   z: 0.11
 
 # ESP32-CAM tren xe that (tools/esp32_cam_node.py -> /agvN/camera/image_raw).
-# Firmware: firmware/esp32_cam (IP tinh .200 xe 1, .201 xe 2; anh /capture cong 80,
-# luong MJPEG /stream cong 81 - giong vi du CameraWebServer).
-#   mode capture: GET /capture moi 1/rate s (nhe Wi-Fi - micro-ROS cung chung song)
-#   mode stream : doc luong MJPEG lien tuc, luong rieng giu anh moi nhat
+# Dung FIRMWARE STREAM CO SAN tren camera (khong nap lai): doc luong MJPEG `url`,
+# luong rieng giu anh moi nhat, phat ROS `rate` anh/s. Do phan giai lay theo luong;
+# camera_agvN.yaml (tools/cam_calib.py) phai hieu chuan DUNG do phan giai do.
+# (firmware/esp32_cam - neu sau nay nap duoc - co them /capture: thay url bang
+#  {host: 192.168.1.200, mode: capture}, nhe Wi-Fi hon.)
 cameras:
-  agv1: {host: 192.168.1.200, mode: capture, rate: 3.0, rotate: 0}
-  agv2: {host: 192.168.1.201, mode: capture, rate: 3.0, rotate: 0}
+  agv1: {url: "http://192.168.1.200:81/stream", rate: 3.0, rotate: 0}
+  agv2: {url: "http://192.168.1.201:81/stream", rate: 3.0, rotate: 0}
 
 lidar:
   # LiDAR so voi base_footprint (truoc, cao). Xe that: doc tu TF (URDF 0.014);

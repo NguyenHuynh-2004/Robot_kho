@@ -51,6 +51,10 @@ nối dây, thuật toán, quy tắc 2 xe, nạp firmware H3).
 - `colcon build --symlink-install`; file mới trong `scripts/` cần build lại.
 - **Sửa file qua `\\wsl.localhost` mất bit chạy → `chmod +x`.** Gọi WSL từ Git Bash:
   `MSYS_NO_PATHCONV=1 wsl.exe -e bash script.sh`; `/tmp` hai bên khác nhau.
+- **WSL mirrored rơi gói UDP > 1472 B trên 127.0.0.1** (2026-10-14: node không thấy nhau, kể cả
+  talker/listener) → `FASTRTPS_DEFAULT_PROFILES_FILE=~/robot_ws_3/tools/fastdds_localhost.xml`
+  (gói ≤ 1400, unicast lo; đã thêm vào bashrc, fleet_real/fleet_sim). Nav2 lên chậm ~40 s/xe.
+  Thử phát hiện node: chạy thẳng python (không `timeout ros2 run`), chờ ≥ 5 s.
 - Quá ~30–40 tiến trình ROS/domain thì DDS LOCALHOST không thấy tiến trình bật sau.
 - `MultiThreadedExecutor` + topic 50 Hz → CPU 80–90%.
 - `ros2` CLI dò tìm thiếu khi nhiều tiến trình → kiểm tra bằng script rclpy.

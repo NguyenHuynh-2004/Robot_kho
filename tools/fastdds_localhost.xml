@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!--
+  Fast DDS cho moi tien trinh ROS 2 tren laptop (WSL2, networking mirrored).
+  Nap bang:  export FASTRTPS_DEFAULT_PROFILES_FILE=~/robot_ws_3/tools/fastdds_localhost.xml
+  (~/.bashrc, tools/fleet_real.sh, tools/fleet_sim.sh).
+
+  Vi sao (do 2026-10-14): trong WSL mirrored, goi UDP > 1472 byte gui qua 127.0.0.1 BI ROI
+  (chia manh IP tren loopback hong; qua 192.168.1.21 thi khong). Fast DDS mac dinh gui goi
+  toi 64 KB -> thong tin kham pha (SEDP) va anh camera mat het: node khong thay nhau
+  (ca demo talker/listener), luc duoc luc khong tuy kich thuoc goi.
+  Sua: chi UDP tren 127.0.0.1, goi toi da 1400 byte (Fast DDS tu chia manh o tang RTPS),
+  kham pha unicast toi 127.0.0.1 cho 100 participant dau (khong can multicast - lo cua
+  WSL khong co co MULTICAST). Do lai: 3/3 lan thay node trong 0.1-1.4 s (truoc: 0/3).
+-->
+<profiles xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
+  <transport_descriptors>
+    <transport_descriptor>
+      <transport_id>udp_localhost</transport_id>
+      <type>UDPv4</type>
+      <interfaceWhiteList><address>127.0.0.1</address></interfaceWhiteList>
+      <maxMessageSize>1400</maxMessageSize>
+      <maxInitialPeersRange>30</maxInitialPeersRange>
+    </transport_descriptor>
+  </transport_descriptors>
+  <participant profile_name="robot_ws_localhost" is_default_profile="true">
+    <rtps>
+      <userTransports><transport_id>udp_localhost</transport_id></userTransports>
+      <useBuiltinTransports>false</useBuiltinTransports>
+      <builtin>
+        <metatrafficUnicastLocatorList>
+          <locator><udpv4><address>127.0.0.1</address></udpv4></locator>
+        </metatrafficUnicastLocatorList>
+        <initialPeersList>
+          <locator><udpv4><address>127.0.0.1</address></udpv4></locator>
+        </initialPeersList>
+      </builtin>
+    </rtps>
+  </participant>
+</profiles>
