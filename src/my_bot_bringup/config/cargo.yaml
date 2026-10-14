@@ -41,7 +41,9 @@ lidar:
   # LiDAR so voi base_footprint (truoc, cao). Xe that: doc tu TF (URDF 0.014);
   # xe ao: 0.0. So nay chi dung khi chua co TF.
   x: 0.014
-  z: 0.075
+  # Xe that: LiDAR cao 19 cm (nguoi dung do 2026-10-14; URDF van ghi 0.075). Tia CHECH LEN
+  # ~1.3-2.7 do: o 0.9 m da cao hon 21 cm (khong thay hop 21.1 cm, thay hop 23.9 cm).
+  z: 0.19
   half_fov_deg: 35        # chi xet tia trong +-35 do phia truoc
   max_range: 1.2          # m - xa hon la nen, khong phai hang (hang o ~0.85 m)
   scans: 10               # so vong quet lay trung binh
