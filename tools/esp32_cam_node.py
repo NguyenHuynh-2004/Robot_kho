@@ -8,7 +8,7 @@
 Moi camera MOT luong rieng chi giu anh MOI NHAT (giong esp32_cam_node.py cua do an
 truoc), timer phat ra ROS theo `rate`. Hai che do (cargo.yaml cameras.<xe>):
   url: ...     : doc LUONG MJPEG o dung dia chi do (firmware stream co san tren
-                 ESP32-CAM, vd http://192.168.1.200:81/stream). Dang dung.
+                 ESP32-CAM, vd http://192.168.1.201:81/stream). Dang dung.
   mode capture : GET http://<host>/capture moi 1/rate s (can firmware/esp32_cam) - nhe Wi-Fi.
   mode stream  : luong http://<host>:81/stream.
 Doc luong thi ESP32-CAM gui lien tuc (~1-4 Mbit/s moi xe tuy co anh) - chung Wi-Fi voi

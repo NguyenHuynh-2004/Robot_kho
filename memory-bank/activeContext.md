@@ -38,7 +38,7 @@ Chỉ đo **rộng × cao**; camera nhìn thẳng, **Z + mặt phẳng mặt hà
   giả: fx 492,1/492,8, RMS 0,28. `cargo_task.py --sim` bỏ qua file hiệu chuẩn.
 - Mô phỏng bố trí mới: 4 hàng sai ≤ 1 mm, về đúng (1,1)–(1,4).
 - **2026-10-14: người dùng KHÔNG nạp lại được ESP32-CAM** — chỉ có firmware stream sẵn
-  (`http://192.168.1.200:81/stream`, `.201`). `cargo.yaml cameras.agvN.url` = luồng đó; node đọc
+  (**xe 1 = 192.168.1.201, xe 2 = .200** — chéo). `cargo.yaml cameras.agvN.url` = luồng đó; node đọc
   luồng (OpenCV/FFmpeg). Ảnh khác cỡ hiệu chuẩn (cùng 4:3) → phóng lên, cảnh báo. `firmware/esp32_cam`,
   `Cam_1/Cam_2` để dự phòng, không dùng. Camera phải nhìn thẳng ngang (code cũ của họ nhìn sàn?).
 - **2026-10-14 camera ONLINE**: .200/.201 chạy CameraWebServer (320x240, framesize 6, quality 10),

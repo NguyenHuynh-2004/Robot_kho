@@ -480,8 +480,8 @@ mỗi camera một luồng giữ ảnh mới nhất) → `/agvN/camera/image_raw
 
 | Xe | Luồng (sửa trong `cargo.yaml` → `cameras:` nếu khác) |
 |---|---|
-| 1 | `http://192.168.1.200:81/stream` |
-| 2 | `http://192.168.1.201:81/stream` |
+| 1 | `http://192.168.1.201/capture` (luồng: `http://192.168.1.201:81/stream`) |
+| 2 | `http://192.168.1.200/capture` (luồng: `http://192.168.1.200:81/stream`) |
 
 **1. Camera**:
 - Phải **nhìn thẳng ra trước, nằm ngang** (không chúc xuống sàn), ở đầu xe, cao ~11 cm —
@@ -489,7 +489,7 @@ mỗi camera một luồng giữ ảnh mới nhất) → `/agvN/camera/image_raw
 - Đo bằng thước: tâm ống kính cách **tâm trục bánh** bao nhiêu (x: ra trước, y: sang trái,
   z: cao từ sàn) — dùng ở bước 3.
 - Nguồn ESP32-CAM nên **riêng, ≥ 1 A** — nguồn yếu thì camera tự khởi động lại, luồng đứt.
-- Thử: mở `http://192.168.1.200:81/stream` bằng trình duyệt thấy video là được.
+- Thử: mở `http://192.168.1.201:81/stream` (xe 1) / `.200` (xe 2) bằng trình duyệt thấy video là được.
 
 **2. Kiểm tra luồng về ROS**:
 ```bash

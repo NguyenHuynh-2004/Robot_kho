@@ -1,6 +1,8 @@
 // ESP32-CAM (AI-Thinker, OV2640) gan tren xe - chup anh hang cho cargo_task.py.
 //
 // Chon xe bang XE ben duoi: IP tinh 192.168.1.200 (xe 1) / .201 (xe 2).
+// (Chua dung: camera hien tai chay CameraWebServer co san, xe 1 = .201, xe 2 = .200 -
+//  neu nap firmware nay thi sua cargo.yaml cameras: cho khop.)
 // Wi-Fi lay tu wifi_config.h CUNG THU MUC (chep tu firmware/esp32_agv_base, chi
 // can WIFI_SSID / WIFI_PASS; file nay khong vao git).
 //
