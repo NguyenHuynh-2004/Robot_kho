@@ -204,6 +204,28 @@ def refine_edge(gray_row, u_pred, u_mask, side):
     return lo + int(np.argmax(g[lo:hi])) + 0.5    # g[k] = |I(k+1) - I(k)| -> bien k+0.5
 
 
+def front_top_edge(gray, mask, cols, va, vb):
+    """Camera CAO hon mat tren hop: mep tren mat na la canh SAU cua mat tren. Mep tren
+    that cua mat truoc = vach doi do sang (mat tren / mat truoc) manh nhat trong nua
+    tren mat na. Tra hang (toa do bien o) hoac None neu khong co vach ro."""
+    lo, hi = int(va) + 2, int(va + 0.5 * (vb - va))
+    if hi - lo < 4:
+        return None
+    rows, strength = [], []
+    for c in cols:
+        prof = gray[lo:hi + 1, max(c - 1, 0):c + 2].astype(float).mean(axis=1)
+        prof = np.convolve(prof, np.ones(3) / 3, mode='same')
+        g = np.abs(np.diff(prof))[1:-1]
+        if not len(g):
+            continue
+        k = int(np.argmax(g))
+        rows.append(lo + 1 + k + 0.5)
+        strength.append(g[k])
+    if len(rows) < 5 or np.median(strength) < 4.0:
+        return None
+    return float(np.median(rows))
+
+
 def measure(img_bgr, scans, cfg, lidar_x=None):
     """Tra dict ket qua (m) + anh ve chu thich. raise ValueError neu khong do duoc."""
     lx = cfg['lidar']['x'] if lidar_x is None else lidar_x
@@ -280,9 +302,18 @@ def measure(img_bgr, scans, cfg, lidar_x=None):
             bots.append(e[1])
             touch_v |= e[2]
     va, vb = float(np.median(tops)), float(np.median(bots))
+    um = 0.5 * (ua + ub)
+    if cam.ray_plane(um, va, n, d)[2] < cam.C[2] - 0.005:
+        # mep tren mat na thap hon camera -> camera nhin thay mat tren hop
+        cols = np.linspace(ua + 0.3 * (ub - ua), ua + 0.7 * (ub - ua), 15).astype(int)
+        vf = front_top_edge(gray, mask, cols, va, vb)
+        if vf is not None:
+            va = vf
+            warn.append('camera cao hon hang: mep tren lay theo vach sang mat tren/mat truoc')
+        else:
+            warn.append('camera cao hon hang, khong thay vach mat tren/mat truoc - chieu cao co the LON hon that')
     vm = 0.5 * (va + vb)
     PL, PR = cam.ray_plane(ua, vm, n, d), cam.ray_plane(ub, vm, n, d)
-    um = 0.5 * (ua + ub)
     PT, PB = cam.ray_plane(um, va, n, d), cam.ray_plane(um, vb, n, d)
     width = float(np.linalg.norm(PL[:2] - PR[:2]))
     height = float(PT[2] - PB[2])
@@ -292,8 +323,6 @@ def measure(img_bgr, scans, cfg, lidar_x=None):
                          'dat hang xa hon (place.gap) hoac hang nho hon')
     if abs(PB[2]) > 0.015:
         warn.append(f'day hang o z={PB[2] * 100:+.1f} cm (khong tren san? bong do?)')
-    if PT[2] < cam.C[2] + 0.005:
-        warn.append('mat tren hang thap hon camera - thay ca mat tren, chieu cao co the sai')
     if abs(width - face['width']) > 0.03:
         warn.append(f'rong camera {width * 100:.1f} cm khac LiDAR {face["width"] * 100:.1f} cm')
     # anh chu thich

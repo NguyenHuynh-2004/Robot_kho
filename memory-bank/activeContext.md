@@ -51,6 +51,11 @@ Chỉ đo **rộng × cao**; camera nhìn thẳng, **Z + mặt phẳng mặt hà
   ngoài bản đồ: ICP chỉ khớp 40–56%, AMCL trôi ~5 cm/4–7° sau 1,8 m →  tự ICP + sửa AMCL
   ở ô lấy hàng (đã chạy: sửa 2,8 cm/−5,6°). Lệnh 1 3, 1 4 chạy đúng đường; chưa có hàng → báo lỗi
   đúng. **Nên vẽ lại bản đồ** (Kịch bản 1). Chờ: đặt hàng, hiệu chuẩn camera, đo x,z camera.
+- **Camera xe thật cao 23,5 cm**, cách tâm xe 82,7 mm (giả định đo từ tâm xe/LiDAR → x = 0,0967 từ
+  trục; CHỜ người dùng xác nhận, và 2 xe lắp giống nhau?) → `camera_agv1/2.yaml`. `place.gap`
+  0,35 → **0,65** (gần hơn thì không thấy chân hộp). Hộp thấp hơn camera: `front_top_edge`
+  (vạch sáng mặt trên/trước), offline 320×240 sai ≤ 3,5 mm. Bàn cờ: calib.io 8×10 ô 20 mm →
+  `tools/cam_calib.py agvN --board 9x7 --square 0.020`.
 - **DDS 2026-10-14:** gói UDP > 1472 B trên 127.0.0.1 bị rơi → `tools/fastdds_localhost.xml`
   (bashrc + fleet_real.sh + fleet_sim.sh; bashrc cũ: ~/.bashrc.bak_xml). Đã thử: mô phỏng 2 xe +
   đo hàng OK; fleet_real.sh với ESP32 giả OK (Nav2 ~50 s, chờ tối đa 120 s). **Chưa thử với

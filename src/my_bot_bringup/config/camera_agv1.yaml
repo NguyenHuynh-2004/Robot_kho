@@ -1,0 +1,9 @@
+# Camera agv1 - vi tri lap do bang thuoc 2026-10-14 (nguoi dung: camera cach tam xe
+# 82.7 mm ra truoc, cao 23.5 cm tu san). Chua hieu chuan (fx, dist... lay mac dinh trong
+# cargo.yaml) - chay tools/cam_calib.py agv1: giu nguyen x, y, z duoi day.
+# Vi tri tam ong kinh so voi TAM TRUC BANH (m): x truoc, y trai, z cao tu san.
+# x = 0.0827 + 0.014 (tam xe / LiDAR nam truoc truc banh 14 mm). Neu 82.7 mm do tu TRUC
+# BANH thi sua x: 0.0827.
+x: 0.0967
+y: 0.0
+z: 0.235

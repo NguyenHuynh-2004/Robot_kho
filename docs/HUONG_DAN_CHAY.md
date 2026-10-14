@@ -332,8 +332,8 @@ Kết quả + ảnh có vẽ khung: `~/agv_logs/cargo/` (`results.csv`).
 | Hàng rộng 40 cm (quá khung hình) / ô không có hàng | báo **không đo được**, xe không giao |
 
 > [!WARNING]
-> Giới hạn (camera cao 11 cm, hàng cách tâm ô 35 cm): rộng ≤ ~33 cm, cao 11–25 cm. Hàng
-> thấp hơn camera thì thấy cả mặt trên → chiều cao sai vài mm (có cảnh báo). Kích thước
+> Giới hạn (camera cao 11 cm, hàng cách tâm ô 65 cm): rộng ≤ ~70 cm, cao ≤ ~40 cm. Hàng
+> thấp hơn camera thì thấy cả mặt trên → mép trên lấy theo vạch sáng mặt trên/mặt trước. Kích thước
 > sát ngưỡng bảng loại (vd rộng 12,0 cm với ngưỡng 12 cm) có thể rơi sang loại bên cạnh.
 > `--sim` = dùng thông số camera ảo; xe thật bỏ `--sim` (dùng `camera_agvN.yaml`).
 
@@ -514,22 +514,25 @@ Laptop chụp `/capture` 3 ảnh/s mỗi xe (~30 KB/s, nhẹ Wi-Fi) → `/agvN/c
 320×240. Đổi IP / cách lấy ảnh: `src/my_bot_bringup/config/cargo.yaml` → `cameras:`.
 
 **A. Chuẩn bị (một lần):**
-1. **Camera:** nhìn **thẳng ra trước, nằm ngang**, ở đầu xe, **thấp hơn** mặt trên hàng thấp
-   nhất (~11 cm); nguồn **riêng**. Thử: mở `http://192.168.1.201/capture` bằng trình duyệt.
+1. **Camera:** nhìn **thẳng ra trước, nằm ngang**, ở đầu xe; nguồn **riêng**. Thử: mở
+   `http://192.168.1.201/capture` bằng trình duyệt. (Đang lắp: cao 23,5 cm.)
 2. **Đo vị trí camera** (thước): tâm ống kính cách **tâm trục bánh** x cm ra trước, y cm sang
-   trái, z cm cao từ sàn.
-3. **Hiệu chuẩn** (mỗi xe, xe đứng yên). In bàn cờ **10×7 ô (9×6 góc trong)** lên A4, dán
-   phẳng lên bìa cứng, đo cạnh ô (m):
+   trái, z cm cao từ sàn → `src/my_bot_bringup/config/camera_agvN.yaml` (đã ghi: x 0,0967,
+   z 0,235 cho cả 2 xe).
+3. **Hiệu chuẩn** (mỗi xe, xe đứng yên). Bàn cờ calib.io **8×10 ô, ô 20 mm** (A4, in
+   **100 % / Actual size**, không "Fit to page") → **9×7 góc trong**, `--square 0.020`. Đo lại
+   cạnh ô bằng thước (in co giãn thì sửa `--square`). Dán phẳng lên bìa cứng:
    ```bash
    python3 tools/esp32_cam_node.py agv1             # Terminal A (bỏ qua nếu fleet_real.sh up đang chạy)
-   python3 tools/cam_calib.py agv1 --square 0.025   # Terminal B
+   python3 tools/cam_calib.py agv1 --board 9x7 --square 0.020   # Terminal B
    ```
    Cầm bàn cờ trước camera, đổi chỗ / nghiêng / đưa ra 4 góc ảnh, mỗi chỗ giữ yên ~1 s:
    tự lấy 15 ảnh → ghi `src/my_bot_bringup/config/camera_agv1.yaml`. **RMS < 0,5 px** là tốt.
-   Mở file đó, sửa `x`, `y`, `z` (mét) theo bước 2. Làm lại cho `agv2`.
+   `x`, `y`, `z` đã ghi ở bước 2 được giữ nguyên. Làm lại cho `agv2`.
 
-**B. Đặt hàng:** hộp phía Đông ô (hàng 2–5, cột 5), **mặt trước cách tâm ô 35 cm**, vuông
-với hướng Đông. Cao 12–25 cm, rộng ≤ 33 cm. Hộp **có màu** (bìa carton nâu), nền phía sau và
+**B. Đặt hàng:** hộp phía Đông ô (hàng 2–5, cột 5), **mặt trước cách tâm ô 65 cm** (camera
+cao 23,5 cm: gần hơn thì camera không thấy chân hộp), vuông
+với hướng Đông. Cao 10–45 cm, rộng ≤ 33 cm (theo bảng loại). Hộp **có màu** (bìa carton nâu), nền phía sau và
 sàn **trắng/xám** — bộ đo tách hàng theo độ đậm màu.
 
 **C. Chạy** — Terminal 1–3 như trên (`fleet_real.sh up` + `fleet_localize.py`, `traffic_manager.py`,
