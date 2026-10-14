@@ -46,6 +46,11 @@ Chỉ đo **rộng × cao**; camera nhìn thẳng, **Z + mặt phẳng mặt hà
   thẳng ngang, không ngược, thấp (sàn gạch sáng). Vào ROS OK (3 ảnh/s/xe) với DDS xml mới.
 - **Chờ người dùng:** bật nguồn 2 XE (agent không có phiên nào lúc thử) để thử DDS mới với agent
   thật; hiệu chuẩn bàn cờ; đo x,y,z camera.
+- **Chạy thật 2026-10-14 tối:** sụt áp đã sửa (người dùng sửa nguồn; 2 xe ổn định 60 s+). Xe đặt
+  (3,2)Đ và (2,2)Đ (KHÔNG phải vị trí mặc định) – tìm bằng ICP toàn sa bàn. Phòng có xe máy/đồ đạc
+  ngoài bản đồ: ICP chỉ khớp 40–56%, AMCL trôi ~5 cm/4–7° sau 1,8 m →  tự ICP + sửa AMCL
+  ở ô lấy hàng (đã chạy: sửa 2,8 cm/−5,6°). Lệnh 1 3, 1 4 chạy đúng đường; chưa có hàng → báo lỗi
+  đúng. **Nên vẽ lại bản đồ** (Kịch bản 1). Chờ: đặt hàng, hiệu chuẩn camera, đo x,z camera.
 - **DDS 2026-10-14:** gói UDP > 1472 B trên 127.0.0.1 bị rơi → `tools/fastdds_localhost.xml`
   (bashrc + fleet_real.sh + fleet_sim.sh; bashrc cũ: ~/.bashrc.bak_xml). Đã thử: mô phỏng 2 xe +
   đo hàng OK; fleet_real.sh với ESP32 giả OK (Nav2 ~50 s, chờ tối đa 120 s). **Chưa thử với

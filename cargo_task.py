@@ -31,6 +31,8 @@ from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
 from rclpy.utilities import remove_ros_args
+from geometry_msgs.msg import PoseWithCovarianceStamped
+from nav_msgs.msg import OccupancyGrid
 from rcl_interfaces.msg import Log
 from sensor_msgs.msg import Image, LaserScan
 from std_msgs.msg import ColorRGBA, String
@@ -40,6 +42,8 @@ from visualization_msgs.msg import Marker, MarkerArray
 import cargo_measure as cm
 from grid_board import Board, config_path
 from grid_navigator import HEADING_NAMES, parse_heading
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'tools'))
+import fleet_localize as fl   # noqa: E402  (ICP anh quet <-> /map)
 
 def hd_name(h):
     return HEADING_NAMES[parse_heading(h)[0]]
@@ -50,6 +54,11 @@ ARRIVE_D = 0.05            # m: coi la da toi o
 ARRIVE_YAW = math.radians(5)
 SETTLE = 1.0               # s dung yen truoc khi do
 TIMEOUT = 180.0            # s cho moi chang
+# O lay hang (xe dung yen): khop anh quet voi /map (ICP nhu tools/fleet_localize.py);
+# AMCL lech hon muc nay thi gui lai /agvN/initialpose -> chang ve o tra di dung.
+# (2026-10-14: phong co xe may / do dac ngoai ban do, AMCL troi 5 cm, 4-7 do sau 1.8 m.)
+RELOC_SHIFT = 0.015        # m
+RELOC_YAW = math.radians(1.5)
 
 
 class Task:
@@ -88,6 +97,16 @@ class CargoTask(Node):
         self.create_subscription(String, '/fleet/status', self.cb_status, 50)
         self.create_subscription(String, '/fleet/cargo', lambda m: self.command(m.data), 10)
         self.create_subscription(Log, '/rosout', self.cb_rosout, 100)
+        latched = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL,
+                             reliability=ReliabilityPolicy.RELIABLE)
+        self.map_tree = None
+        self.create_subscription(OccupancyGrid, '/map', self.cb_map, latched)
+        self.amcl, self.init_pubs = {}, {}
+        for c in cars:
+            self.create_subscription(PoseWithCovarianceStamped, f'/{c}/amcl_pose',
+                                     lambda m, c=c: self.amcl.__setitem__(c, m),
+                                     QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL))
+            self.init_pubs[c] = self.create_publisher(PoseWithCovarianceStamped, f'/{c}/initialpose', 1)
         static = QoSProfile(depth=10, durability=DurabilityPolicy.TRANSIENT_LOCAL,
                             reliability=ReliabilityPolicy.RELIABLE)
         for c in cars:
@@ -118,6 +137,52 @@ class CargoTask(Node):
     def cb_status(self, m):
         d = json.loads(m.data)
         self.status[d['name']] = d
+
+    def cb_map(self, m):
+        from scipy.spatial import cKDTree
+        W, H, res = m.info.width, m.info.height, m.info.resolution
+        ox, oy = m.info.origin.position.x, m.info.origin.position.y
+        occ = np.argwhere(np.array(m.data).reshape(H, W) > 50)
+        self.map_pts = np.c_[ox + (occ[:, 1] + 0.5) * res, oy + (occ[:, 0] + 0.5) * res]
+        self.map_tree = cKDTree(self.map_pts)
+
+    def relocalize(self, car, since):
+        """Xe dung yen: ICP anh quet (tu `since`) voi /map quanh vi tri AMCL; lech thi
+        gui initialpose. Khong co AMCL (mo phong) / khop kem thi bo qua."""
+        if self.map_tree is None or car not in self.amcl:
+            return
+        sc = [x for t, x in self.scans[car] if t > since][-10:]
+        if len(sc) < 5:
+            return
+        RA = []
+        for amin, inc, rr in sc:
+            rr = np.asarray(rr, float)
+            ang = amin + np.arange(len(rr)) * inc
+            ok = np.isfinite(rr) & (rr > 0.15) & (rr < 6)
+            RA.append(np.c_[rr[ok], ang[ok]])
+        RA = np.vstack(RA)
+        p0 = self.amcl[car].pose.pose
+        th = fl.yaw_of(p0.orientation)
+        lx, ly = p0.position.x + fl.LIDAR_X * math.cos(th), p0.position.y + fl.LIDAR_X * math.sin(th)
+        p, (med, good) = fl.icp(self.map_tree, self.map_pts, RA, lx, ly, th)
+        bx, by = p[0] - fl.LIDAR_X * math.cos(p[2]), p[1] - fl.LIDAR_X * math.sin(p[2])
+        shift = math.hypot(bx - p0.position.x, by - p0.position.y)
+        dyaw = math.atan2(math.sin(p[2] - th), math.cos(p[2] - th))
+        if good < fl.MIN_GOOD:
+            self.get_logger().warn(f'[{car}] khop ban do kem ({good * 100:.0f}%) - giu AMCL')
+            return
+        if shift < RELOC_SHIFT and abs(dyaw) < RELOC_YAW:
+            return
+        msg = PoseWithCovarianceStamped()
+        msg.header.frame_id = 'map'
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.pose.pose.position.x, msg.pose.pose.position.y = float(bx), float(by)
+        msg.pose.pose.orientation.z, msg.pose.pose.orientation.w = math.sin(p[2] / 2), math.cos(p[2] / 2)
+        msg.pose.covariance[0] = msg.pose.covariance[7] = 0.02 ** 2
+        msg.pose.covariance[35] = math.radians(1.5) ** 2
+        self.init_pubs[car].publish(msg)
+        self.get_logger().info(f'[{car}] sua AMCL theo ban do: lech {shift * 100:.1f} cm, '
+                               f'{math.degrees(dyaw):+.1f} do ({good * 100:.0f}% tia khop)')
 
     def cb_scan(self, c, m):
         self.scans[c].append((time.time(), (m.angle_min, m.angle_increment, list(m.ranges))))
@@ -220,6 +285,7 @@ class CargoTask(Node):
                     self.get_logger().info(f'[{tk.car}] XONG: hang ({tk.row},{self.pick_col}) -> '
                                            f'da ve o {self.lbl(tk.target)}')
             elif tk.state == 'settle' and now - tk.t > SETTLE:
+                self.relocalize(tk.car, tk.t)
                 tk.state, tk.t = 'collect', now
             elif tk.state == 'collect':
                 sc = [x for t, x in self.scans[tk.car] if t > tk.t]
