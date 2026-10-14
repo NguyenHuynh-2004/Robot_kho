@@ -41,7 +41,11 @@ Chỉ đo **rộng × cao**; camera nhìn thẳng, **Z + mặt phẳng mặt hà
   (`http://192.168.1.200:81/stream`, `.201`). `cargo.yaml cameras.agvN.url` = luồng đó; node đọc
   luồng (OpenCV/FFmpeg). Ảnh khác cỡ hiệu chuẩn (cùng 4:3) → phóng lên, cảnh báo. `firmware/esp32_cam`,
   `Cam_1/Cam_2` để dự phòng, không dùng. Camera phải nhìn thẳng ngang (code cũ của họ nhìn sàn?).
-- **Chờ người dùng:** bật 2 camera (lúc kiểm tra chưa online), hiệu chuẩn, đo x,y,z.
+- **2026-10-14 camera ONLINE**: .200/.201 chạy CameraWebServer (320x240, framesize 6, quality 10),
+  có cả /capture → dùng url .../capture 3 Hz (~30 KB/s/xe; stream 23-25 fps ~280 KB/s). Ảnh: nhìn
+  thẳng ngang, không ngược, thấp (sàn gạch sáng). Vào ROS OK (3 ảnh/s/xe) với DDS xml mới.
+- **Chờ người dùng:** bật nguồn 2 XE (agent không có phiên nào lúc thử) để thử DDS mới với agent
+  thật; hiệu chuẩn bàn cờ; đo x,y,z camera.
 - **DDS 2026-10-14:** gói UDP > 1472 B trên 127.0.0.1 bị rơi → `tools/fastdds_localhost.xml`
   (bashrc + fleet_real.sh + fleet_sim.sh; bashrc cũ: ~/.bashrc.bak_xml). Đã thử: mô phỏng 2 xe +
   đo hàng OK; fleet_real.sh với ESP32 giả OK (Nav2 ~50 s, chờ tối đa 120 s). **Chưa thử với
