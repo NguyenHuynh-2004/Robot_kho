@@ -3,6 +3,7 @@
 ## Đã xong (mới nhất trước)
 | Ngày | Việc | Commit |
 |---|---|---|
+| 2026-10-15 | **Đo hàng thật đạt, 2 xe trọn vòng**: GrabCut gieo từ LiDAR, camera yaw/pitch (`tools/cam_extrinsic.py --height`), cao tính tới sàn, giao lại khi bị chặn, firmware tự restart khi tạo entity lỗi; 18,5×32,0→18,7×32,0, 12,0×23,9→13,0×24,1 | 33c4443 |
 | 2026-10-14 | ESP32-CAM dùng firmware stream sẵn (`cameras.agvN.url`), ảnh khác cỡ hiệu chuẩn → phóng lên; **sửa DDS**: WSL rơi gói UDP > 1472 B trên loopback → `tools/fastdds_localhost.xml` (gói 1400) | (HEAD) |
 | 2026-10-13 | **Camera thật (code)**: `firmware/esp32_cam`, `tools/esp32_cam_node.py`, `tools/cam_calib.py`, camera riêng từng xe; lấy hàng cột 5 (quay Đông) → trả hàng 1; `fleet_real.sh` bật camera. Chưa thử phần cứng | (HEAD) |
 | 2026-10-12 | **Đo hàng bằng camera (mô phỏng)**: `cargo_measure.py`, `cargo_task.py`, `tools/sim_cargo.py`, `cargo.yaml`; 9 lần đo sai ≤ 3,5 mm, hai xe chung ô đích, hàng quá khổ báo lỗi | (HEAD) |
@@ -21,7 +22,7 @@
 | 2026-10-05 | Điều phối 2 xe (mô phỏng): giữ chỗ, ưu tiên gần đích, gỡ kẹt; firmware chân mạch in 2026-10-05 | 679f763, c3256a7 |
 | trước đó | 1 xe thật trên sa bàn: xoay tại chỗ bằng gyro + coast, PID Kf 3.0, goal 2 cm; đẩy GitHub "1 Xe" | da0278b |
 
-GitHub: đã đẩy 2026-10-11, commit "2 xe chạy thật" (chỉ đẩy khi người dùng bảo).
+GitHub: đã đẩy 2026-10-15 (tới commit hướng dẫn chạy hằng ngày đo hàng; chỉ đẩy khi người dùng bảo).
 
 ## Số đo
 - **Xe 1 thật (2026-10-03):** 9/9 lần xoay ≤ 2.8° trong 4–6 s; tới đích lệch 0.4–1.6 cm;
