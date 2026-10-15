@@ -513,6 +513,33 @@ cản trên bản đồ).
 Laptop chụp `/capture` 3 ảnh/s mỗi xe (~30 KB/s, nhẹ Wi-Fi) → `/agvN/camera/image_raw`,
 320×240. Đổi IP / cách lấy ảnh: `src/my_bot_bringup/config/cargo.yaml` → `cameras:`.
 
+> [!TIP]
+> **Chạy hằng ngày** (camera 2 xe đã hiệu chuẩn xong ngày 2026-10-15 — mục A chỉ làm lại khi
+> camera bị xê dịch / đổi camera). Mỗi terminal mở **mới**, bắt đầu bằng
+> `cd ~/robot_ws_3 && source install/setup.bash`.
+>
+> 1. **Đặt hàng** (mục B): hộp phía Đông ô (3,5), (4,5)... cách tâm ô **85 cm**, cao ≥ 24 cm.
+> 2. **Đặt xe**, ghi lại vị trí theo **(hàng, cột)** — hàng đếm **từ dưới lên** (hàng 1 là hàng
+>    trả hàng, sát người đứng), cột đếm **từ trái sang** (cột 5 là cột lấy hàng). Hướng: Đông
+>    = mũi xe chỉ về phía cột 5. Bật nguồn **2 xe + 2 camera**, để yên 2 giây.
+> 3. **Terminal 1** — bật hệ, khai báo đúng chỗ đặt xe (hàng cột hướng_độ: 0 Đông, 180 Tây):
+>    ```bash
+>    AGV1="3 1 0" AGV2="3 5 180" tools/fleet_real.sh up     # ~2 phút, chờ "Da bat"
+>    python3 tools/fleet_localize.py                          # mỗi xe phải in "da gui cho AMCL"
+>    ```
+>    Đọc dòng `xe dang o (hàng,cột) huong ...` (nếu có) — **phải đúng chỗ xe đứng**. Sai /
+>    `KHONG GUI` → đặt lại xe đúng nút rồi chạy lại `fleet_localize.py`.
+> 4. **Kiểm tra nguồn** (terminal mới, Ctrl-C để thoát): `ros2 topic echo --qos-reliability
+>    best_effort /agv1/diag --field data` → `"reset":"POWERON"`, `up_s` tăng đều. Làm cho `agv2`.
+> 5. **Terminal 2:** `python3 traffic_manager.py agv1 agv2` — để yên, không cần nhập.
+> 6. **Terminal 3 (tùy chọn):** `rviz2 -d tools/fleet.rviz`.
+> 7. **Terminal 4:** `python3 cargo_task.py agv1 agv2`, đầu ra phải có
+>    `[agv1] camera: camera_agv1.yaml` (không phải `CHUA HIEU CHUAN`). Nhập `1 3` (xe 1 đo hàng
+>    ở (3,5)), `2 4` (xe 2 ở (4,5)). Chờ `XONG: ... da ve o (1,k)`.
+> 8. **Tắt:** Ctrl-C Terminal 2, 3, 4 → Terminal 1: `tools/fleet_real.sh down`.
+>
+> **Đứng xa sa bàn khi xe chạy** — người đứng gần bị coi là vật cản, xe dừng chờ.
+
 **A. Chuẩn bị (một lần):**
 1. **Camera:** nhìn **thẳng ra trước, nằm ngang**, ở đầu xe; nguồn **riêng**. Thử: mở
    `http://192.168.1.201/capture` bằng trình duyệt. (Đang lắp: cao 23,5 cm.)
@@ -575,9 +602,10 @@ Laptop chụp `/capture` 3 ảnh/s mỗi xe (~30 KB/s, nhẹ Wi-Fi) → `/agvN/c
 cao 23,5 cm, nhìn xuống được 19,7°: gần hơn thì không thấy chân hộp), vuông
 với hướng Đông. **Cao hơn tia LiDAR** (LiDAR cao 19 cm nhưng tia chếch lên: ở 85 cm đã
 khoảng 21–22 cm → hộp nên **≥ 24 cm**), tối đa 45 cm; rộng ≤ 33 cm (theo bảng loại).
-**Tránh ngược sáng**: không để cửa kính / đèn sáng ngay sau hộp (hộp nâu thành xám, đo
-sai) — dựng tấm bìa trắng/xám phía sau hộp. Hộp **có màu** (bìa carton nâu), nền phía sau và
-sàn **trắng/xám** — bộ đo tách hàng theo độ đậm màu.
+**Tránh ngược sáng**: không để cửa kính / đèn sáng ngay sau hộp — kéo rèm hoặc dựng tấm bìa
+trắng/xám phía sau. Hộp nên **khác màu / khác độ sáng rõ** với nền phía sau (vd carton nâu,
+hộp xanh trước rèm trắng). Bộ đo tách hộp bằng **GrabCut**: lấy vị trí hộp từ LiDAR làm gợi ý,
+tự học màu hộp và màu nền trên ảnh (chịu được sàn bóng phản chiếu, hộp ít màu).
 
 **C. Chạy** — Terminal 1–3 như trên (`fleet_real.sh up` + `fleet_localize.py`, `traffic_manager.py`,
 RViz), thêm:
@@ -606,6 +634,15 @@ Terminal 4 in, ví dụ:
 - Bị chặn tạm (người đứng gần sa bàn): bộ điều phối bỏ lộ trình sau ~10 s → Terminal 4 in
   `cho 5 s roi giao lai (lan 1/3)` và tự giao lại, tối đa 3 lần. **Đứng xa sa bàn khi xe chạy.**
 - Không có hàng / hàng quá to / chạm mép ảnh → `THAT BAI`, xe đứng yên tại ô lấy hàng.
+- `LiDAR chi thay N diem phia truoc - khong co hang?` mà camera vẫn thấy hộp → hộp **thấp hơn
+  tia LiDAR** (tia ở ~21–22 cm tại 85 cm) → dùng hộp ≥ 24 cm.
+- `bi chan sau 3 lan giao lai: ... failed 5 lan` và log `/tmp/fleet_real/agent_agvN.log` có
+  `khong thay Nav2 (action follow_path)` → Nav2 của xe đó mất liên lạc: Terminal 1
+  `tools/fleet_real.sh down` rồi `up` lại (xe đứng yên tại chỗ: khai báo `AGVN` theo chỗ đó)
+  → `fleet_localize.py` → giao lại lệnh.
+- Xe đứng im mà Terminal 4 không báo gì → xem `/agvN/diag` (mục **Kiểm Tra Nguồn**): ESTOP
+  ("Banh ket / mat encoder" → kiểm tra động cơ, `tools/wheel_test.py agvN` khi kê hở bánh) hoặc
+  `BROWNOUT` (sụt áp).
 - Kết quả + ảnh có vẽ khung: `~/agv_logs/cargo/` (`results.csv`; ảnh gốc `_raw.png`; đo hỏng
   thì ảnh `_LOI.png`).
 - Đo thử một lần không cho xe chạy (xe đã đứng ở ô lấy hàng, quay Đông):
