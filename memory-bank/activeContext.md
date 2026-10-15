@@ -70,6 +70,12 @@ Chỉ đo **rộng × cao**; camera nhìn thẳng, **Z + mặt phẳng mặt hà
   `cargo_task`: bỏ hủy khi 'failed' thoáng qua, TIMEOUT 300 s. Bảng loại: cao/rộng tới 45 cm.
   **Xe 2 hỏng:** bánh không quay (ESTOP "bánh kẹt / mất encoder"), `/agv2/diag` KHÔNG về (0 Hz) nên
   laptop không biết ESTOP; người dùng báo vị trí xe 1 "(2,3)" nhưng thật là (3,2) (ghi cột trước?).
+- **2026-10-15 (bánh xe 2 đã sửa):** xe 2 trọn vòng (3,5)→(1,4); hộp 18,5×32,0 đo **22,5**×32,2 —
+  rộng sai +4 cm: ảnh NGƯỢC SÁNG (cửa kính sau hộp, hộp nâu thành xám) + vạch LiDAR lệch ~20 px so với
+  hộp trong ảnh → **camera xe 2 xoay ~3–4° so với trục xe** (xe 1 ~−1,7°) → thấy mặt bên. Cần thêm
+  `yaw` camera (ngoại tham camera↔LiDAR) + phông nền. Xe 1 kẹt "vật cản trên đường" ở (2,4)→(3,4)
+  (LiDAR sau đó sạch — có thể người đứng gần); traffic_manager bỏ sau 5 lần/~10 s (WARN "dung:"),
+  cargo_task chỉ bắt ERROR → chờ tới 300 s. `diag` lúc về lúc không, đổi xe (lần này xe 1 mất).
 - **DDS 2026-10-14:** gói UDP > 1472 B trên 127.0.0.1 bị rơi → `tools/fastdds_localhost.xml`
   (bashrc + fleet_real.sh + fleet_sim.sh; bashrc cũ: ~/.bashrc.bak_xml). Đã thử: mô phỏng 2 xe +
   đo hàng OK; fleet_real.sh với ESP32 giả OK (Nav2 ~50 s, chờ tối đa 120 s). **Chưa thử với
