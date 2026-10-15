@@ -70,6 +70,11 @@ Chỉ đo **rộng × cao**; camera nhìn thẳng, **Z + mặt phẳng mặt hà
   `cargo_task`: bỏ hủy khi 'failed' thoáng qua, TIMEOUT 300 s. Bảng loại: cao/rộng tới 45 cm.
   **Xe 2 hỏng:** bánh không quay (ESTOP "bánh kẹt / mất encoder"), `/agv2/diag` KHÔNG về (0 Hz) nên
   laptop không biết ESTOP; người dùng báo vị trí xe 1 "(2,3)" nhưng thật là (3,2) (ghi cột trước?).
+- **2026-10-15 chiều — đã sửa (code, chưa thử xe thật):** (1) `camera.yaw` + `tools/cam_extrinsic.py`
+  (mô phỏng: ước lượng 3,54/3,5°, −1,74/−1,7°) + kẹp mép ảnh vào cửa sổ quanh mút LiDAR (đã bù yaw: sai
+  ≤ 6,6 mm; KHÔNG bù yaw thì tới 22 mm → bắt buộc đo yaw). (2) `cargo_task` giao lại khi traffic_manager
+  bỏ lộ trình (WARN "dung:"), 3 lần × 5 s — mô phỏng OK. (3) Firmware: lỗi tạo entity → tự restart
+  (≤ 3 lần, RTC) — biên dịch OK, đã `fw split` → **người dùng cần nạp Xe_1, Xe_2**. Ảnh gốc `_raw.png`.
 - **2026-10-15 (bánh xe 2 đã sửa):** xe 2 trọn vòng (3,5)→(1,4); hộp 18,5×32,0 đo **22,5**×32,2 —
   rộng sai +4 cm: ảnh NGƯỢC SÁNG (cửa kính sau hộp, hộp nâu thành xám) + vạch LiDAR lệch ~20 px so với
   hộp trong ảnh → **camera xe 2 xoay ~3–4° so với trục xe** (xe 1 ~−1,7°) → thấy mặt bên. Cần thêm

@@ -60,6 +60,8 @@ Chạy lại `grid_navigator.py --real` sau khi đổi. Vẽ lại ảnh xem tr�
 | `cargo_task`: `hang cham mep anh` / `camera khong thay hang` | hàng quá to, đặt lệch, hoặc nền cùng màu hàng | đặt hàng đúng 35 cm, giữa ô; nền trơn trắng/xám; xem ảnh `_LOI.png` trong `~/agv_logs/cargo/` |
 | Kích thước đo sai đều vài cm | chưa hiệu chuẩn (`CHUA HIEU CHUAN`) / sai `x, z` camera / camera nghiêng | `tools/cam_calib.py agvN`; đo lại vị trí lắp; camera phải nhìn ngang |
 | Node không thấy nhau (cả `ros2 run demo_nodes_py talker`/`listener`), Nav2 "KHONG LEN", không có ảnh camera | WSL mirrored làm rơi gói UDP > 1472 byte gửi qua 127.0.0.1 (đo 2026-10-14) | mở terminal mới (bashrc đã có `FASTRTPS_DEFAULT_PROFILES_FILE=~/robot_ws_3/tools/fastdds_localhost.xml`); kiểm: `echo $FASTRTPS_DEFAULT_PROFILES_FILE`. Nav2 lên chậm hơn (~40 s/xe) là bình thường |
+| Đo rộng sai vài cm, cảnh báo `rong camera ... khac LiDAR` / `mep mat na lech xa mut LiDAR` | camera lắp xoay chưa bù (`yaw`), ngược sáng | `tools/cam_extrinsic.py agvN`; dựng phông nền, tránh cửa kính sáng sau hộp |
+| `/agvN/diag` không về (xe vẫn chạy, có scan) | lúc kết nối, ESP32 tạo publisher `/diag` quá hạn, firmware cũ chạy tiếp thiếu topic | nạp firmware ≥ 2026-10-15 (lỗi tạo entity thì tự khởi động lại, tối đa 3 lần); tạm thời: tắt/bật nguồn xe |
 | **Xe thật: mọi thứ treo, không lỗi gì** | sót `use_sim_time:=false` ở một terminal | thêm vào; node đó đang chờ `/clock` mãi |
 | `package 'micro_ros_agent' not found` | chưa source workspace agent | `source ~/microros_ws/install/setup.bash` |
 | Các node không thấy nhau, `ros2 topic list` thiếu topic | thiếu biến discovery | `export ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST` |

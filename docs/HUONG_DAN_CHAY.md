@@ -558,9 +558,21 @@ Laptop chụp `/capture` 3 ảnh/s mỗi xe (~30 KB/s, nhẹ Wi-Fi) → `/agvN/c
    Cách khác (không cần cài gói, tự chụp 15 ảnh):
    `python3 tools/cam_calib.py agv1 --board 9x7 --square 0.020`.
 
+4. **Đo góc xoay camera** (mỗi xe một lần, sau bước 3; **bắt buộc** — camera lắp lệch vài độ
+   làm mép LiDAR không khớp ảnh, đo rộng sai tới 4 cm). Hệ đang chạy (`fleet_real.sh up`),
+   xe **đứng yên**. Đặt một hộp **cao hơn tia LiDAR** (≥ 25 cm, vd hộp 32 cm) **thẳng, chính
+   giữa** trước xe, cách 60–85 cm, sau hộp là nền trơn:
+   ```bash
+   python3 tools/cam_extrinsic.py agv1      # in 5 lần đo, ghi yaw vào camera_agv1.yaml
+   ```
+   Các lần đo lệch nhau < 0,5° là tốt. Làm lại cho `agv2`. (Đo thử: xe 1 ≈ −1,7°, xe 2 ≈ +3–4°.)
+
 **B. Đặt hàng:** hộp phía Đông ô (hàng 2–5, cột 5), **mặt trước cách tâm ô 85 cm** (camera
 cao 23,5 cm, nhìn xuống được 19,7°: gần hơn thì không thấy chân hộp), vuông
-với hướng Đông. Cao 10–45 cm, rộng ≤ 33 cm (theo bảng loại). Hộp **có màu** (bìa carton nâu), nền phía sau và
+với hướng Đông. **Cao hơn tia LiDAR** (LiDAR cao 19 cm nhưng tia chếch lên: ở 85 cm đã
+khoảng 21–22 cm → hộp nên **≥ 24 cm**), tối đa 45 cm; rộng ≤ 33 cm (theo bảng loại).
+**Tránh ngược sáng**: không để cửa kính / đèn sáng ngay sau hộp (hộp nâu thành xám, đo
+sai) — dựng tấm bìa trắng/xám phía sau hộp. Hộp **có màu** (bìa carton nâu), nền phía sau và
 sàn **trắng/xám** — bộ đo tách hàng theo độ đậm màu.
 
 **C. Chạy** — Terminal 1–3 như trên (`fleet_real.sh up` + `fleet_localize.py`, `traffic_manager.py`,
@@ -587,8 +599,11 @@ Terminal 4 in, ví dụ:
 - Đầu Terminal 4 in `CHUA HIEU CHUAN` cho xe chưa làm bước A3 — vẫn chạy được nhưng số đo
   sai vài mm tới vài cm.
 - Hai xe cùng loại hàng → cùng ô: xe tới sau chờ, xe đã giao lùi sang hàng 2 nhường ô.
+- Bị chặn tạm (người đứng gần sa bàn): bộ điều phối bỏ lộ trình sau ~10 s → Terminal 4 in
+  `cho 5 s roi giao lai (lan 1/3)` và tự giao lại, tối đa 3 lần. **Đứng xa sa bàn khi xe chạy.**
 - Không có hàng / hàng quá to / chạm mép ảnh → `THAT BAI`, xe đứng yên tại ô lấy hàng.
-- Kết quả + ảnh có vẽ khung: `~/agv_logs/cargo/` (`results.csv`; đo hỏng thì ảnh `_LOI.png`).
+- Kết quả + ảnh có vẽ khung: `~/agv_logs/cargo/` (`results.csv`; ảnh gốc `_raw.png`; đo hỏng
+  thì ảnh `_LOI.png`).
 - Đo thử một lần không cho xe chạy (xe đã đứng ở ô lấy hàng, quay Đông):
   `python3 cargo_measure.py agv1 --save /tmp/do_thu.png`.
 

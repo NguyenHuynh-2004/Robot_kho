@@ -369,8 +369,15 @@ float maxAccelRPMPerSec = 320.0f;    // ramp, chong giat va sut ap
 // ============================================================================
 //  5. BIEN TOAN CUC
 // ============================================================================
-#define RCCHECK(fn) { rcl_ret_t rc = fn; if (rc != RCL_RET_OK) { \
+// Dem loi: init_microros() co buoc tao entity loi (vd tao publisher /diag qua han
+// khi Wi-Fi cham - do 2026-10-15: xe 1 chi tao 3/4 publisher, mat /diag ca phien)
+// thi khoi dong lai de ket noi lai tu dau, thay vi chay tiep thieu topic.
+static int microros_init_err = 0;
+#define RCCHECK(fn) { rcl_ret_t rc = fn; if (rc != RCL_RET_OK) { microros_init_err++; \
     Serial.printf("microROS error %d @ line %d\n", (int)rc, __LINE__); } }
+// So lan lien tiep khoi dong lai vi loi tao entity (giu qua ESP.restart, mat khi tat
+// nguon). Toi da 3 lan roi chay tiep du thieu - tranh vong lap vo tan neu loi co dinh.
+RTC_NOINIT_ATTR static uint32_t microros_init_restarts;
 #define RCSOFTCHECK(fn) { (void)(fn); }
 
 // --- micro-ROS ---
@@ -1434,6 +1441,19 @@ static void init_microros() {
                                          &cmd_vel_callback, ON_NEW_DATA));
   RCCHECK(rclc_executor_add_subscription(&executor, &estop_reset_sub, &estop_reset_msg,
                                          &estop_reset_callback, ON_NEW_DATA));
+  if (esp_reset_reason() != ESP_RST_SW || microros_init_restarts > 3) microros_init_restarts = 0;
+  if (microros_init_err > 0) {
+    if (microros_init_restarts < 3) {
+      microros_init_restarts++;
+      Serial.printf("LOI: %d buoc tao entity micro-ROS that bai -> khoi dong lai (lan %u/3)\n",
+                    microros_init_err, (unsigned)microros_init_restarts);
+      delay(500);
+      ESP.restart();
+    }
+    Serial.printf("CANH BAO: van loi %d buoc sau 3 lan khoi dong lai - chay tiep, co the thieu topic\n",
+                  microros_init_err);
+  }
+  microros_init_restarts = 0;
   clock_anchor_bootstrap();   // tu goi sync_session ben trong, dung canh tick
 
   // --- Cap bo nho tinh cho cac message (micro-ROS khong tu cap phat) ---

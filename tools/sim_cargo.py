@@ -71,6 +71,7 @@ class SimCargo(Node):
         self.D = np.array(cam['dist'], float)
         self.W, self.H = int(cam['width']), int(cam['height'])
         self.cam = (cam['x'], cam['y'], cam['z'])
+        self.cam_yaw = math.radians(float(cam.get('yaw', 0.0)))   # camera lap xoay (thu bu goc)
         self.board = Board.load(config_path(True))
         self.rng = np.random.default_rng(1)
         self.maps = self.distort_maps()
@@ -156,6 +157,8 @@ class SimCargo(Node):
         dx, dy = P[:, 0] - x, P[:, 1] - y
         fwd = dx * math.cos(th) + dy * math.sin(th) - self.cam[0]
         left = -dx * math.sin(th) + dy * math.cos(th) - self.cam[1]
+        c, s = math.cos(self.cam_yaw), math.sin(self.cam_yaw)
+        fwd, left = fwd * c + left * s, -fwd * s + left * c
         up = P[:, 2] - self.cam[2]
         return np.stack([-left, -up, fwd], 1)
 

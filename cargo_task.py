@@ -54,6 +54,10 @@ ARRIVE_D = 0.05            # m: coi la da toi o
 ARRIVE_YAW = math.radians(5)
 SETTLE = 1.0               # s dung yen truoc khi do
 TIMEOUT = 300.0            # s cho moi chang (cho xe kia nhuong + di vong: 2026-10-14 > 180 s)
+# traffic_manager bo lo trinh sau 5 lan "blocked" (~10 s, vd nguoi dung canh sa ban):
+# cho RETRY_WAIT s roi giao lai cung dich, toi da RETRY_MAX lan moi chang.
+RETRY_MAX = 3
+RETRY_WAIT = 5.0
 # O lay hang (xe dung yen): khop anh quet voi /map (ICP nhu tools/fleet_localize.py);
 # AMCL lech hon muc nay thi gui lai /agvN/initialpose -> chang ve o tra di dung.
 # (2026-10-14: phong co xe may / do dac ngoai ban do, AMCL troi 5 cm, 4-7 do sau 1.8 m.)
@@ -71,6 +75,10 @@ class Task:
         self.result = None
         self.tries = 0
         self.reject = None
+        self.gaveup = None          # traffic_manager bao "[xe] dung: ..." (bo lo trinh)
+        self.retries = 0
+        self.retry_at = None
+        self.heading = ''
         self.noted = None
         self.asked = None
 
@@ -206,12 +214,15 @@ class CargoTask(Node):
             f = p
 
     def cb_rosout(self, m):
-        # traffic_manager tu choi dich (o da la dich xe kia, ngoai sa ban...)
-        if m.name != 'traffic_manager' or m.level < 40:
+        if m.name != 'traffic_manager' or m.level < 30:
             return
         for tk in self.tasks.values():
-            if m.msg.startswith(f'[{tk.car}]') and tk.state in ('pickup', 'deliver'):
-                tk.reject = m.msg
+            if not m.msg.startswith(f'[{tk.car}]') or tk.state not in ('pickup', 'deliver'):
+                continue
+            if m.level >= 40:
+                tk.reject = m.msg          # tu choi dich (o la dich xe kia, ngoai sa ban...)
+            elif m.msg.startswith(f'[{tk.car}] dung:') and 'ESTOP' not in m.msg:
+                tk.gaveup = m.msg          # bo lo trinh vi bi chan / Nav2 that bai lien tiep
 
     def command(self, text):
         tok = text.split()
@@ -242,7 +253,10 @@ class CargoTask(Node):
         return f'({node[0] + 1},{node[1] + 1})'
 
     def go(self, tk, node, heading=''):
-        tk.target, tk.t, tk.reject = node, time.time(), None
+        if node != tk.target:
+            tk.retries = 0                 # chang moi
+        tk.target, tk.t, tk.reject, tk.heading = node, time.time(), None, heading
+        tk.gaveup, tk.retry_at = None, None
         r, c = node
         self.goal_pub.publish(String(data=f'{self.cars.index(tk.car) + 1} {r + 1} {c + 1} {heading}'.strip()))
         self.get_logger().info(f'[{tk.car}] -> {self.lbl(node)}' +
@@ -274,6 +288,17 @@ class CargoTask(Node):
             if tk.state in ('pickup', 'deliver'):
                 if tk.reject:
                     self.fail(tk, f'traffic_manager tu choi: {tk.reject}')
+                elif tk.gaveup and tk.retry_at is None:
+                    if tk.retries >= RETRY_MAX:
+                        self.fail(tk, f'bi chan sau {RETRY_MAX} lan giao lai: {tk.gaveup}')
+                    else:
+                        tk.retries += 1
+                        tk.retry_at = now + RETRY_WAIT
+                        self.get_logger().warn(f'[{tk.car}] traffic_manager bo lo trinh ({tk.gaveup}) - '
+                                               f'cho {RETRY_WAIT:.0f} s roi giao lai (lan {tk.retries}/{RETRY_MAX})')
+                elif tk.retry_at is not None:
+                    if now >= tk.retry_at:
+                        self.go(tk, tk.target, tk.heading)
                 elif s.get('state') == 'estop':
                     # 'failed' thoang qua (Nav2 tu choi mot doan) thi traffic_manager tu lap lai
                     # duong (toi 5 lan); bo han thi no bao ERROR "[agvN] dung: ..." -> cb_rosout.
@@ -322,6 +347,7 @@ class CargoTask(Node):
         stamp = time.strftime('%Y%m%d-%H%M%S')
         path = f'{OUT}/{stamp}_{tk.car}_r{tk.row}.png'
         cv2.imwrite(path, vis)
+        cv2.imwrite(path.replace('.png', '_raw.png'), frame)   # anh goc: phan tich lai offline
         tk.result = dict(res, car=tk.car, row=tk.row, col=self.pick_col, image=path,
                          cls=cls['name'] if cls else None, slot=cls['col'] if cls else None, ok=cls is not None)
         pick = self.lbl((tk.row - 1, self.pick_col - 1))
