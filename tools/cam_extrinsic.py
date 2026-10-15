@@ -5,6 +5,7 @@ va do sai be rong (2026-10-15, xe 2: rong 22.5 thay vi 18.5 cm).
 
     python3 tools/cam_extrinsic.py agv2              # can he dang chay (scan + anh camera)
     python3 tools/cam_extrinsic.py agv2 --dry-run    # chi in, khong ghi file
+    python3 tools/cam_extrinsic.py agv2 --height 0.320   # them goc NGOC (pitch) tu hop biet cao
 
 Chuan bi: xe DUNG YEN, mot hop CAO HON tia LiDAR (> ~25 cm) dat THANG, CHINH GIUA truoc xe,
 cach 0.6-0.9 m, nen phia sau tron. Script lay 5 lan (moi lan 10 vong quet + 1 anh),
@@ -21,12 +22,16 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import cargo_measure as cm   # noqa: E402
 
 
-def write_yaw(car, yaw):
+def write_yaw(car, yaw, pitch=None):
     path = cm.calib_path(car)
     lines = open(path).read().splitlines() if os.path.exists(path) else []
-    lines = [ln for ln in lines if not ln.startswith('yaw:') and 'tools/cam_extrinsic.py' not in ln]
-    lines.append(f'# Goc xoay camera (do, + = quay trai) - tools/cam_extrinsic.py {time.strftime("%Y-%m-%d %H:%M")}')
+    drop = ('yaw:',) + (('pitch:',) if pitch is not None else ())
+    lines = [ln for ln in lines if not ln.startswith(drop) and 'tools/cam_extrinsic.py' not in ln]
+    lines.append(f'# Goc xoay (yaw, + = trai) / ngoc (pitch, + = len) camera, do - tools/cam_extrinsic.py '
+                 f'{time.strftime("%Y-%m-%d %H:%M")}')
     lines.append(f'yaw: {yaw:.2f}')
+    if pitch is not None:
+        lines.append(f'pitch: {pitch:.2f}')
     with open(path, 'w') as f:
         f.write('\n'.join(lines) + '\n')
     return path
@@ -37,6 +42,7 @@ def main():
     ap.add_argument('car')
     ap.add_argument('--n', type=int, default=5)
     ap.add_argument('--dry-run', action='store_true')
+    ap.add_argument('--height', type=float, help='chieu cao THAT cua hop (m) -> do them goc ngoc')
     a = ap.parse_args()
 
     import rclpy
@@ -70,6 +76,7 @@ def main():
         except ValueError as e:
             print(f'  lan {k + 1}: LOI {e}')
             continue
+        r['frame'], r['scans'] = frame, fresh
         res.append(r)
         print(f'  lan {k + 1}: yaw {r["yaw_deg"]:+.2f} do (hop cach {r["dist"] * 100:.0f} cm, mat lech '
               f'{r["face_yaw_deg"]:+.1f} do, giua hop: LiDAR u={r["u_lidar"]:.0f} / anh u={r["u_cam"]:.0f})')
@@ -82,9 +89,42 @@ def main():
     print(f'\nyaw = {yaw:+.2f} do (lech giua cac lan {yaws.max() - yaws.min():.2f} do)')
     if abs(np.median([r['face_yaw_deg'] for r in res])) > 5:
         print('CANH BAO: mat hop lech > 5 do so voi xe - dat hop thang lai cho chinh xac hon')
+    pitch = None
+    if a.height:
+        # mep tren hop (da bu yaw, pitch 0) -> goc ngoc de tia qua mep tren cat mat hop dung o
+        # do cao that: z = cam_z + t*(h cos p + f sin p) ... giai bang chia doi
+        import math
+        pitches = []
+        for r in res:
+            c = dict(cfg)
+            c['camera'] = dict(cfg['camera'], yaw=yaw)
+            c['camera']['pitch'] = 0.0     # che do cao toi san: chi can mep tren, bo qua mep duoi (bong san)
+            try:
+                m, _ = cm.measure(r['frame'], r['scans'], c)
+            except ValueError as e:
+                print(f'  pitch: bo mot lan ({e})')
+                continue
+            ua, ub, va, _ = m['edges_px']
+            n, d = np.array(m['face_n']), m['face_d']
+            lo, hi = -10.0, 10.0
+            for _ in range(40):
+                mid = 0.5 * (lo + hi)
+                c['camera']['pitch'] = mid
+                z = cm.Camera(c).ray_plane(0.5 * (ua + ub), va, n, d)[2]
+                if z < a.height:
+                    lo = mid      # tia qua mep tren con thap -> camera phai ngoc len hon
+                else:
+                    hi = mid
+            pitches.append(0.5 * (lo + hi))
+            print(f'  pitch: {pitches[-1]:+.2f} do (cao do duoc khi pitch 0: {m["height"] * 100:.1f} cm)')
+        if len(pitches) >= 3:
+            pitch = float(np.median(pitches))
+            print(f'pitch = {pitch:+.2f} do (lech giua cac lan {max(pitches) - min(pitches):.2f} do)')
+        else:
+            print('Khong du lan do pitch - chi ghi yaw')
     if a.dry_run:
         return
-    print(f'Da ghi {write_yaw(a.car, yaw)}')
+    print(f'Da ghi {write_yaw(a.car, yaw, pitch)}')
 
 
 if __name__ == '__main__':

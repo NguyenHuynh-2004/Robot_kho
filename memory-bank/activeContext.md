@@ -70,6 +70,14 @@ Chỉ đo **rộng × cao**; camera nhìn thẳng, **Z + mặt phẳng mặt hà
   `cargo_task`: bỏ hủy khi 'failed' thoáng qua, TIMEOUT 300 s. Bảng loại: cao/rộng tới 45 cm.
   **Xe 2 hỏng:** bánh không quay (ESTOP "bánh kẹt / mất encoder"), `/agv2/diag` KHÔNG về (0 Hz) nên
   laptop không biết ESTOP; người dùng báo vị trí xe 1 "(2,3)" nhưng thật là (3,2) (ghi cột trước?).
+- **2026-10-15 ~14h45 — ĐO HÀNG THẬT ĐẠT, cả 2 xe trọn vòng:** hộp 18,5×32,0 → 18,7×32,0 (xe 1);
+  hộp xanh 12,0×23,9 → 13,0×24,1 (xe 2); về đúng (1,4), (1,3). Đã đổi: tách hộp **GrabCut** gieo
+  hạt từ LiDAR (hạt ở ½ độ cao tia), mép trên = hàng hộp chiếm < 50% bề rộng (chống vệt rò khe cửa),
+  tinh mép theo kênh xám ±3 px, `camera.pitch` → cao = mép trên tới sàn. `cam_extrinsic.py --height`
+  đo yaw+pitch: xe 1 −2,49/−2,29°, xe 2 +2,92/−1,09° (pitch tính từ chính 2 hộp này — cần hộp khác
+  để kiểm độc lập). Xe 1 nằm ở (3,2), xe 2 ở (2,2) khi bật (người dùng hay ghi lẫn). Nav2 agv1 có lần
+  mất DDS (fleet_agent "khong thay Nav2") → restart riêng Nav2 xe đó thì được. Firmware mới
+  (restart khi tạo entity lỗi) đã nạp? — lần này diag cả 2 xe đủ.
 - **2026-10-15 chiều — đã sửa (code, chưa thử xe thật):** (1) `camera.yaw` + `tools/cam_extrinsic.py`
   (mô phỏng: ước lượng 3,54/3,5°, −1,74/−1,7°) + kẹp mép ảnh vào cửa sổ quanh mút LiDAR (đã bù yaw: sai
   ≤ 6,6 mm; KHÔNG bù yaw thì tới 22 mm → bắt buộc đo yaw). (2) `cargo_task` giao lại khi traffic_manager

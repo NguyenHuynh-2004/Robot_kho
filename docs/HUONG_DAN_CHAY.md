@@ -558,14 +558,18 @@ Laptop chụp `/capture` 3 ảnh/s mỗi xe (~30 KB/s, nhẹ Wi-Fi) → `/agvN/c
    Cách khác (không cần cài gói, tự chụp 15 ảnh):
    `python3 tools/cam_calib.py agv1 --board 9x7 --square 0.020`.
 
-4. **Đo góc xoay camera** (mỗi xe một lần, sau bước 3; **bắt buộc** — camera lắp lệch vài độ
-   làm mép LiDAR không khớp ảnh, đo rộng sai tới 4 cm). Hệ đang chạy (`fleet_real.sh up`),
-   xe **đứng yên**. Đặt một hộp **cao hơn tia LiDAR** (≥ 25 cm, vd hộp 32 cm) **thẳng, chính
-   giữa** trước xe, cách 60–85 cm, sau hộp là nền trơn:
+4. **Đo góc xoay + góc ngóc camera** (mỗi xe một lần, sau bước 3; **bắt buộc** — camera
+   lắp lệch vài độ làm mép LiDAR không khớp ảnh và chiều cao sai). Hệ đang chạy
+   (`fleet_real.sh up`), xe **đứng yên** trước một hộp **cao hơn tia LiDAR** (≥ 24 cm), biết
+   chiều cao thật (đo thước), đặt **thẳng, chính giữa**, cách 70–90 cm — dễ nhất: cho xe tới ô
+   lấy hàng có hộp đó (`traffic_manager`: `1 3 5 d`):
    ```bash
-   python3 tools/cam_extrinsic.py agv1      # in 5 lần đo, ghi yaw vào camera_agv1.yaml
+   python3 tools/cam_extrinsic.py agv1 --height 0.320    # hộp cao 32,0 cm -> ghi yaw + pitch
    ```
-   Các lần đo lệch nhau < 0,5° là tốt. Làm lại cho `agv2`. (Đo thử: xe 1 ≈ −1,7°, xe 2 ≈ +3–4°.)
+   Các lần đo lệch nhau < 0,5° là tốt. Làm lại cho `agv2` (hộp của nó, `--height` theo hộp đó).
+   Đã đo 2026-10-15: xe 1 yaw −2,49°, pitch −2,29°; xe 2 yaw +2,92°, pitch −1,09°.
+   Có `pitch` thì chiều cao tính **từ mép trên tới sàn** (không cần mép dưới — sàn bóng
+   phản chiếu hộp làm mép dưới sai).
 
 **B. Đặt hàng:** hộp phía Đông ô (hàng 2–5, cột 5), **mặt trước cách tâm ô 85 cm** (camera
 cao 23,5 cm, nhìn xuống được 19,7°: gần hơn thì không thấy chân hộp), vuông
@@ -612,7 +616,7 @@ Terminal 4 in, ví dụ:
 | 2 camera vào ROS | 3 ảnh/s mỗi xe, 320×240 |
 | `1 3`: (3,2) → (3,5) quay Đông; `1 4`: (3,5) → (4,5) | đi đúng đường; chưa đặt hàng → báo `khong co hang` đúng |
 | Sửa định vị tại ô lấy hàng | AMCL lệch 2,8 cm / −5,6° → sau sửa trùng LiDAR 0,3 cm |
-| Chưa làm | đặt hàng thật, hiệu chuẩn camera → đo sai số thật |
+| 2026-10-15, đủ hiệu chuẩn (K, yaw, pitch) + tách hộp GrabCut | hộp 18,5×32,0 → **18,7×32,0**; hộp xanh 12,0×23,9 → **13,0×24,1**; cả 2 xe về đúng (1,4), (1,3) |
 
 ### Tắt
 ```bash

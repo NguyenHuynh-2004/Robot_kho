@@ -12,3 +12,6 @@ dist: [-0.02920, -0.01004, 0.00125, -0.00048, 0.00000]
 x: 0.0967
 y: 0.0
 z: 0.235
+# Goc xoay (yaw, + = trai) / ngoc (pitch, + = len) camera, do - tools/cam_extrinsic.py 2026-10-15 14:22
+yaw: 2.92
+pitch: -1.09
